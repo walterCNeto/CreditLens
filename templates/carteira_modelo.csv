@@ -1,0 +1,4 @@
+id_contraparte,nome,rating,setor,exposicao,pd,lgd,prazo_anos
+CP0001,Empresa Exemplo A,BBB,Indústria,150.0,0.005,0.45,3.0
+CP0002,Empresa Exemplo B,BB,Varejo,80.5,0.015,0.6,2.0
+CP0003,Empresa Exemplo C,A,Energia,220.0,0.002,0.25,4.5

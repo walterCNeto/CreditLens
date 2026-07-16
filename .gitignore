@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+output/
+.streamlit/secrets.toml
+model.pdf
+*.pdf
+.DS_Store
