@@ -167,7 +167,7 @@ with st.expander("Ver carteira carregada"):
 
 # ---------------- Execução ----------------
 st.subheader("3. Análise")
-if st.button("▶ Executar suíte completa de modelos", type="primary"):
+if st.button("▶ Executar modelos", type="primary"):
     prog = st.progress(0.0, text="Iniciando...")
     steps = {"n": 0}
 
