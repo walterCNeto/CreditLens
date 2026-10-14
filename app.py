@@ -108,6 +108,7 @@ if source is None and analitica_src is None:
     st.stop()
 
 pooled_mode = False
+rel_agg = None
 if analitica_src is not None:
     from engine.aggregation import aggregate_portfolio
     import pandas as _pd, io as _io
@@ -120,6 +121,7 @@ if analitica_src is not None:
         buf = _io.StringIO(); df_agg.to_csv(buf, index=False); buf.seek(0)
         port = load_portfolio(buf)
         pooled_mode = True
+        rel_agg = rel
         st.success(f"Agregação: {rel['linhas_analitica']:,} contratos → "
                    f"{rel['linhas_agregada']} linhas "
                    f"({rel['n_grandes']} grandes exposições + "
@@ -248,6 +250,15 @@ if st.button("▶ Executar modelos", type="primary"):
             st.error(f"Migração/ECL: {e}")
     prog.progress(1.0, text="Concluído")
     st.session_state["results"] = results
+    st.session_state["params_ui"] = {
+        "contrib_alpha": contrib_alpha, "contrib_S": contrib_S,
+        "max_grandes": int(max_grandes), "horizonte": horizonte,
+        "taxa_desc": taxa_desc}
+    st.session_state["rel_agg"] = rel_agg
+    st.session_state["nome_base"] = (
+        getattr(up_analitica, "name", None) if analitica_src is not None
+        else (getattr(up, "name", None) or
+              ("carteira de teste (250 contrapartes)" if demo else ""))) or ""
 
 if "results" not in st.session_state:
     st.stop()
@@ -482,3 +493,21 @@ with tabs[7]:
     st.download_button("⬇ Baixar resultados (Excel)", buf.getvalue(),
                        file_name="resultados_analise.xlsx",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    st.markdown("---")
+    st.markdown("**Paper de validação (PDF)** — resultados por modelo com a "
+                "fundamentação teórica, os parâmetros desta execução e as "
+                "referências bibliográficas auditáveis.")
+    if st.button("Gerar paper de validação"):
+        from engine.report_paper import gerar_paper
+        with st.spinner("Compondo o paper..."):
+            buf_pdf = io.BytesIO()
+            gerar_paper(buf_pdf, port, results,
+                        mig=st.session_state.get("mig"),
+                        nome_base=st.session_state.get("nome_base", ""),
+                        extra=st.session_state.get("params_ui"),
+                        rel_agg=st.session_state.get("rel_agg"))
+        st.download_button("⬇ Baixar paper de validação (PDF)",
+                           buf_pdf.getvalue(),
+                           file_name="paper_validacao.pdf",
+                           mime="application/pdf")
