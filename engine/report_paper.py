@@ -805,7 +805,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   "[7], na formulação baseada no CreditRisk+ implementada "
                   "por Bolder (cap. 6) [8, 13]: corrige o risco de nomes "
                   "que a função IRB assume diversificado"
-                  + (", com o termo c² substituído por C²/n por pool"
+                  + (", com o termo c² substituído por C²/n_eff por pool"
                      if pooled else "") + ".")
 
         if mig is not None:
@@ -817,7 +817,14 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   "Res. CMN 4.966 [14]. O capital multiperíodo evolui a "
                   "carteira ano a ano pela matriz condicional ao fator "
                   "sistemático — generalização do deslocamento de crédito "
-                  "de um parâmetro [10] — acumulando perdas descontadas.")
+                  "de um parâmetro [10] — acumulando perdas descontadas."
+                  + (" Na carteira agregada, cada grupo evolui como vetor de "
+                     "frações por rating; nos grupos fora do limite de "
+                     "carteira grande, os defaults de cada ano são sorteados "
+                     "por Binomial(A, q) sobre o número inteiro de contratos "
+                     "equivalentes vivos A, com a taxa de default condicional "
+                     "entre os vivos q — o risco idiossincrático intragrupo "
+                     "entra no capital multiperíodo." if pooled else ""))
 
         # ================= resultados =================
         D.nova("Resultados")

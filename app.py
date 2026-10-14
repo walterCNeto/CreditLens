@@ -221,13 +221,15 @@ if st.button("▶ Executar modelos", type="primary"):
                         M=M, T=horizonte, rho_g=cal_mf["rho_ativos_inter"],
                         rho_s=cal_mf["rho_ativos_intra"], sector_idx=sector_idx,
                         discount_rate=taxa_desc, block_size=block_sz,
-                        seed=int(seed), progress=tick)
+                        seed=int(seed), progress=tick,
+                        rho_d_alvo=rho_target)
                 else:
                     sim_m = simulate_multiperiod_pooled(port, P_m, ratings_m,
                         M=M, T=horizonte,
                         rho_g=results["calibracao_gaussiana"]["rho_ativos"],
                         discount_rate=taxa_desc, block_size=block_sz,
-                        seed=int(seed), progress=tick)
+                        seed=int(seed), progress=tick,
+                        rho_d_alvo=rho_target)
                 st.session_state["mig"] = {"ecl": ecl_df, "cum": cum_m,
                                            "ratings": ratings_m, "sim": sim_m}
                 raise StopIteration

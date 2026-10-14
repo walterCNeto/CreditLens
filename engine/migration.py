@@ -262,21 +262,35 @@ def simulate_multiperiod_pooled(
     discount_rate: float = 0.0,
     alphas=np.array([0.95, 0.99, 0.999]),
     block_size: int = 20_000, seed: int = 42,
-    dtype=np.float32, progress=None,
+    dtype=np.float32, progress=None, rho_d_alvo: float = 0.05,
 ):
     """Multiperíodo para carteiras AGREGADAS (pools + grandes exposições).
 
-    Pools (n_contratos > 1): o estado do bucket é o VETOR DE FRAÇÕES por
-    rating, que evolui pela matriz de transição condicional ao cenário
-    sistemático do ano — as probabilidades de banda da escada de limiares
-    avaliadas no fator sorteado (lei dos grandes números dentro do pool;
-    exata no limite, mesma aproximação large-pool do motor de um período).
-    Grandes exposições (n = 1): trajetória de rating DISCRETA, como no
-    nível contraparte, compartilhando os mesmos fatores do ano.
+    Pools: o estado do grupo é o VETOR DE FRAÇÕES por rating, que evolui
+    pela matriz de transição condicional ao cenário sistemático do ano —
+    as probabilidades de banda da escada de limiares avaliadas no fator
+    sorteado. Nos grupos fora do limite de carteira grande (critério de
+    razão de variâncias do motor de um período, com o número efetivo de
+    contratos n_eff), os DEFAULTS de cada ano são sorteados:
+
+        D_t ~ Binomial(A_t, q_t(Z)),   A_{t+1} = A_t - D_t,
+
+    em que A_t é o número inteiro de contratos equivalentes vivos e q_t(Z)
+    a probabilidade condicional média de default dos vivos (média das
+    frações por rating; conservadora pela desigualdade de Hoeffding). A
+    migração entre ratings não-default segue as frações condicionais; a
+    massa viva é reescalada para refletir os defaults sorteados. Nos
+    grupos no limite de carteira grande, a fração em default é a esperança
+    condicional (lei dos grandes números). Grandes exposições (n = 1):
+    trajetória de rating DISCRETA, compartilhando os fatores do ano.
     Perdas de default descontadas ao ano de ocorrência."""
+    from .pooled import regimes
     df = port.df
     n = df["n_contratos"].to_numpy(int) if "n_contratos" in df.columns \
         else np.ones(port.N, int)
+    n_eff = (df["n_efetivo"].to_numpy(float) if "n_efetivo" in df.columns
+             else n.astype(float))
+    n_eq, lln, _ = regimes(n_eff, rho_d_alvo)
     C = port.c.astype(dtype)
     r0 = map_portfolio_ratings(df, ratings)
     bands = _threshold_bands(P).astype(dtype)          # Kst x Kst
@@ -298,7 +312,7 @@ def simulate_multiperiod_pooled(
         load_s = dtype(0.0)
         sec_of = np.zeros(port.N, int)
 
-    pool = n > 1
+    pool = n_eq > 1
     single = ~pool
     idx_pool = np.where(pool)[0]
     idx_sing = np.where(single)[0]
@@ -317,6 +331,8 @@ def simulate_multiperiod_pooled(
         # pools: frações por rating
         frac = np.zeros((mb, Gp, Kst), dtype=dtype)
         frac[:, np.arange(Gp), r0[idx_pool]] = 1.0
+        # contratos equivalentes vivos (grupos fora do limite de carteira grande)
+        vivos = np.tile(n_eq[idx_pool], (mb, 1)).astype(np.int64)
         # singles: estado discreto
         ratingS = np.tile(r0[idx_sing], (mb, 1))
         aliveS = np.ones((mb, Ns), dtype=bool)
@@ -339,7 +355,27 @@ def simulate_multiperiod_pooled(
                 probs[:, :, -1] += 1.0 - cdf[:, :, -1]   # fecha a última banda
                 f_old = frac[:, gcols, :]
                 f_new = np.einsum("mgk,mkj->mgj", f_old, probs)
-                new_def = f_new[:, :, D] - f_old[:, :, D]
+                esp_def = f_new[:, :, D] - f_old[:, :, D]   # fração esperada
+                new_def = esp_def
+                gl = ~lln[sel]                               # grupos binomiais
+                if gl.any():
+                    neq = n_eq[sel][gl].astype(dtype)
+                    vivo_frac = 1.0 - f_old[:, gl, D]
+                    q = np.clip(esp_def[:, gl] / np.maximum(vivo_frac, 1e-12),
+                                0.0, 1.0)
+                    A = vivos[:, gcols[gl]]
+                    Dd = rng.binomial(A, q)
+                    vivos[:, gcols[gl]] = A - Dd
+                    real = Dd / neq                         # fração realizada
+                    # reescala a massa viva para refletir os defaults sorteados
+                    viva_esp = np.maximum(1.0 - f_new[:, gl, D], 1e-12)
+                    viva_real = 1.0 - (f_old[:, gl, D] + real)
+                    escala = (viva_real / viva_esp)[:, :, None]
+                    bloco = f_new[:, gl, :] * escala
+                    bloco[:, :, D] = f_old[:, gl, D] + real
+                    f_new[:, gl, :] = bloco
+                    new_def = esp_def.copy()
+                    new_def[:, gl] = real
                 loss_b += (C[sel] * new_def).sum(axis=1) * disc[t]
                 defaults_por_ano[t] += float((n[sel] * new_def).sum())
                 frac[:, gcols, :] = f_new

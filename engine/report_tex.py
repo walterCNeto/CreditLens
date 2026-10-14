@@ -396,12 +396,13 @@ em que $K_n$ é o coeficiente de capital (fração da severidade), $R_n$ a corre
 em que $M\in[1,5]$ é o prazo efetivo, aplica-se só ao atacado e às instituições financeiras; no varejo, $\mathrm{{MA}}=1$. As PDs têm piso de $0{{,}}05\%$ ($0{{,}}10\%$ no rotativo). Categorias presentes nesta carteira: {tx(cats)}."""
                  + ("" if irb.get("segmentado") else r" A carteira não informa a coluna \texttt{segmento\_irb}: todas as exposições foram tratadas como atacado.")
                  + r""" O ajuste de granularidade segue Gordy e Lütkebohmert (2013), na formulação baseada no CreditRisk\textsuperscript{+} implementada por Bolder (2018)"""
-                 + (r", com o termo $c^2$ substituído por $C_g^2/n_g$ em cada grupo." if pooled else ".") + "\n")
+                 + (r", com o termo $c^2$ substituído por $C_g^2/n_g^{\mathrm{eff}}$ em cada grupo." if pooled else ".") + "\n")
     if mig is not None:
         T.append(r"""
 \subsection{Migração de ratings, ECL e capital multiperíodo}
-A matriz de transição anual $P$ fornece a estrutura a termo de PD pelas potências $P^t$; o ECL desconta as perdas marginais em 12 meses e no prazo de cada contrato (\emph{lifetime}), com estágios por deterioração de rating, conforme o IFRS 9 e a Resolução CMN 4.966. O capital multiperíodo evolui a carteira ano a ano pela matriz condicional ao fator sistemático --- generalização do deslocamento de crédito de um parâmetro de Belkin, Suchower e Forest (1998) ---, acumulando perdas descontadas.
-""")
+A matriz de transição anual $P$ fornece a estrutura a termo de PD pelas potências $P^t$; o ECL desconta as perdas marginais em 12 meses e no prazo de cada contrato (\emph{lifetime}), com estágios por deterioração de rating, conforme o IFRS 9 e a Resolução CMN 4.966. O capital multiperíodo evolui a carteira ano a ano pela matriz condicional ao fator sistemático --- generalização do deslocamento de crédito de um parâmetro de Belkin, Suchower e Forest (1998) ---, acumulando perdas descontadas."""
+            + (r" Na carteira agregada, cada grupo evolui como vetor de frações por rating; nos grupos fora do limite de carteira grande, os \emph{defaults} de cada ano são sorteados, $D_t\mid Z_t\sim\mathrm{Binomial}(A_{t-1},q_t)$, sobre o número inteiro de contratos equivalentes vivos $A_t$ (com $A_0=n^{\mathrm{eq}}$) e a taxa de \emph{default} condicional entre os vivos $q_t$, de modo que o risco idiossincrático intragrupo entra no capital multiperíodo; as migrações entre ratings não \emph{default} seguem as frações condicionais."
+               if pooled else "") + "\n")
 
     # ---------------- 4. resultados ----------------
     cols = [c for c in ["modelo", "EL", "UL", "VaR 99.00%", "ES 99.00%",
