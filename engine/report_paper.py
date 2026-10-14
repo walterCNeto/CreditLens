@@ -332,6 +332,15 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
                      "OK" if rel_agg["pd_cv_max_bucket"] <= 0.5
                      else "Atenção"])
 
+    # 5b. regime de carteira grande (motor pooled)
+    rg = results.get("regimes_pooled")
+    if pooled and rg:
+        rows.append(["Regime de carteira grande: idiossincrático descartado",
+                     f"máx. {br(rg['razao_max_lln'], 3, pct=True)} "
+                     f"({rg['carteira_grande']} grupo(s))",
+                     f"≤ {br(rg['tau'], 3, pct=True)} da variância sistemática",
+                     "OK" if rg["razao_max_lln"] <= rg["tau"] else "Atenção"])
+
     # 6. IRB / GA
     irb = results.get("irb") or {}
     if irb:
@@ -639,17 +648,23 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             D.y -= 0.006
             D.h2("3. Tratamento dos dados: representação híbrida")
             D.par("A base analítica (contrato a contrato) foi agregada em "
-                  "grandes exposições nominais (preservadas individualmente "
-                  "por materialidade) e grupos homogêneos rating × setor, "
-                  "com parâmetros ponderados pela severidade c = EAD × LGD "
-                  "— o que preserva a perda esperada exatamente. Condicional "
-                  "aos fatores sistemáticos, cada pool gera perdas em três "
-                  "regimes conforme o tamanho: Bernoulli (nomes "
-                  "individuais), Binomial(n, p condicional) para pools "
-                  "moderados e o limite de carteira grande de Vasicek [1] "
-                  "para pools massivos — a variância idiossincrática "
-                  "intra-pool é assim representada corretamente, e não "
-                  "eliminada [2, 7].")
+                  "grandes exposições nominais e grupos homogêneos rating × "
+                  "setor × categoria IRB, com parâmetros ponderados pela "
+                  "severidade c = EAD × LGD — o que preserva a perda "
+                  "esperada exatamente. A técnica é legítima porque, nos "
+                  "modelos de fator, os defaults são independentes dado o "
+                  "fator sistemático: num grupo homogêneo, a contagem de "
+                  "defaults é condicionalmente Binomial e resume o grupo "
+                  "sem perda de informação [11]. Com severidades desiguais, "
+                  "cada grupo é representado pelo seu número efetivo de "
+                  "contratos, n_eff = C²/Σc², que preserva a média e a "
+                  "variância idiossincrática condicional. O limite de "
+                  "carteira grande de Vasicek [1, 2], que descarta essa "
+                  "variância, só é usado quando ela é inferior a 1% da "
+                  "sistemática, isto é, (1 − ρ_D)/(n_eff·ρ_D) < 1%; os "
+                  "demais grupos são simulados pela Binomial condicional. "
+                  "O termo descartado é o que o ajuste de granularidade "
+                  "devolve ao capital [6, 7].")
 
         # ================= parâmetros =================
         D.nova("Parâmetros")

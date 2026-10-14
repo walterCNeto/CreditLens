@@ -295,14 +295,17 @@ def run_pooled_analysis(
     Estrutura de resultados compatível com run_full_analysis para reuso
     das abas do aplicativo; modelos executados no motor pooled (ramos
     binomial condicional / large pool), IRB por bucket e ajuste de
-    granularidade com o termo c^2 corrigido para C_g^2/n_g."""
+    granularidade com o termo c^2 corrigido para C_g^2/n_eff,
+    n_eff = C_g^2 / soma c_i^2."""
     from .pooled import simulate_pooled
     from .multifactor import calibrate_rho
     import irbModel as irb
 
     df = port.df
-    n = df["n_contratos"].to_numpy(int) if "n_contratos" in df.columns \
-        else np.ones(port.N, int)
+    # número efetivo de contratos (Herfindahl interno): C_g^2 / soma c_i^2
+    n = (df["n_efetivo"].to_numpy(float) if "n_efetivo" in df.columns
+         else df["n_contratos"].to_numpy(float) if "n_contratos" in df.columns
+         else np.ones(port.N))
     C, p, tenor = port.c, port.p, port.tenor
     summary = port.summary()
     pbar = summary["pd_media_ponderada"]
@@ -319,6 +322,7 @@ def run_pooled_analysis(
         port, M=M, alphas=alphas, rho=rho1,
         rho_g=rho_g if use_mf else None, rho_s=rho_s if use_mf else None,
         nu=nu, beta_ab=(a_beta, b_beta), crp=(crp_w, crp_v),
+        rho_d_alvo=rho_target,
         contrib_alpha=contrib_alpha, seed=seed, progress=progress)
 
     medidas = res_sim["medidas"]
@@ -379,6 +383,7 @@ def run_pooled_analysis(
             "segmentado": irb_b["segmentado"],
         },
         "contrib_bucket": res_sim["contribuicoes_bucket"],
+        "regimes_pooled": res_sim["regimes"],
         "contrib_alpha": res_sim["contrib_alpha"],
         "es_total_contrib": res_sim["es_total"],
         "modelo_contrib": res_sim["modelo_contrib"],

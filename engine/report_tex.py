@@ -272,14 +272,35 @@ Cada linha da carteira de modelagem tem severidade $c_n=\mathrm{EAD}_n\times\mat
         if rel_agg:
             dif_el = rel_agg["el_diferenca_pct"]
             dif_txt = "nula" if dif_el == 0 else tx(f"{dif_el:.3e}")
-            txt_rel = (rf" Nesta execução, {nb(rel_agg['linhas_analitica'], 0)} contratos foram reduzidos a {nb(rel_agg['linhas_agregada'], 0)} linhas ({nb(rel_agg['n_grandes'], 0)} grandes exposições e {nb(rel_agg['n_buckets'], 0)} grupos), com diferença de EL {dif_txt} e coeficiente de variação de PD intra-grupo máximo de {nb(rel_agg['pd_cv_max_bucket'])}.")
+            rg = results.get("regimes_pooled") or {}
+            txt_rel = (rf"""
+
+\paragraph{{Nesta execução.}} {nb(rel_agg['linhas_analitica'], 0)} contratos foram reduzidos a {nb(rel_agg['linhas_agregada'], 0)} linhas ({nb(rel_agg['n_grandes'], 0)} grandes exposições e {nb(rel_agg['n_buckets'], 0)} grupos), com diferença de EL {dif_txt} e CV de PD intra-grupo máximo de {nb(rel_agg['pd_cv_max_bucket'])}. O número efetivo mediano dos grupos é {nb(rel_agg.get('n_efetivo_mediano', 0))}, {nb(rel_agg.get('razao_n_efetivo_mediana', 1))} vez o número de contratos."""
+                       + (rf""" Na simulação, {rg.get('nomes', 0)} linhas seguiram o regime de Bernoulli, {rg.get('binomial', 0)} o binomial e {rg.get('carteira_grande', 0)} o de carteira grande (limiar $n^{{\mathrm{{eff}}}}>{nm(rg.get('limiar_n_eff', 0), 0)}$ para $\rho_D={nm(prm.get('rho_alvo'), 3, pct=True)}$)."""
+                          if rg else ""))
         T.append(r"""
-\subsection{Tratamento dos dados: representação híbrida}
-A base analítica, contrato a contrato, foi agregada em grandes exposições nominais --- preservadas individualmente por materialidade --- e grupos homogêneos (rating $\times$ setor $\times$ categoria IRB), com parâmetros ponderados pela severidade de modo a preservar a perda esperada exatamente:
+\subsection{Tratamento dos dados: agregação e motor de grupos}
+A base analítica, contrato a contrato, foi convertida numa carteira compacta: as maiores exposições passam individualmente, preservando a informação de concentração de nomes, e o restante é agregado em grupos homogêneos (rating $\times$ setor $\times$ categoria IRB). A técnica apoia-se em quatro resultados.
+
+\paragraph{Independência condicional.} Nos modelos de fator, os defaults são independentes dado o fator sistemático $Z$. Num grupo $g$ de $n_g$ contratos com a mesma PD e a mesma severidade, a perda depende apenas de quantos contratos entram em default, e essa contagem é exatamente
 \begin{equation}
-C_g=\sum_{i\in g}c_i,\qquad p_g=\frac{\sum_{i\in g}p_i\,c_i}{C_g},\qquad n_g=\#\{i\in g\},
+N_g\mid Z\;\sim\;\mathrm{Binomial}\bigl(n_g,\,p_g(Z)\bigr),
 \end{equation}
-em que $C_g$ é a severidade total do grupo $g$, $p_g$ a sua PD ponderada e $n_g$ o número de contratos. Condicional aos fatores sistemáticos, cada grupo gera perdas em três regimes conforme o tamanho --- Bernoulli para nomes individuais, $\mathrm{Binomial}(n_g,p_g(\cdot))$ para grupos moderados e o limite de carteira grande de Vasicek, $L_g=C_g\,p_g(\cdot)$, para grupos massivos --- de modo que a variância idiossincrática intra-grupo é representada, e não eliminada (Vasicek, 2002; Gordy, 2003).""" + txt_rel + "\n")
+em que $p_g(Z)$ é a PD do grupo condicional ao fator (a expressão de cada modelo). A agregação reduz a simulação de $M\times N$ para $M\times G$ sorteios sem aproximação --- $N$ contratos, $G$ grupos --- e é o que torna viável a carteira de milhões de linhas (Frey e McNeil, 2003).
+
+\paragraph{Preservação da perda esperada e número efetivo.} Os parâmetros do grupo são ponderados pela severidade,
+\begin{equation}
+C_g=\sum_{i\in g}c_i,\qquad p_g=\frac{\sum_{i\in g}p_i\,c_i}{C_g},\qquad n_g^{\mathrm{eff}}=\frac{C_g^2}{\sum_{i\in g}c_i^2},
+\end{equation}
+em que $C_g$ é a severidade total, $p_g$ a PD ponderada --- com a qual $p_g C_g=\sum_i p_i c_i$ e a EL é preservada exatamente --- e $n_g^{\mathrm{eff}}$ o número efetivo de contratos, um índice de Herfindahl interno ao grupo. Com severidades desiguais, a variância idiossincrática condicional do grupo é $\sum_i c_i^2\,p_g(Z)(1-p_g(Z))=C_g^2\,p_g(Z)(1-p_g(Z))/n_g^{\mathrm{eff}}$: simular $\mathrm{Binomial}(n_g^{\mathrm{eff}},p_g(Z))$ com severidade $C_g/n_g^{\mathrm{eff}}$ por default preserva a média e a variância condicionais, enquanto usar o número bruto de contratos superestimaria a granularidade. Para a parte idiossincrática, tratar PDs heterogêneas como homogêneas é conservador: a variância de uma soma de Bernoullis heterogêneas nunca excede a da Binomial com a PD média (desigualdade de Hoeffding).
+
+\paragraph{Limite de carteira grande e seu critério.} Pela lei dos grandes números condicional, a fração em default converge para $p_g(Z)$ e a perda do grupo para $L_g=C_g\,p_g(Z)$ --- o limite de Vasicek (2002) que fundamenta o ASRF e o IRB (Gordy, 2003). O limite descarta a variância idiossincrática; a razão entre ela e a sistemática é
+\begin{equation}
+r_g=\frac{\E\bigl[p_g(Z)(1-p_g(Z))\bigr]/n_g^{\mathrm{eff}}}{\mathrm{Var}\bigl[p_g(Z)\bigr]}=\frac{1-\rho_D}{n_g^{\mathrm{eff}}\,\rho_D},
+\end{equation}
+em que $\rho_D$ é a correlação de default, usada pela identidade $\mathrm{Var}[p_g(Z)]=\rho_D\,p_g(1-p_g)$. O motor aplica o limite apenas quando $r_g<1\%$; os demais grupos são simulados pela Binomial condicional, e as grandes exposições, por Bernoulli. O termo descartado é justamente o que o ajuste de granularidade devolve ao capital, com $C_g^2/n_g^{\mathrm{eff}}$ no lugar de $c_n^2$ (Martin e Wilde, 2002; Gordy e Lütkebohmert, 2013).
+
+\paragraph{Heterogeneidade e o cuidado de Jensen.} A média ponderada preserva a EL, que é linear; as funções de capital são não lineares em PD, e um grupo com PDs muito dispersas introduz viés. O coeficiente de variação de PD dentro de cada grupo é o diagnóstico: valores acima de $0{,}5$ indicam que a formação dos grupos deve ser refinada.""" + txt_rel + "\n")
 
     # ---------------- 2. parâmetros ----------------
     prows = _parametros(results, prm, pooled, tem, mig, extra)

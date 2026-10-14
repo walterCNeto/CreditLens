@@ -6,9 +6,16 @@ C_g e PD p_g. Condicional ao(s) fator(es) sistemático(s), os defaults
 dentro do bucket são independentes com probabilidade condicional p_g(.),
 e a perda do bucket é gerada em três regimes:
 
-    n_g = 1                : Bernoulli(p_cond) x C_g        (grande exposição)
-    1 < n_g <= POOL_MIN    : Binomial(n_g, p_cond) x C_g/n_g
-    n_g > POOL_MIN         : C_g x p_cond                   (large pool / LLN)
+    n_eq = 1          : Bernoulli(p_cond) x C_g            (grande exposição)
+    pool binomial     : Binomial(n_eq, p_cond) x C_g/n_eq
+    carteira grande   : C_g x p_cond                       (LLN de Vasicek)
+
+n_eq = round(n_eff) é o número de contratos equivalentes: o pool homogêneo
+com a mesma EL e a mesma variância idiossincrática condicional do grupo
+(n_eff = C_g^2 / soma c_i^2). O limite de carteira grande descarta a
+variância idiossincrática; ele só é usado quando a razão entre essa
+variância e a sistemática, (1 - rho_D) / (n_eff rho_D), fica abaixo de
+TAU_LLN (1%) — caso contrário, o grupo é simulado pela Binomial.
 
 Probabilidades condicionais (limiar de ativos):
 
@@ -28,7 +35,7 @@ from scipy.stats import norm, t as myT
 
 import cmUtilities as util
 
-POOL_MIN = 50          # acima disto usa a aproximação de carteira grande
+TAU_LLN = 0.01         # razão idiossincrática/sistemática máxima para o LLN
 
 
 def _measures(loss_sorted, M, alphas):
@@ -36,11 +43,20 @@ def _measures(loss_sorted, M, alphas):
     return float(el), float(ul), np.atleast_1d(var), np.atleast_1d(es)
 
 
-def _bucket_losses(p_cond, C, n, cbar, rng):
+def regimes(n_eff, rho_d, tau=TAU_LLN):
+    """Classifica os grupos: (n_eq, cbar_fator, mascara_LLN, razao)."""
+    n_eff = np.asarray(n_eff, dtype=float)
+    razao = (1.0 - rho_d) / (np.maximum(n_eff, 1e-12) * rho_d)
+    n_eq = np.maximum(np.rint(n_eff).astype(np.int64), 1)
+    lln = (razao < tau) & (n_eq > 1)
+    return n_eq, lln, razao
+
+
+def _bucket_losses(p_cond, C, n, cbar, rng, lln=None):
     """Perda por bucket dado p condicional (M x G), nos três regimes."""
     M = p_cond.shape[0]
     loss = np.empty(p_cond.shape, dtype=np.float32)
-    pool = n > POOL_MIN
+    pool = lln if lln is not None else np.zeros(len(n), bool)
     small = ~pool & (n > 1)
     single = n == 1
     if pool.any():
@@ -56,7 +72,7 @@ def _bucket_losses(p_cond, C, n, cbar, rng):
 
 def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]),
                     rho=0.20, rho_g=None, rho_s=None, nu=10.0,
-                    beta_ab=None, crp=None,
+                    beta_ab=None, crp=None, rho_d_alvo=0.05,
                     contrib_alpha=0.99, contrib_S=10, seed=42,
                     progress=None):
     """Roda a suíte pooled: binomial independente; mixture models quando
@@ -69,10 +85,21 @@ def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]
     por bucket."""
     rng = np.random.default_rng(seed)
     df = port.df
-    n = df["n_contratos"].to_numpy(int) if "n_contratos" in df.columns \
+    n_cont = df["n_contratos"].to_numpy(int) if "n_contratos" in df.columns \
         else np.ones(port.N, int)
+    n_eff = (df["n_efetivo"].to_numpy(float) if "n_efetivo" in df.columns
+             else n_cont.astype(float))
+    n, lln, razao = regimes(n_eff, rho_d_alvo)   # n = contratos equivalentes
     C = port.c
     cbar = C / n
+    info_regimes = {
+        "nomes": int((n == 1).sum()),
+        "binomial": int(((n > 1) & ~lln).sum()),
+        "carteira_grande": int(lln.sum()),
+        "razao_max_lln": float(razao[lln].max()) if lln.any() else 0.0,
+        "limiar_n_eff": float((1.0 - rho_d_alvo) / (TAU_LLN * rho_d_alvo)),
+        "tau": TAU_LLN,
+    }
     p = port.p
     G_ = port.N
     pbar = float(np.dot(C / C.sum(), p))
@@ -114,7 +141,7 @@ def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]
             Z = rng.beta(a_b, b_b, (m, 1)).astype(np.float32)
             p_cond = np.broadcast_to(Z, (m, G_))
             loss[i0:i0 + m] = _bucket_losses(p_cond, C, n, cbar,
-                                             rng).sum(axis=1)
+                                             rng, lln).sum(axis=1)
         el, ul, var, es = _measures(np.sort(loss), M, alphas)
         rows.append(("Beta-binomial (mixture, pooled)", el, ul, var, es))
         dists["Beta-binomial"] = np.sort(loss)
@@ -126,8 +153,8 @@ def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]
         for i0 in range(0, M, _B2):
             m = min(_B2, M - i0)
             S = rng.gamma(v_c, 1.0 / v_c, (m, 1))
-            lam = (n * p) * (1.0 - w_c + w_c * S)
-            loss[i0:i0 + m] = (rng.poisson(lam) * cbar).sum(axis=1)
+            lam = (n_eff * p) * (1.0 - w_c + w_c * S)
+            loss[i0:i0 + m] = (rng.poisson(lam) * (C / n_eff)).sum(axis=1)
         el, ul, var, es = _measures(np.sort(loss), M, alphas)
         rows.append(("CreditRisk+ (Poisson-gama 1F, pooled)",
                      el, ul, var, es))
@@ -157,7 +184,7 @@ def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]
             else:
                 K = K_g[None, :]
             p_cond = norm.cdf((K - syst) / denom).astype(np.float32)
-            lb = _bucket_losses(p_cond, C, n, cbar, rng)
+            lb = _bucket_losses(p_cond, C, n, cbar, rng, lln)
             loss[i0:i0 + m] = lb.sum(axis=1)
             if keep_by_bucket:
                 loss_b_full[i0:i0 + m] = lb
@@ -191,7 +218,7 @@ def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]
         es_total = float(loss[tail].mean())
         contrib = df[["id_contraparte", "setor", "rating", "exposicao",
                       "pd"]].copy()
-        contrib["n_contratos"] = n
+        contrib["n_contratos"] = n_cont
         contrib["contrib_ES"] = contrib_es
         contrib["contrib_ES_pct"] = contrib_es / es_total
         contrib = contrib.sort_values("contrib_ES", ascending=False)
@@ -214,4 +241,5 @@ def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]
         "es_total": es_total,
         "modelo_contrib": nome_c,
         "pbar": pbar,
+        "regimes": info_regimes,
     }

@@ -19,6 +19,8 @@ compacta em duas partes:
        lgd_g = C_g / soma(EAD_i)
        prazo_g = ponderado por severidade
        n_g   = número de contratos do bucket
+       n_eff = C_g^2 / soma(c_i^2)   (número efetivo: Herfindahl interno;
+               igual a n_g só se as severidades forem iguais)
 
    Com esses pesos, EL_g = pd_g x C_g = soma(pd_i x EAD_i x LGD_i): a EL
    da carteira agregada bate ao centavo com a analítica (teste de sanidade
@@ -96,6 +98,8 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
                                                    weights=x["severidade"]),
                               include_groups=False),
         "n_contratos": g.size(),
+        # soma dos quadrados das severidades: n efetivo = C_g^2 / soma(c_i^2)
+        "sev2": g["severidade"].apply(lambda x: float(np.square(x).sum())),
         **({"receita_bruta_mi": g.apply(
             lambda x: (np.average(x["receita_bruta_mi"].fillna(300.0),
                                   weights=x["severidade"])),
@@ -106,6 +110,7 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
                          include_groups=False),
     }).reset_index()
     agg["lgd"] = agg["severidade"] / agg["exposicao"]
+    agg["n_efetivo"] = np.square(agg["severidade"]) / agg["sev2"]
     agg["rating"] = agg[gh_col].astype(str)
     agg["id_contraparte"] = ("GH_" + agg[gh_col].astype(str) + "_"
                              + agg["setor"].astype(str)
@@ -115,11 +120,12 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
                    + agg["setor"].astype(str))
 
     grandes["n_contratos"] = 1
+    grandes["n_efetivo"] = 1.0
     grandes["pd_cv"] = 0.0
     if "nome" not in grandes.columns:
         grandes["nome"] = grandes["id_contraparte"]
     cols = ["id_contraparte", "nome", "rating", "setor", "exposicao",
-            "pd", "lgd", "prazo_anos", "n_contratos", "pd_cv"]
+            "pd", "lgd", "prazo_anos", "n_contratos", "n_efetivo", "pd_cv"]
     if "rating_origem" in grandes.columns:
         cols.append("rating_origem")
         agg["rating_origem"] = agg["rating"]
@@ -134,6 +140,11 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
         "linhas_agregada": int(len(out)),
         "n_grandes": int(len(grandes)),
         "n_buckets": int(len(agg)),
+        "n_efetivo_mediano": float(agg["n_efetivo"].median())
+        if len(agg) else 0.0,
+        "razao_n_efetivo_mediana": float((agg["n_efetivo"]
+                                          / agg["n_contratos"]).median())
+        if len(agg) else 1.0,
         "exposicao_grandes_pct": float(grandes["exposicao"].sum()
                                        / df["exposicao"].sum()),
         "el_analitica": el_analitica,

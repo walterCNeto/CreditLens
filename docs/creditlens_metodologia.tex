@@ -31,7 +31,7 @@
 \large Análise Quantitativa de Carteiras de Crédito:\\
 Documentação Metodológica e Estudo de Caso}
 \author{Walter C.~Neto\\[1mm]\small Baseado em D.~J.~Bolder, \emph{Credit-Risk Modelling} (Springer, 2018)}
-\date{Outubro de 2026 --- versão 0.7}
+\date{Outubro de 2026 --- versão 0.8}
 
 \begin{document}
 \maketitle
@@ -284,26 +284,45 @@ n_g=\#\{i\in g\},
 \end{equation}
 em que $C_g$ é a severidade total do bucket $g$, $p_g$ a sua PD ponderada por severidade e $n_g$ o número de contratos --- atributo carregado pela coluna \texttt{n\_contratos}. Com esses pesos, $\mathrm{EL}_g=p_g\,C_g=\sum_{i\in g}p_i\,\mathrm{EAD}_i\,\mathrm{LGD}_i$, e a EL da carteira agregada coincide ao centavo com a analítica (teste de sanidade reportado na agregação).
 
-\paragraph{O motor \emph{pooled}.} O ponto crítico é o bucket \emph{não} virar ``uma contraparte gigante'' --- tratá-lo assim inflaria o risco idiossincrático de forma espúria. Condicional ao(s) fator(es) sistemático(s), os defaults dentro do bucket são independentes com probabilidade condicional $p_g(\cdot)$ (as mesmas expressões de limiar das Seções anteriores, com a parte sistemática de um fator ou de dois níveis), e a perda do bucket é gerada em três regimes:
+\paragraph{Por que a agregação é legítima.} O ponto crítico é o grupo \emph{não} virar ``uma contraparte gigante'' --- tratá-lo assim inflaria o risco idiossincrático de forma espúria. Nos modelos de fator, os defaults são independentes dado o fator sistemático $Z$; num grupo de $n_g$ contratos com a mesma PD e a mesma severidade, a perda depende apenas de \emph{quantos} contratos entram em default, e essa contagem é exatamente
+\begin{equation}
+N_g\mid Z\;\sim\;\mathrm{Binomial}\bigl(n_g,\,p_g(Z)\bigr),
+\label{eq:binom-cond}
+\end{equation}
+em que $p_g(Z)$ é a probabilidade de default do grupo condicional ao fator --- as mesmas expressões de limiar ou de mistura das Seções anteriores, com a parte sistemática de um fator ou de dois níveis. A contagem é uma estatística suficiente para a perda do grupo: a agregação reduz a simulação de $M\times N$ para $M\times G$ sorteios sem aproximação, em que $N$ é o número de contratos e $G$ o de grupos.
+
+\paragraph{Número efetivo de contratos.} Com severidades desiguais, a variância idiossincrática condicional do grupo é $\sum_{i\in g}c_i^2\,p_g(Z)\bigl(1-p_g(Z)\bigr)$, e não $C_g^2\,p_g(Z)(1-p_g(Z))/n_g$. O CreditLens representa cada grupo pelo seu número efetivo de contratos,
+\begin{equation}
+n_g^{\mathrm{eff}}=\frac{C_g^2}{\sum_{i\in g}c_i^2},
+\label{eq:neff}
+\end{equation}
+em que $C_g=\sum_{i\in g}c_i$ é a severidade total --- um índice de Herfindahl interno ao grupo, igual a $n_g$ apenas quando as severidades são iguais. Simular $\mathrm{Binomial}(n_g^{\mathrm{eff}},p_g(Z))$ com severidade $C_g/n_g^{\mathrm{eff}}$ por default preserva a média e a variância condicionais do grupo; usar $n_g$ superestimaria a granularidade. Num grupo de 400 contratos com severidades log-normais, a perda simulada contrato a contrato tem desvio-padrão de $30{,}974$; o grupo equivalente com $n^{\mathrm{eff}}=102{,}330$ reproduz $31{,}026$, enquanto o número bruto de contratos dá $28{,}927$. Para a parte idiossincrática, tratar PDs heterogêneas como homogêneas é conservador: a variância de uma soma de Bernoullis heterogêneas nunca excede a da Binomial com a PD média (desigualdade de Hoeffding).
+
+\paragraph{Limite de carteira grande e seu critério.} Pela lei dos grandes números condicional, a fração em default converge para $p_g(Z)$ e a perda do grupo para $C_g\,p_g(Z)$ --- o limite de Vasicek que fundamenta o ASRF e o IRB. O limite descarta a variância idiossincrática, cuja razão para a sistemática é
+\begin{equation}
+r_g=\frac{\E\bigl[p_g(Z)(1-p_g(Z))\bigr]/n_g^{\mathrm{eff}}}{\mathrm{Var}\bigl[p_g(Z)\bigr]}=\frac{1-\rho_D}{n_g^{\mathrm{eff}}\,\rho_D},
+\label{eq:razao-lln}
+\end{equation}
+em que $\rho_D$ é a correlação de default, pela identidade $\mathrm{Var}[p_g(Z)]=\rho_D\,p_g(1-p_g)$. A razão independe da PD e cai devagar: com $\rho_D=5\%$, ela vale $38\%$ para $n^{\mathrm{eff}}=50$, $7{,}6\%$ para $250$ e $1{,}9\%$ para $1\,000$. O motor aplica o limite apenas quando $r_g<1\%$ --- isto é, $n^{\mathrm{eff}}>(1-\rho_D)/(0{,}01\,\rho_D)$, ou $1\,900$ contratos equivalentes com $\rho_D=5\%$ ---, e a perda de cada linha segue três regimes:
 \begin{equation}
 L_g \;=\;
 \begin{cases}
-C_g\cdot\Ind\{\text{default}\}, & n_g=1 \quad\text{(grande exposição)},\\[2pt]
-\dfrac{C_g}{n_g}\cdot\mathrm{Binomial}\bigl(n_g,\,p_g(\cdot)\bigr), & 1<n_g\le 50,\\[6pt]
-C_g\cdot p_g(\cdot), & n_g>50 \quad\text{(\emph{large pool})},
+C_g\cdot\Ind\{\text{default}\}, & n_g^{\mathrm{eq}}=1 \quad\text{(grande exposição)},\\[2pt]
+\dfrac{C_g}{n_g^{\mathrm{eq}}}\cdot\mathrm{Binomial}\bigl(n_g^{\mathrm{eq}},\,p_g(Z)\bigr), & n_g^{\mathrm{eq}}>1,\ r_g\ge1\%,\\[6pt]
+C_g\cdot p_g(Z), & r_g<1\% \quad\text{(carteira grande)},
 \end{cases}
 \label{eq:pooled}
 \end{equation}
-em que o terceiro regime é a aproximação de carteira grande de Vasicek: pela lei dos grandes números, a fração em default do pool converge para a probabilidade condicional, e o risco idiossincrático interno desaparece. A dimensão efetiva da simulação passa a ser o número de linhas agregadas --- não de contratos --- e uma base de milhões de linhas roda em segundos. O ajuste de granularidade acompanha a lógica: no somatório de $c^2$ da fórmula de Gordy--Lütkebohmert, o bucket homogêneo contribui com $C_g^2/n_g$, de modo que pools grandes têm GA desprezível --- como devem, já que sua granularidade interna é quase perfeita --- e o ajuste passa a medir essencialmente as grandes exposições nominais.
+em que $n_g^{\mathrm{eq}}$ é $n_g^{\mathrm{eff}}$ arredondado ao inteiro mais próximo. Até a versão 0.7, o limite era aplicado a todo grupo com mais de $50$ contratos brutos, o que descartava até $38\%$ de variância idiossincrática em grupos pequenos. O ajuste de granularidade acompanha a lógica: no somatório de $c^2$ da fórmula de Gordy--Lütkebohmert, cada grupo contribui com $C_g^2/n_g^{\mathrm{eff}}$ --- o termo que o limite de carteira grande descarta e que o ajuste devolve ao capital.
 
 \paragraph{\emph{Mixture models} no motor \emph{pooled}.} Os \emph{mixture models} entram na representação agregada com a mesma lógica: o que muda é apenas a probabilidade condicional que alimenta cada bucket. Na beta-binomial, o fator comum é a própria probabilidade de default, $Z\sim\mathrm{Beta}(a,b)$, e a perda do bucket segue os três regimes de \eqref{eq:pooled} com $p_g(\cdot)=Z$, em que $a$ e $b$ são os parâmetros calibrados por momentos ao mesmo par $(\bar p,\rho_D^{\mathrm{alvo}})$ do modelo granular. No CreditRisk\textsuperscript{+}, a agregação é \emph{exata}, sem aproximação de regime: condicional ao fator gama, as contagens de Poisson dos contratos do bucket são independentes, e a soma de Poissons independentes é Poisson,
 \begin{equation}
-H_g \,\big|\, S \;\sim\; \mathrm{Poisson}\bigl(n_g\,p_g\,(1-w+wS)\bigr),
+H_g \,\big|\, S \;\sim\; \mathrm{Poisson}\bigl(n_g^{\mathrm{eff}}\,p_g\,(1-w+wS)\bigr),
 \qquad
-L_g=\frac{C_g}{n_g}\,H_g,
+L_g=\frac{C_g}{n_g^{\mathrm{eff}}}\,H_g,
 \label{eq:crplus-pooled}
 \end{equation}
-em que $H_g$ é a contagem de defaults do bucket $g$, $S\sim\Gamma(v,1/v)$ o fator sistemático, $w$ a carga do fator e $C_g/n_g$ a severidade média por contrato. Uma diferença de convenção em relação ao fluxo granular merece registro: lá, o default de cada contraparte é declarado quando $H_n\ge1$, o que dá $\Prob(\text{default})=1-e^{-p_n}<p_n$ e explica a EL ligeiramente inferior do CreditRisk\textsuperscript{+} no Estudo de caso~1; aqui, a perda é proporcional à contagem, $\E[L_g]=p_g\,C_g$ vale exatamente e a EL agregada é preservada. Para PDs pequenas as duas convenções são numericamente próximas.
+em que $H_g$ é a contagem de defaults do bucket $g$, $S\sim\Gamma(v,1/v)$ o fator sistemático, $w$ a carga do fator e $C_g/n_g^{\mathrm{eff}}$ a severidade por contrato equivalente. Uma diferença de convenção em relação ao fluxo granular merece registro: lá, o default de cada contraparte é declarado quando $H_n\ge1$, o que dá $\Prob(\text{default})=1-e^{-p_n}<p_n$ e explica a EL ligeiramente inferior do CreditRisk\textsuperscript{+} no Estudo de caso~1; aqui, a perda é proporcional à contagem, $\E[L_g]=p_g\,C_g$ vale exatamente e a EL agregada é preservada. Para PDs pequenas as duas convenções são numericamente próximas.
 
 \paragraph{O cuidado de Jensen.} A PD ponderada preserva a EL, que é linear; as funções de capital, porém, são não lineares em PD, e um GH que misture PDs muito dispersas introduz viés (desigualdade de Jensen). Por isso o relatório de agregação reporta o coeficiente de variação de PD dentro de cada bucket: valores altos ($\mathrm{CV}>0{,}5$) sinalizam que a formação dos GHs deve ser refinada --- o mesmo requisito de homogeneidade que a CMN~4.966 impõe aos grupos homogêneos de provisão.
 
@@ -566,9 +585,9 @@ Na simulação multiperíodo de $5$ anos ($M=100\,000$, blocos de $10\,000$, est
 \section{Estudo de caso 2: alta granularidade (300 mil contratos)}
 \label{sec:caso2}
 
-O segundo estudo de caso reproduz, ponta a ponta, uma execução no aplicativo sobre a base analítica de demonstração de $300\,000$ contratos --- varejo pulverizado combinado a $300$ operações \emph{corporate} de porte duas ordens de grandeza maior, concentradas em poucos setores --- exercitando a camada de agregação (Seção~\ref{sec:agregacao}), o motor \emph{pooled} com o portfólio completo de modelos, o IRB segmentado por categoria (Seção~\ref{sec:irb}), o módulo de migração em modo agregado e a bateria de diagnósticos da Seção~\ref{sec:paper}. Parâmetros: $M=100\,000$, semente 42, alvos de correlação de default de $5\%$ (um fator), $8\%$ intra-setor e $3\%$ inter-setor, $\nu=10$, $(w,v)=(0{,}35;\,1{,}2)$ no CreditRisk\textsuperscript{+}, matriz de transição de exemplo e desconto de $10\%$~a.a.
+O segundo estudo de caso reproduz, ponta a ponta, uma execução no aplicativo sobre a base analítica de demonstração de $300\,000$ contratos --- varejo pulverizado combinado a $300$ operações \emph{corporate} de porte duas ordens de grandeza maior, concentradas em poucos setores --- exercitando a camada de agregação (Seção~\ref{sec:agregacao}), o motor \emph{pooled} com o portfólio completo de modelos, o IRB segmentado por categoria (Seção~\ref{sec:irb}), o IRB segmentado por categoria (Seção~\ref{sec:irb}), o módulo de migração em modo agregado e a bateria de diagnósticos da Seção~\ref{sec:paper}. Parâmetros: $M=100\,000$, semente 42, alvos de correlação de default de $5\%$ (um fator), $8\%$ intra-setor e $3\%$ inter-setor, $\nu=10$, $(w,v)=(0{,}35;\,1{,}2)$ no CreditRisk\textsuperscript{+}, matriz de transição de exemplo e desconto de $10\%$~a.a.
 
-Nota de versão: a partir da versão 0.7, o gerador da base de demonstração usa um gerador aleatório local com semente fixa, de modo que cada geração reproduz exatamente a mesma base --- e esta coincide com o arquivo de teste distribuído. Na versão 0.6, o gerador era global e avançava a cada chamada, e a base descrita neste caso não era reprodutível; todos os números abaixo foram regenerados sobre a base determinística, que passa a trazer também a categoria IRB de cada contrato: o varejo pulverizado repartido entre demais varejo ($55\%$), rotativo qualificado ($30\%$) e residencial ($15\%$), e as operações \emph{corporate} entre atacado ($70\%$) e SME ($30\%$, com receita bruta entre R\$~15 e 300 milhões). A categoria é sorteada com gerador próprio, sem alterar nenhum outro campo da base.
+Nota de versão: na versão 0.8, o motor \emph{pooled} passou a representar cada grupo pelo seu número efetivo de contratos e a aplicar o limite de carteira grande apenas pelo critério de razão de variâncias (Seção~\ref{sec:agregacao}); os números deste caso foram regenerados com o motor revisado. A partir da versão 0.7, o gerador da base de demonstração usa um gerador aleatório local com semente fixa, de modo que cada geração reproduz exatamente a mesma base --- e esta coincide com o arquivo de teste distribuído. Na versão 0.6, o gerador era global e avançava a cada chamada, e a base descrita neste caso não era reprodutível; todos os números abaixo foram regenerados sobre a base determinística, que passa a trazer também a categoria IRB de cada contrato: o varejo pulverizado repartido entre demais varejo ($55\%$), rotativo qualificado ($30\%$) e residencial ($15\%$), e as operações \emph{corporate} entre atacado ($70\%$) e SME ($30\%$, com receita bruta entre R\$~15 e 300 milhões). A categoria é sorteada com gerador próprio, sem alterar nenhum outro campo da base.
 
 \subsection{Fluxo de uso}
 
@@ -581,7 +600,7 @@ salva também a \texttt{carteira\_agregada.csv}, que pode ser carregada no aplic
 
 \subsection{Agregação}
 
-A base foi reduzida a \textbf{440 linhas} --- $200$ grandes exposições e $240$ buckets GH$\times$setor$\times$categoria IRB --- em segundos, com \textbf{perda esperada de $1\,180{,}797$ preservada exatamente} (diferença nula entre a base analítica e a agregada), exposição líquida total de $44\,959{,}348$, $9{,}671\%$ da exposição nas grandes e CV de PD intra-bucket máximo de $0{,}463$, dentro do padrão de homogeneidade. A calibração produziu $\rho=22{,}971\%$ de correlação de ativos no modelo de um fator, $(\rho_S,\rho_G)=(31{,}821\%,\,15{,}612\%)$ no multifatorial e $(a,b)=(0{,}499;\,18{,}501)$ na beta-binomial, para $\bar p=2{,}626\%$.
+A base foi reduzida a \textbf{440 linhas} --- $200$ grandes exposições e $240$ buckets GH$\times$setor$\times$categoria IRB --- em segundos, com \textbf{perda esperada de $1\,180{,}797$ preservada exatamente} (diferença nula entre a base analítica e a agregada), exposição líquida total de $44\,959{,}348$, $9{,}671\%$ da exposição nas grandes e CV de PD intra-bucket máximo de $0{,}463$, dentro do padrão de homogeneidade. O número efetivo mediano dos grupos é $189{,}331$ --- $0{,}375$ vez o número de contratos, efeito da dispersão das severidades dentro de cada grupo ---, e o critério de regime da Seção~\ref{sec:agregacao} enviou $208$ grupos à Binomial condicional e apenas $9$ ao limite de carteira grande (limiar $n^{\mathrm{eff}}>1\,900$ para $\rho_D=5\%$), além de $223$ linhas no regime de Bernoulli. A calibração produziu $\rho=22{,}971\%$ de correlação de ativos no modelo de um fator, $(\rho_S,\rho_G)=(31{,}821\%,\,15{,}612\%)$ no multifatorial e $(a,b)=(0{,}499;\,18{,}501)$ na beta-binomial, para $\bar p=2{,}626\%$.
 
 \subsection{Capital: o portfólio de modelos no motor \emph{pooled}}
 
@@ -594,14 +613,14 @@ A base foi reduzida a \textbf{440 linhas} --- $200$ grandes exposições e $240$
 \toprule
 Modelo & EL & UL & VaR$_{99\%}$ & VaR$_{99,9\%}$ & ES$_{99,9\%}$ \\
 \midrule
-Binomial independente & 1\,180{,}784 & 65{,}892 & 1\,382{,}230 & 1\,471{,}283 \;(3{,}272\%) & 1\,511{,}541 \\
-CreditRisk\textsuperscript{+} (1 fator) & 1\,180{,}237 & 382{,}789 & 2\,511{,}750 & 3\,323{,}232 \;(7{,}392\%) & 3\,661{,}429 \\
-Beta-binomial (\emph{mixture}) & 1\,182{,}233 & 1\,617{,}200 & 7\,436{,}637 & 11\,681{,}250 \;(25{,}982\%) & 13\,355{,}868 \\
+Binomial independente & 1\,180{,}414 & 67{,}502 & 1\,383{,}234 & 1\,474{,}752 \;(3{,}280\%) & 1\,504{,}837 \\
+CreditRisk\textsuperscript{+} (1 fator) & 1\,181{,}171 & 383{,}037 & 2\,512{,}681 & 3\,332{,}486 \;(7{,}412\%) & 3\,652{,}816 \\
+Beta-binomial (\emph{mixture}) & 1\,181{,}927 & 1\,612{,}405 & 7\,427{,}852 & 11\,752{,}560 \;(26{,}140\%) & 13\,377{,}801 \\
 \midrule
-Threshold Gaussiano 1F & 1\,180{,}419 & 1\,257{,}674 & 5\,989{,}200 & 10\,225{,}475 \;(22{,}744\%) & 12\,028{,}688 \\
-Threshold t-Student 1F ($\nu=10$) & 1\,183{,}653 & 1\,621{,}213 & 8\,058{,}890 & 14\,805{,}271 \;(32{,}930\%) & 17\,590{,}002 \\
-Threshold Gaussiano multifatorial & 1\,181{,}484 & 1\,092{,}291 & 5\,249{,}202 & 8\,248{,}100 \;(18{,}346\%) & 9\,438{,}243 \\
-Threshold t multifatorial ($\nu=10$) & 1\,176{,}931 & 1\,463{,}977 & 7\,229{,}730 & 13\,156{,}563 \;(29{,}263\%) & 15\,772{,}866 \\
+Threshold Gaussiano 1F & 1\,179{,}086 & 1\,267{,}851 & 6\,061{,}016 & 10\,076{,}371 \;(22{,}412\%) & 11\,658{,}565 \\
+Threshold t-Student 1F ($\nu=10$) & 1\,178{,}640 & 1\,621{,}542 & 8\,011{,}675 & 14\,862{,}977 \;(33{,}059\%) & 18\,271{,}851 \\
+Threshold Gaussiano multifatorial & 1\,180{,}740 & 1\,098{,}479 & 5\,302{,}155 & 8\,522{,}385 \;(18{,}956\%) & 9\,538{,}662 \\
+Threshold t multifatorial ($\nu=10$) & 1\,181{,}013 & 1\,483{,}514 & 7\,307{,}129 & 13\,580{,}871 \;(30{,}207\%) & 16\,135{,}650 \\
 ASRF (analítico) & 1\,180{,}797 & --- & 7\,828{,}873 & 13\,539{,}617 \;(30{,}115\%) & 16\,062{,}044 \\
 \midrule
 IRB Bacen ($K^{*}+\E[L]$) & 1\,180{,}797 & --- & --- & 5\,181{,}794 \;(11{,}526\%) & --- \\
@@ -609,9 +628,9 @@ IRB Bacen ($K^{*}+\E[L]$) & 1\,180{,}797 & --- & --- & 5\,181{,}794 \;(11{,}526\
 \end{tabular}
 \end{table}
 
-A Tabela~\ref{tab:pooled} e as Figuras~\ref{fig:pooled} e~\ref{fig:g-var} exibem a assinatura da alta granularidade, ausente por construção numa carteira de poucas centenas de nomes. A primeira leitura é a \emph{morte do risco idiossincrático}: o modelo binomial independente colapsa para UL de $65{,}892$ contra $1\,257{,}674$ do \emph{threshold} gaussiano --- $19{,}087$ vezes menos ---, porque a lei dos grandes números, agindo sobre $300$ mil contratos, elimina praticamente toda a variabilidade não sistemática. O risco remanescente é inteiramente ciclo: a premissa assintótica do ASRF materializada empiricamente, e a razão pela qual capital de carteiras pulverizadas é uma discussão sobre correlação com o fator sistemático, não sobre PDs individuais.
+A Tabela~\ref{tab:pooled} e as Figuras~\ref{fig:pooled} e~\ref{fig:g-var} exibem a assinatura da alta granularidade, ausente por construção numa carteira de poucas centenas de nomes. A primeira leitura é a \emph{morte do risco idiossincrático}: o modelo binomial independente colapsa para UL de $67{,}502$ contra $1\,267{,}851$ do \emph{threshold} gaussiano --- $18{,}782$ vezes menos ---, porque a lei dos grandes números, agindo sobre $300$ mil contratos, elimina praticamente toda a variabilidade não sistemática. O risco remanescente é inteiramente ciclo: a premissa assintótica do ASRF materializada empiricamente, e a razão pela qual capital de carteiras pulverizadas é uma discussão sobre correlação com o fator sistemático, não sobre PDs individuais.
 
-A segunda leitura vem dos \emph{mixture models}, agora disponíveis no motor \emph{pooled}. A beta-binomial, calibrada ao mesmo $\rho_D=5\%$, entrega VaR 99{,}9\% de $11\,681{,}250$ --- $1{,}142$ vez o do \emph{threshold} gaussiano de um fator ---, reproduzindo na alta granularidade a proximidade entre as duas famílias observada no Estudo de caso~1: com o mesmo par $(\bar p,\rho_D)$, a mistura beta e a cópula gaussiana diferem apenas na forma da distribuição do fator. O CreditRisk\textsuperscript{+}, com $(w,v)=(0{,}35;\,1{,}2)$, fica em $3\,323{,}232$ --- $0{,}325$ do gaussiano ---, a mesma ordem relativa do caso granular: os parâmetros escolhidos implicam correlação de default bem abaixo do alvo comum. A EL do CreditRisk\textsuperscript{+} agregado ($1\,180{,}237$) coincide com a analítica dentro do erro de simulação, como antecipado em \eqref{eq:crplus-pooled}. E a diversificação setorial segue material: o multifatorial reduz o VaR 99{,}9\% gaussiano em $19{,}338\%$ ($10\,225{,}475\to8\,248{,}100$).
+A segunda leitura vem dos \emph{mixture models}, agora disponíveis no motor \emph{pooled}. A beta-binomial, calibrada ao mesmo $\rho_D=5\%$, entrega VaR 99{,}9\% de $11\,752{,}560$ --- $1{,}166$ vez o do \emph{threshold} gaussiano de um fator ---, reproduzindo na alta granularidade a proximidade entre as duas famílias observada no Estudo de caso~1: com o mesmo par $(\bar p,\rho_D)$, a mistura beta e a cópula gaussiana diferem apenas na forma da distribuição do fator. O CreditRisk\textsuperscript{+}, com $(w,v)=(0{,}35;\,1{,}2)$, fica em $3\,332{,}486$ --- $0{,}331$ do gaussiano ---, a mesma ordem relativa do caso granular: os parâmetros escolhidos implicam correlação de default bem abaixo do alvo comum. A EL do CreditRisk\textsuperscript{+} agregado ($1\,181{,}171$) coincide com a analítica dentro do erro de simulação, como antecipado em \eqref{eq:crplus-pooled}. E a diversificação setorial segue material: o multifatorial reduz o VaR 99{,}9\% gaussiano em $15{,}422\%$ ($10\,076{,}371\to8\,522{,}385$).
 
 \begin{figure}[htb]
 \centering
@@ -651,11 +670,11 @@ Total & 440 & 44\,959{,}348 & 10{,}385\% & 4\,000{,}996 & 8{,}899\% \\
 \end{tabular}
 \end{table}
 
-O contrafactual mede o efeito da segmentação: a mesma carteira agregada, tratada inteiramente como atacado --- o comportamento da versão 0.6 ---, teria capital IRB de $8\,275{,}604$ ($18{,}407\%$), $2{,}068$ vezes o valor correto. Em carteiras de varejo, a categoria não é um refinamento: é a diferença entre o capital regulatório e o dobro dele. O ajuste de granularidade é de apenas $9{,}570$ --- ante $91{,}760$ na carteira de 250 nomes --- porque os pools têm granularidade interna quase perfeita ($C_g^2/n_g\to0$) e o ajuste passa a medir somente as $200$ exposições nominais.
+O contrafactual mede o efeito da segmentação: a mesma carteira agregada, tratada inteiramente como atacado --- o comportamento da versão 0.6 ---, teria capital IRB de $8\,275{,}604$ ($18{,}407\%$), $2{,}068$ vezes o valor correto. Em carteiras de varejo, a categoria não é um refinamento: é a diferença entre o capital regulatório e o dobro dele. O ajuste de granularidade é de apenas $10{,}104$ --- ante $91{,}760$ na carteira de 250 nomes --- porque os grupos têm granularidade interna elevada ($C_g^2/n_g^{\mathrm{eff}}$ pequeno) e o ajuste passa a medir somente as $200$ exposições nominais.
 
 \subsection{Setores}
 
-A decomposição setorial (Figura~\ref{fig:g-setores}) mostra razões risco/exposição entre $0{,}732$ (Petroquímica) e $1{,}125$ (Varejo): nesta base de demonstração, com composição de rating parecida entre setores, a cauda distribui-se quase proporcionalmente à exposição --- Varejo lidera por concentrar a maior massa de contratos nos graus especulativos. Numa carteira real, é exatamente esta decomposição que revelaria assimetrias setoriais relevantes, computáveis --- com a camada de agregação --- sobre milhões de contratos.
+A decomposição setorial (Figura~\ref{fig:g-setores}) mostra razões risco/exposição entre $0{,}712$ (Petroquímica) e $1{,}105$ (Varejo): nesta base de demonstração, com composição de rating parecida entre setores, a cauda distribui-se quase proporcionalmente à exposição --- Varejo lidera por concentrar a maior massa de contratos nos graus especulativos. Numa carteira real, é exatamente esta decomposição que revelaria assimetrias setoriais relevantes, computáveis --- com a camada de agregação --- sobre milhões de contratos.
 
 \begin{figure}[htb]
 \centering
@@ -668,7 +687,7 @@ A decomposição setorial (Figura~\ref{fig:g-setores}) mostra razões risco/expo
 
 Com a matriz de transição de exemplo e desconto de $10\%$~a.a., o ECL de 12 meses da carteira agregada é de $1\,029{,}833$ e o \emph{lifetime}, de $3\,323{,}958$ --- \textbf{razão de $3{,}228$} ---, com os graus especulativos dominando ambos (Figura~\ref{fig:g-mig}). Vale registrar a reconciliação entre as duas óticas: o ECL 12m ($1\,029{,}833$) difere da EL da carteira ($1\,180{,}797$) porque a matriz opera com a PD \emph{do grau}, enquanto a EL usa a PD ponderada de cada bucket --- a distância entre os dois números mede, na prática, a dispersão de PD dentro dos graus.
 
-No capital multiperíodo --- cinco anos, estrutura multifatorial setorial, matriz condicional da equação~\eqref{eq:mig-pooled} ---, a perda descontada acumulada tem $\E[L]=4\,484{,}643$ (ante $4\,497{,}405$ da esperança analítica da matriz descontada: desvio de $-0{,}284\%$, a verificação de sanidade do motor), $\VaR_{99,9\%}=13\,512{,}212$ ($30{,}054\%$ da exposição líquida) e $\ES_{99,9\%}=14\,796{,}829$. Duas leituras fecham o caso: o VaR de cinco anos é $1{,}638$ vez o de um ano do mesmo modelo --- não cinco vezes, pela diversificação \emph{temporal} e pelo desconto, o risco que o ajuste de maturidade do IRB aproxima por fórmula e que aqui aparece medido por simulação --- e a fração de contratos em default cresce de $2{,}537\%$ para $2{,}689\%$ ao ano ao longo do horizonte: a deriva de migração da carteira, invisível a qualquer análise de 12 meses.
+No capital multiperíodo --- cinco anos, estrutura multifatorial setorial, matriz condicional da equação~\eqref{eq:mig-pooled} ---, a perda descontada acumulada tem $\E[L]=4\,484{,}643$ (ante $4\,497{,}405$ da esperança analítica da matriz descontada: desvio de $-0{,}284\%$, a verificação de sanidade do motor), $\VaR_{99,9\%}=13\,512{,}212$ ($30{,}054\%$ da exposição líquida) e $\ES_{99,9\%}=14\,796{,}829$. Duas leituras fecham o caso: o VaR de cinco anos é $1{,}585$ vez o de um ano do mesmo modelo --- não cinco vezes, pela diversificação \emph{temporal} e pelo desconto, o risco que o ajuste de maturidade do IRB aproxima por fórmula e que aqui aparece medido por simulação --- e a fração de contratos em default cresce de $2{,}537\%$ para $2{,}689\%$ ao ano ao longo do horizonte: a deriva de migração da carteira, invisível a qualquer análise de 12 meses.
 
 \begin{figure}[htb]
 \centering
@@ -679,7 +698,7 @@ No capital multiperíodo --- cinco anos, estrutura multifatorial setorial, matri
 
 \subsection{Diagnósticos de validação}
 
-A bateria da Seção~\ref{sec:paper}, aplicada a esta execução, resulta em \textbf{25 testes OK em 26} (Tabela~\ref{tab:diag}). A meia-amplitude do intervalo de confiança do VaR 99{,}9\% fica entre $2{,}441\%$ e $5{,}143\%$. O único ponto de atenção é o intervalo do Threshold t-Student MF, de $5{,}143\%$, ligeiramente acima do critério de $5\%$: o modelo de cauda mais pesada, agora sobre 440 linhas de modelagem, pede mais trajetórias que as $100\,000$ desta execução --- o teste cumprindo seu papel de orientar a escolha de $M$.
+A bateria da Seção~\ref{sec:paper}, aplicada a esta execução, resulta em \textbf{26 testes OK em 27} (Tabela~\ref{tab:diag}). A meia-amplitude do intervalo de confiança do VaR 99{,}9\% fica entre $1{,}859\%$ e $5{,}128\%$. O único ponto de atenção é o intervalo do Threshold t-Student MF, de $5{,}128\%$, ligeiramente acima do critério de $5\%$: o modelo de cauda mais pesada, agora sobre 440 linhas de modelagem, pede mais trajetórias que as $100\,000$ desta execução --- o teste cumprindo seu papel de orientar a escolha de $M$.
 
 \begin{table}[H]
 \centering\small
@@ -690,22 +709,23 @@ A bateria da Seção~\ref{sec:paper}, aplicada a esta execução, resulta em \te
 \toprule
 Teste & Resultado & Status \\
 \midrule
-EL simulada vs.\ analítica (7 modelos) & desvio máximo de $0{,}327\%$, todos dentro de $3\sigma_{MC}$ & OK \\
-Calibração Gaussiana: $\rho_D$ implícita & 5,001\% (alvo 5,000\%) & OK \\
-Calibração Beta: $\rho_D$ = 1/(a+b+1) & 5,000\% (alvo 5,000\%) & OK \\
-Calibração MF intra-setor: $\rho_D$ implícita & 8,001\% (alvo 8,000\%) & OK \\
-Calibração MF inter-setor: $\rho_D$ implícita & 3,000\% (alvo 3,000\%) & OK \\
-Ordem de caudas (1 fator): t vs Gauss & razão 1,448 & OK \\
-Ordem de caudas (multifatorial): t vs Gauss & razão 1,595 & OK \\
+EL simulada vs.\ analítica (7 modelos) & desvio máximo de $0{,}183\%$, todos dentro de $3\sigma_{MC}$ & OK \\
+Calibração Gaussiana: $\rho\_D$ implícita & 5,001\% (alvo 5,000\%) & OK \\
+Calibração Beta: $\rho\_D$ = 1/(a+b+1) & 5,000\% (alvo 5,000\%) & OK \\
+Calibração MF intra-setor: $\rho\_D$ implícita & 8,001\% (alvo 8,000\%) & OK \\
+Calibração MF inter-setor: $\rho\_D$ implícita & 3,000\% (alvo 3,000\%) & OK \\
+Ordem de caudas (1 fator): t vs Gauss & razão 1,475 & OK \\
+Ordem de caudas (multifatorial): t vs Gauss & razão 1,594 & OK \\
 Agregação: preservação da EL & diferença nula & OK \\
 Agregação: homogeneidade (CV de PD) & máx. 0,463; 0 acima & OK \\
+Regime de carteira grande: idiossincrático descartado & máx. 0,934\% (9 grupo(s)) & OK \\
 IRB: categoria das exposições & informada (segmento\_irb) & OK \\
 IRB: PDs elevadas ao piso & 36 linha(s) & OK \\
-Ajuste de granularidade & GA = 9,570 & OK \\
+Ajuste de granularidade & GA = 10,104 & OK \\
 ECL \emph{lifetime} vs.\ 12 meses & razão 3,228 & OK \\
 PD acumulada (estrutura a termo) & monótona & OK \\
 IC 95\% do VaR 99{,}9\% (5 de 6 modelos) & meia-amplitude $\le 5\%$ & OK \\
-IC 95\% do VaR 99{,}9\% --- Threshold t-Student MF & $\pm$ 5,143\% & Atenção \\
+IC 95\% do VaR 99{,}9\% --- Threshold t-Student MF & $\pm$ 5,128\% & Atenção \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -726,7 +746,7 @@ A correlação intra-setor é uniforme: todos os setores compartilham o mesmo $\
 
 O Monte Carlo é simples. Para quantis muito extremos (99{,}97\% e além) ou carteiras grandes, o capítulo~8 do livro fornece \emph{importance sampling} com deslocamento ótimo de média, capaz de estimar a cauda com uma fração das simulações; as rotinas correspondentes já acompanham a biblioteca. O teste de precisão do quantil do \emph{paper} de validação \eqref{eq:diag-ic} indica, execução a execução, quando o $M$ escolhido é insuficiente.
 
-No módulo de migração, a matriz de transição opera com a PD \emph{do grau} --- por definição do instrumento ---, e não com a PD individual da coluna \texttt{pd}; a distância entre o ECL de 12 meses e a perda esperada da carteira mede, na prática, a dispersão de PD dentro dos graus, e um escalonamento bayesiano simples da linha da matriz pela razão entre as duas PDs seria o refinamento natural. Na simulação multiperíodo, o prazo de cada operação não trunca a exposição: um contrato que vence no ano dois segue exposto nos anos seguintes, o que equivale a assumir \emph{rolagem} da carteira --- premissa defensável para um livro em regime, mas que superestima a perda acumulada de carteiras em amortização; a extinção de cada nome (ou fração de bucket) no vencimento é uma extensão direta do motor. Na camada de agregação, os buckets são tratados como internamente homogêneos (mesma PD e severidade média por contrato); dispersões intra-bucket relevantes pedem GHs mais finos, e o relatório de CV de PD existe para vigiar essa premissa. A matriz de transição é insumo do usuário, e o ajuste de granularidade usa os parâmetros de volatilidade setorial de referência do livro. As extensões naturais são, respectivamente: estimar a matriz a partir do histórico de ratings da própria carteira, pelos métodos de coorte e de \emph{hazard rate} com intervalos de confiança por \emph{bootstrap} (módulo \texttt{markovChain}); estimar a volatilidade setorial a partir dos dados; e evoluir o módulo de migração para o modo \emph{mark-to-market} à la CreditMetrics, que reutilizaria a mesma escada de limiares da Seção~\ref{sec:migracao} com revalorização por banda de destino.
+No módulo de migração, a matriz de transição opera com a PD \emph{do grau} --- por definição do instrumento ---, e não com a PD individual da coluna \texttt{pd}; a distância entre o ECL de 12 meses e a perda esperada da carteira mede, na prática, a dispersão de PD dentro dos graus, e um escalonamento bayesiano simples da linha da matriz pela razão entre as duas PDs seria o refinamento natural. Na simulação multiperíodo, o prazo de cada operação não trunca a exposição: um contrato que vence no ano dois segue exposto nos anos seguintes, o que equivale a assumir \emph{rolagem} da carteira --- premissa defensável para um livro em regime, mas que superestima a perda acumulada de carteiras em amortização; a extinção de cada nome (ou fração de bucket) no vencimento é uma extensão direta do motor. Na camada de agregação, os grupos são tratados como internamente homogêneos em PD --- a dispersão de severidades é capturada pelo número efetivo ---; e, no horizonte multiperíodo, cada grupo é representado por frações por rating, o que equivale ao limite de carteira grande aplicado a todos os grupos: o risco idiossincrático intragrupo, capturado na simulação anual pela Binomial condicional, não entra no capital multiperíodo, e a migração multinomial por grupo com $n^{\mathrm{eff}}$ contratos equivalentes é a extensão natural; dispersões intra-bucket relevantes pedem GHs mais finos, e o relatório de CV de PD existe para vigiar essa premissa. A matriz de transição é insumo do usuário, e o ajuste de granularidade usa os parâmetros de volatilidade setorial de referência do livro. As extensões naturais são, respectivamente: estimar a matriz a partir do histórico de ratings da própria carteira, pelos métodos de coorte e de \emph{hazard rate} com intervalos de confiança por \emph{bootstrap} (módulo \texttt{markovChain}); estimar a volatilidade setorial a partir dos dados; e evoluir o módulo de migração para o modo \emph{mark-to-market} à la CreditMetrics, que reutilizaria a mesma escada de limiares da Seção~\ref{sec:migracao} com revalorização por banda de destino.
 
 \section*{Referências}
 
