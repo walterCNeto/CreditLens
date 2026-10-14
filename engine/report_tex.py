@@ -1,0 +1,567 @@
+"""
+Paper de validação em LaTeX — mesma diagramação da documentação técnica.
+
+Monta o código-fonte LaTeX a partir dos resultados da execução (dados,
+parâmetros, fundamentação teórica dos modelos efetivamente executados,
+resultados, diagnósticos de validação, capital, migração, limitações e
+referências), gera as figuras em PDF vetorial e compila com pdflatex.
+Sem pdflatex no ambiente, `latex_disponivel()` devolve False e o chamador
+recorre ao gerador em matplotlib (report_paper.gerar_paper).
+"""
+import datetime as dt
+import io
+import os
+import shutil
+import subprocess
+import tempfile
+import zipfile
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+
+from .report_paper import (PALETA, _diagnosticos, _parametros, _rotulo, br)
+
+
+def latex_disponivel() -> bool:
+    return shutil.which("pdflatex") is not None
+
+
+# ----------------------------------------------------------------- texto
+_ESC = {"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$",
+        "#": r"\#", "_": r"\_", "{": r"\{", "}": r"\}",
+        "~": r"\textasciitilde{}", "^": r"\textasciicircum{}"}
+_UNI = {"≤": r"$\le$", "≥": r"$\ge$", "±": r"$\pm$", "×": r"$\times$",
+        "√": r"$\surd$", "σ": r"$\sigma$", "ρ": r"$\rho$", "ν": r"$\nu$",
+        "−": "--", "→": r"$\to$", "∝": r"$\propto$", "·": r"$\cdot$",
+        "α": r"$\alpha$", "β": r"$\beta$", "γ": r"$\gamma$",
+        "δ": r"$\delta$", "λ": r"$\lambda$", "μ": r"$\mu$",
+        "ξ": r"$\xi$", "Φ": r"$\Phi$", "Σ": r"$\Sigma$",
+        "χ": r"$\chi$", "²": r"$^2$", "≈": r"$\approx$"}
+
+
+def tx(s) -> str:
+    """Escapa texto livre para LaTeX (inclui símbolos unicode usuais)."""
+    s = "".join(_ESC.get(ch, ch) for ch in str(s))
+    for k, v in _UNI.items():
+        s = s.replace(k, v)
+    return (s.replace(r"$\rho$\_D", r"$\rho_D$")
+             .replace(r"$\sigma$\_MC", r"$\sigma_{MC}$"))
+
+
+def nb(v, dec=3, pct=False):
+    """Número no padrão brasileiro, pronto para texto LaTeX."""
+    return tx(br(v, dec, pct=pct))
+
+
+def nm(v, dec=3, pct=False):
+    """Número no padrão brasileiro para modo matemático ({,} decimal)."""
+    return br(v, dec, pct=pct).replace(",", "{,}").replace("%", r"\%")
+
+
+def _tabela(cab, linhas, spec, legenda, rotulo, small=True, H=False):
+    corpo = "\n".join(" & ".join(l) + r" \\" for l in linhas)
+    return rf"""
+\begin{{table}}[{'H' if H else 'htb'}]
+\centering{r'\small' if small else ''}
+\caption{{{legenda}}}
+\label{{{rotulo}}}
+\setlength{{\tabcolsep}}{{4pt}}
+\begin{{tabular}}{{{spec}}}
+\toprule
+{' & '.join(cab)} \\
+\midrule
+{corpo}
+\bottomrule
+\end{{tabular}}
+\end{{table}}
+"""
+
+
+PREAMBULO = r"""\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\IfFileExists{lmodern.sty}{\usepackage{lmodern}}{}
+\renewcommand{\contentsname}{Sumário}
+\renewcommand{\abstractname}{Resumo}
+\renewcommand{\tablename}{Tabela}
+\renewcommand{\figurename}{Figura}
+\renewcommand{\refname}{Referências}
+\usepackage{amsmath,amssymb,bm}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{array}
+\usepackage[activate=false]{microtype}
+\emergencystretch=1.5em
+\usepackage{xcolor}
+\definecolor{linkblue}{RGB}{25,60,110}
+\definecolor{okgreen}{RGB}{30,107,60}
+\definecolor{alertred}{RGB}{176,36,24}
+\usepackage[colorlinks=true,linkcolor=linkblue,citecolor=linkblue,urlcolor=linkblue]{hyperref}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf}
+\newcommand{\VaR}{\mathrm{VaR}}
+\newcommand{\ES}{\mathrm{ES}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Ind}{\mathbb{I}}
+"""
+
+REFS_TEX = [
+    r"Vasicek, O.~A. (2002). The distribution of loan portfolio value. \emph{Risk}, 15(12), 160--162.",
+    r"Gordy, M.~B. (2003). A risk-factor model foundation for ratings-based bank capital rules. \emph{Journal of Financial Intermediation}, 12(3), 199--232.",
+    r"Basel Committee on Banking Supervision (2005). \emph{An Explanatory Note on the Basel II IRB Risk Weight Functions}. Basileia: BIS.",
+    r"Basel Committee on Banking Supervision (2006). \emph{International Convergence of Capital Measurement and Capital Standards: A Revised Framework}. Basileia: BIS.",
+    r"Gourieroux, C.; Laurent, J.-P.; Scaillet, O. (2000). Sensitivity analysis of Values at Risk. \emph{Journal of Empirical Finance}, 7(3--4), 225--245.",
+    r"Martin, R.; Wilde, T. (2002). Unsystematic credit risk. \emph{Risk}, 15(11), 123--128.",
+    r"Gordy, M.~B.; Lütkebohmert, E. (2013). Granularity adjustment for regulatory capital assessment. \emph{International Journal of Central Banking}, 9(3), 33--71.",
+    r"Credit Suisse First Boston (1997). \emph{CreditRisk\textsuperscript{+}: A Credit Risk Management Framework}. Londres: CSFB.",
+    r"Tasche, D. (2008). Capital allocation to business units and sub-portfolios: the Euler principle. In: Resti, A. (org.). \emph{Pillar II in the New Basel Accord}. Londres: Risk Books, 423--453.",
+    r"Belkin, B.; Suchower, S.; Forest Jr., L.~R. (1998). A one-parameter representation of credit risk and transition matrices. \emph{CreditMetrics Monitor}, 3º tri., 46--56.",
+    r"Frey, R.; McNeil, A.~J. (2003). Dependent defaults in models of portfolio credit risk. \emph{Journal of Risk}, 6(1), 59--92.",
+    r"Merton, R.~C. (1974). On the pricing of corporate debt: the risk structure of interest rates. \emph{Journal of Finance}, 29(2), 449--470.",
+    r"Bolder, D.~J. (2018). \emph{Credit-Risk Modelling: Theoretical Foundations, Diagnostic Tools, Practical Examples, and Numerical Recipes in Python}. Cham: Springer. [Referencial de implementação do aplicativo.]",
+    r"IFRS Foundation (2014). \emph{IFRS 9 --- Financial Instruments}. Londres. Conselho Monetário Nacional (2021). \emph{Resolução nº 4.966, de 25 de novembro de 2021}. Brasília: BCB.",
+    r"Banco Central do Brasil (2023). \emph{Resolução BCB nº 303, de 16 de março de 2023} (abordagem IRB para risco de crédito; revoga a Circular nº 3.648/2013). Brasília: BCB.",
+    r"Banco Central do Brasil (2022). \emph{Resolução BCB nº 229, de 12 de maio de 2022} (abordagem padronizada; arts.~36 e 46). Brasília: BCB.",
+    r"David, H.~A.; Nagaraja, H.~N. (2003). \emph{Order Statistics}. 3.\,ed. Hoboken: Wiley.",
+    r"Glasserman, P. (2004). \emph{Monte Carlo Methods in Financial Engineering}. Nova York: Springer.",
+]
+
+
+# ---------------------------------------------------------------- figuras
+def _fig_hierarquia(med, total, col999, path):
+    sub = med.dropna(subset=[col999])
+    nomes = [_rotulo(n) for n in sub["modelo"]]
+    vals = sub[col999].to_numpy() / total * 100
+    o = np.argsort(vals)
+    fig, ax = plt.subplots(figsize=(7.2, 0.42 * len(nomes) + 0.9))
+    ax.barh(np.array(nomes)[o], vals[o], height=0.62,
+            color=[PALETA.get(nomes[i], "#8A8F98") for i in o])
+    for i, v in enumerate(vals[o]):
+        ax.text(v + 0.3, i, br(v / 100, 3, pct=True), va="center",
+                fontsize=8)
+    ax.set_xlabel("VaR 99,90% (% da exposição líquida)")
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.grid(axis="x", alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def _fig_distribuicoes(dists, total, path):
+    xmax = max(np.quantile(d, 0.999) for d in dists.values())
+    bins = np.linspace(0, xmax, 90)
+    picos = {k: float(np.histogram(d, bins=bins, density=True)[0].max())
+             for k, d in dists.items()}
+    dep = [v for k, v in picos.items() if "independente" not in k.lower()]
+    ylim = (max(dep) if dep else max(picos.values())) * 1.25
+    fig, ax = plt.subplots(1, 2, figsize=(11, 4))
+    for nome, d in dists.items():
+        rot = _rotulo(nome)
+        ind = "independente" in nome.lower()
+        kw = dict(color=PALETA.get(rot, "#555"), lw=1.1 if ind else 1.6,
+                  ls="--" if ind else "-", label=rot)
+        ax[0].hist(d, bins=bins, density=True, histtype="step", **kw)
+        srt = np.sort(d)
+        tail = 1 - np.arange(1, len(srt) + 1) / len(srt)
+        ax[1].semilogy(srt / total * 100, np.maximum(tail, 1e-6), **kw)
+    ax[0].set_xlim(0, xmax)
+    ax[0].set_ylim(0, ylim)
+    ax[0].set_title("Corpo (até 99,9%)", fontsize=10)
+    ax[0].set_xlabel("Perda (unidades monetárias)")
+    ax[0].legend(fontsize=7)
+    ax[1].set_title("Cauda P(L > x)", fontsize=10)
+    ax[1].set_ylim(1e-5, 1)
+    ax[1].axhline(1e-3, color="k", ls=":", lw=0.8)
+    ax[1].set_xlabel("Perda (% da exposição líquida)")
+    ax[1].legend(fontsize=7)
+    ax[1].grid(alpha=0.2, which="both")
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def _fig_multiperiodo(sim, path):
+    fig, ax = plt.subplots(figsize=(7.2, 3.2))
+    ax.hist(sim["perdas"], bins=80, density=True, color="#12395B",
+            alpha=0.85)
+    v9 = sim["VaR"].get("99.90%")
+    if v9 == v9:
+        ax.axvline(v9, color="#B02418", ls="--", lw=1.2)
+        ax.text(v9, ax.get_ylim()[1] * 0.9, " VaR 99,9%", fontsize=8,
+                color="#B02418")
+    ax.set_xlabel("Perda descontada acumulada (unidades monetárias)")
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+# ------------------------------------------------------------- documento
+def montar_tex(port, results, mig=None, nome_base="", extra=None,
+               rel_agg=None, figdir="."):
+    """Devolve (código LaTeX, lista de figuras geradas em `figdir`)."""
+    resumo = results["resumo"]
+    prm = results.get("parametros", {})
+    med = results["medidas"]
+    total = resumo["exposicao_liquida_total"]
+    pooled = bool(results.get("pooled", False)) or any(
+        "(pooled)" in m for m in med["modelo"])
+    cal = results.get("calibracao_gaussiana", {})
+    rho_a, pbar = cal.get("rho_ativos"), cal.get("pbar",
+                                                 resumo["pd_media_ponderada"])
+    modelos = list(med["modelo"])
+    tem = lambda s: any(s in m for m in modelos)
+    mf = results.get("multifator")
+    irb = results.get("irb", {})
+    ab = results.get("calibracao_beta") or (
+        {"a": prm.get("beta_a"), "b": prm.get("beta_b")}
+        if prm.get("beta_a") else None)
+    col999 = next(c for c in med.columns if c.startswith("VaR 99.90"))
+    agora = dt.datetime.now().strftime("%d/%m/%Y %H:%M")
+    figs = []
+
+    ref_g = None
+    for alvo in ["Threshold Gaussiano multifatorial", "Threshold Gaussiano 1F"]:
+        sel = med[med["modelo"].str.startswith(alvo)]
+        if len(sel):
+            ref_g = (_rotulo(sel.iloc[0]["modelo"]), float(sel.iloc[0][col999]))
+            break
+
+    T = [PREAMBULO]
+    T.append(rf"""
+\title{{\textbf{{Paper de Validação de Modelos}}\\[2mm]
+\large Risco de Carteira de Crédito --- {tx(nome_base) or 'carteira analisada'}}}
+\author{{Gerado automaticamente pelo CreditLens}}
+\date{{{agora}}}
+\begin{{document}}
+\maketitle
+\begin{{abstract}}
+\noindent Este documento reporta uma execução do CreditLens sobre a base \emph{{{tx(nome_base) or 'informada pelo usuário'}}}: {nb(resumo['n_contrapartes'], 0)} linhas de modelagem, exposição líquida de {nb(total)} e perda esperada de {nb(resumo['perda_esperada'])} ({nb(resumo['perda_esperada'] / total, 3, pct=True)} da exposição). Apresenta a fundamentação teórica de cada modelo efetivamente executado com os parâmetros escolhidos, os resultados obtidos, uma bateria de diagnósticos automáticos de consistência e as referências bibliográficas que suportam as técnicas, para verificação independente."""
+             + (rf""" No modelo de referência ({tx(ref_g[0])}), o VaR 99{{,}}90\% é de {nb(ref_g[1])} ({nb(ref_g[1] / total, 3, pct=True)} da exposição líquida).""" if ref_g else "")
+             + rf""" A execução é reprodutível pela semente {tx(prm.get('seed', '---'))} e pelos parâmetros da Seção~\ref{{sec:param}}.
+\end{{abstract}}
+\tableofcontents
+""")
+
+    # ---------------- 1. dados ----------------
+    linhas = [
+        ["Base de entrada", tx(nome_base) or "---"],
+        ["Linhas de modelagem", nb(resumo["n_contrapartes"], 0)],
+        ["Representação", "agregada (grandes exposições + grupos homogêneos)" if pooled else "granular (nível contraparte)"],
+        ["Exposição total (EAD)", nb(resumo["ead_total"])],
+        ["Exposição líquida ($\\sum c_n$)", nb(total)],
+        ["PD média ponderada ($\\bar p$)", nb(pbar, 3, pct=True)],
+        ["LGD média", nb(resumo["lgd_media"])],
+        ["Perda esperada", nb(resumo["perda_esperada"])],
+        ["HHI de nomes / nº efetivo", f"{nb(resumo['hhi'], 5)} / {nb(resumo['n_efetivo'])}"],
+        ["Maior exposição / top 10", f"{nb(resumo['maior_exposicao_pct'], 3, pct=True)} / {nb(resumo['top10_exposicao_pct'], 3, pct=True)}"],
+    ]
+    T.append(r"""
+\section{A carteira e os dados de entrada}
+Cada linha da carteira de modelagem tem severidade $c_n=\mathrm{EAD}_n\times\mathrm{LGD}_n$, em que $\mathrm{EAD}_n$ é a exposição no default e $\mathrm{LGD}_n$ a perda dado o default; a perda da carteira é $L=\sum_n c_n\,\Ind\{D_n\}$, em que $D_n$ é o evento de default da linha $n$ no horizonte de um ano. A Tabela~\ref{tab:carteira} resume a carteira.
+""" + _tabela(["Atributo", "Valor"], linhas, "lr",
+              "Perfil da carteira de modelagem.", "tab:carteira", H=True))
+
+    if pooled:
+        txt_rel = ""
+        if rel_agg:
+            dif_el = rel_agg["el_diferenca_pct"]
+            dif_txt = "nula" if dif_el == 0 else tx(f"{dif_el:.3e}")
+            txt_rel = (rf" Nesta execução, {nb(rel_agg['linhas_analitica'], 0)} contratos foram reduzidos a {nb(rel_agg['linhas_agregada'], 0)} linhas ({nb(rel_agg['n_grandes'], 0)} grandes exposições e {nb(rel_agg['n_buckets'], 0)} grupos), com diferença de EL {dif_txt} e coeficiente de variação de PD intra-grupo máximo de {nb(rel_agg['pd_cv_max_bucket'])}.")
+        T.append(r"""
+\subsection{Tratamento dos dados: representação híbrida}
+A base analítica, contrato a contrato, foi agregada em grandes exposições nominais --- preservadas individualmente por materialidade --- e grupos homogêneos (rating $\times$ setor $\times$ categoria IRB), com parâmetros ponderados pela severidade de modo a preservar a perda esperada exatamente:
+\begin{equation}
+C_g=\sum_{i\in g}c_i,\qquad p_g=\frac{\sum_{i\in g}p_i\,c_i}{C_g},\qquad n_g=\#\{i\in g\},
+\end{equation}
+em que $C_g$ é a severidade total do grupo $g$, $p_g$ a sua PD ponderada e $n_g$ o número de contratos. Condicional aos fatores sistemáticos, cada grupo gera perdas em três regimes conforme o tamanho --- Bernoulli para nomes individuais, $\mathrm{Binomial}(n_g,p_g(\cdot))$ para grupos moderados e o limite de carteira grande de Vasicek, $L_g=C_g\,p_g(\cdot)$, para grupos massivos --- de modo que a variância idiossincrática intra-grupo é representada, e não eliminada (Vasicek, 2002; Gordy, 2003).""" + txt_rel + "\n")
+
+    # ---------------- 2. parâmetros ----------------
+    prows = _parametros(results, prm, pooled, tem, mig, extra)
+    T.append(r"""
+\section{Parâmetros da execução e suporte bibliográfico}
+\label{sec:param}
+A Tabela~\ref{tab:param} associa cada parâmetro escolhido nesta execução ao seu papel na modelagem e à referência que fundamenta a técnica. Valores derivados (correlações de ativos, parâmetros da distribuição beta) são produzidos pela calibração e verificados na Seção~\ref{sec:diag}.
+""" + _tabela(["Parâmetro", "Valor", "Papel na modelagem", "Ref."],
+              [[tx(a), tx(b), tx(c), tx(d)] for a, b, c, d in prows],
+              r">{\raggedright\arraybackslash}p{4.3cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{6.0cm}l",
+              "Parâmetros da execução. As referências numeradas correspondem à lista ao final do documento.",
+              "tab:param", H=True))
+
+    # ---------------- 3. metodologia ----------------
+    alvo = prm.get("rho_alvo")
+    T.append(rf"""
+\section{{Fundamentação teórica dos modelos executados}}
+Todos os modelos com dependência são calibrados a um alvo comum de correlação de default, $\rho_D={nm(alvo, 3, pct=True)}$, em que $\rho_D$ é a correlação entre os indicadores de default de dois devedores; as caudas tornam-se, assim, diretamente comparáveis, e as diferenças entre os modelos refletem a forma da dependência, não o seu nível (Frey e McNeil, 2003).
+""")
+    if tem("Binomial independente"):
+        T.append(r"""
+\subsection{Binomial independente}
+Defaults independentes com as PDs individuais da carteira,
+\begin{equation}
+L=\sum_n c_n\,\Ind\{D_n\},\qquad D_n\sim\mathrm{Bernoulli}(p_n)\ \text{independentes},
+\end{equation}
+em que $p_n$ é a PD da linha $n$. É o contrafactual sem dependência: pela lei dos grandes números a perda concentra-se em torno da EL, e a distância até os demais modelos mede o efeito da dependência.
+""")
+    if tem("Beta-binomial") and ab and ab.get("a"):
+        T.append(rf"""
+\subsection{{Beta-binomial (\emph{{mixture model}})}}
+A probabilidade comum de default é sorteada de uma distribuição beta e, dado o sorteio, os defaults são independentes:
+\begin{{equation}}
+Z\sim\mathrm{{Beta}}(a,b),\qquad D_n\mid Z\sim\mathrm{{Bernoulli}}(Z),\qquad \E[Z]=\frac{{a}}{{a+b}}=\bar p,\qquad \rho_D=\frac{{1}}{{a+b+1}},
+\end{{equation}}
+em que $a$ e $b$ são os parâmetros de forma, calibrados por momentos: $a={nm(ab['a'])}$ e $b={nm(ab['b'])}$.""" + (r" Na representação agregada, cada grupo segue os três regimes com $p_g(\cdot)=Z$." if pooled else "") + "\n")
+    if tem("CreditRisk+"):
+        T.append(rf"""
+\subsection{{CreditRisk\textsuperscript{{+}} (Poisson-gama, um fator)}}
+O fator sistemático $S\sim\Gamma(v,1/v)$, com $\E[S]=1$ e $\mathrm{{Var}}(S)=1/v$, escala as intensidades de default:
+\begin{{equation}}
+H_n\mid S\sim\mathrm{{Poisson}}\bigl(p_n(1-w+wS)\bigr),
+\end{{equation}}
+em que $H_n$ é a contagem de defaults, $w={nm(prm.get('crplus_w'))}$ a carga do fator e $v={nm(prm.get('crplus_v'))}$ a dispersão (Credit Suisse First Boston, 1997)."""
+                 + (r" Na representação agregada, a contagem do grupo agrega exatamente, pois a soma de Poissons independentes é Poisson: $H_g\mid S\sim\mathrm{Poisson}\bigl(n_g p_g(1-w+wS)\bigr)$, com perda $L_g=(C_g/n_g)\,H_g$." if pooled
+                    else r" No fluxo granular, o default é declarado quando $H_n\ge1$, de modo que $\Pr(D_n)=1-e^{-p_n}<p_n$: a EL simulada fica ligeiramente abaixo da analítica.") + "\n")
+    if tem("Threshold"):
+        T.append(rf"""
+\subsection{{Modelos de limiar: Gaussiano e t-Student}}
+Na tradição estrutural de Merton (1974), o default ocorre quando a variável latente de ativos cruza o limiar implícito pela PD:
+\begin{{equation}}
+Y_n=\sqrt{{\rho}}\,G+\sqrt{{1-\rho}}\,\varepsilon_n,\qquad D_n=\Ind\bigl\{{Y_n<\Phi^{{-1}}(p_n)\bigr\}},
+\end{{equation}}
+em que $G$ é o fator sistemático, $\varepsilon_n$ o choque idiossincrático (ambos normais padrão independentes), $\rho$ a correlação de ativos e $\Phi$ a distribuição normal padrão acumulada. A correlação de ativos $\rho={nm(rho_a)}$ foi calibrada para reproduzir o alvo pela normal bivariada,
+\begin{{equation}}
+\rho_D=\frac{{\Phi_2(z,z;\rho)-\bar p^{{\,2}}}}{{\bar p(1-\bar p)}},\qquad z=\Phi^{{-1}}(\bar p),
+\label{{eq:rhoD}}
+\end{{equation}}
+em que $\Phi_2(\cdot,\cdot;\rho)$ é a distribuição normal bivariada com correlação $\rho$. A variante t-Student, com $\nu={nm(prm.get('nu_t', 10), 0)}$ graus de liberdade, multiplica as variáveis latentes por um choque radial comum $\sqrt{{\nu/V}}$, $V\sim\chi^2_\nu$, e introduz dependência de cauda --- o contraste entre as duas variantes é um teste de sensibilidade à premissa de cauda.
+""")
+    if tem("multifatorial"):
+        mfc = (mf or {}).get("calibracao", {})
+        T.append(rf"""
+\subsection{{Extensão multifatorial setorial}}
+Com um fator global e um fator por setor,
+\begin{{equation}}
+Y_n=\sqrt{{\rho_G}}\,G+\sqrt{{\rho_S-\rho_G}}\,F_{{s(n)}}+\sqrt{{1-\rho_S}}\,\varepsilon_n,
+\end{{equation}}
+em que $F_{{s(n)}}$ é o fator do setor do devedor $n$, $\rho_S$ a correlação de ativos intra-setor e $\rho_G$ a entre setores. Os alvos de correlação de default, {nb(prm.get('rho_intra'), 3, pct=True)} e {nb(prm.get('rho_inter'), 3, pct=True)}, resultaram em $\rho_S={nm(mfc.get('rho_ativos_intra'))}$ e $\rho_G={nm(mfc.get('rho_ativos_inter'))}$. As contribuições setoriais seguem a alocação de Euler: a contribuição ao ES é a perda esperada da posição condicional à cauda (Tasche, 2008).
+""")
+    if tem("ASRF"):
+        T.append(r"""
+\subsection{ASRF: carteira assintoticamente granular}
+O limite analítico de Vasicek (2002), com infinitos créditos e um fator,
+\begin{equation}
+\VaR_\alpha=C\,\Phi\!\left(\frac{\Phi^{-1}(\bar p)+\sqrt{\rho}\,\Phi^{-1}(\alpha)}{\sqrt{1-\rho}}\right),
+\end{equation}
+em que $C=\sum_n c_n$ é a exposição líquida e $\alpha$ o nível de confiança, fundamenta a função de capital do IRB (Gordy, 2003).
+""")
+    if irb:
+        seg = irb.get("por_segmento")
+        cats = ", ".join(seg["descricao"]) if seg is not None and len(seg) else "atacado --- demais"
+        T.append(rf"""
+\subsection{{Capital regulatório IRB (Resolução BCB 303/2023)}}
+O requerimento segue a abordagem IRB do Banco Central do Brasil (Resolução BCB 303/2023), derivada do modelo ASRF:
+\begin{{equation}}
+K_n=\left[\Phi\!\left(\frac{{\Phi^{{-1}}(p_n)+\sqrt{{R_n}}\,\Phi^{{-1}}(0{{,}}999)}}{{\sqrt{{1-R_n}}}}\right)-p_n\right]\mathrm{{MA}}_n,\qquad \mathrm{{Capital}}=\sum_n c_n K_n,
+\end{{equation}}
+em que $K_n$ é o coeficiente de capital (fração da severidade), $R_n$ a correlação regulatória da categoria e $\mathrm{{MA}}_n$ o ajuste de maturidade. No atacado, $R=0{{,}}12f+0{{,}}24(1-f)$ com $f=(1-e^{{-50p}})/(1-e^{{-50}})$, reduzida em até $0{{,}}04$ pelo porte nas SME e elevada a $0{{,}}30$ no limite superior nas HVCRE; nas instituições financeiras S1/S2, multiplicada por $1{{,}}25$; no varejo, $0{{,}}15$ (residencial), $0{{,}}04$ (rotativo qualificado) e $0{{,}}03g+0{{,}}16(1-g)$ com $g=(1-e^{{-35p}})/(1-e^{{-35}})$ (demais). O ajuste de maturidade,
+\begin{{equation}}
+\mathrm{{MA}}=\frac{{1+(M-2{{,}}5)\,b}}{{1-1{{,}}5\,b}},\qquad b=\bigl(0{{,}}11852-0{{,}}05478\ln p\bigr)^2,
+\end{{equation}}
+em que $M\in[1,5]$ é o prazo efetivo, aplica-se só ao atacado e às instituições financeiras; no varejo, $\mathrm{{MA}}=1$. As PDs têm piso de $0{{,}}05\%$ ($0{{,}}10\%$ no rotativo). Categorias presentes nesta carteira: {tx(cats)}."""
+                 + ("" if irb.get("segmentado") else r" A carteira não informa a coluna \texttt{segmento\_irb}: todas as exposições foram tratadas como atacado.")
+                 + r""" O ajuste de granularidade segue Gordy e Lütkebohmert (2013), na formulação baseada no CreditRisk\textsuperscript{+} implementada por Bolder (2018)"""
+                 + (r", com o termo $c^2$ substituído por $C_g^2/n_g$ em cada grupo." if pooled else ".") + "\n")
+    if mig is not None:
+        T.append(r"""
+\subsection{Migração de ratings, ECL e capital multiperíodo}
+A matriz de transição anual $P$ fornece a estrutura a termo de PD pelas potências $P^t$; o ECL desconta as perdas marginais em 12 meses e no prazo de cada contrato (\emph{lifetime}), com estágios por deterioração de rating, conforme o IFRS 9 e a Resolução CMN 4.966. O capital multiperíodo evolui a carteira ano a ano pela matriz condicional ao fator sistemático --- generalização do deslocamento de crédito de um parâmetro de Belkin, Suchower e Forest (1998) ---, acumulando perdas descontadas.
+""")
+
+    # ---------------- 4. resultados ----------------
+    cols = [c for c in ["modelo", "EL", "UL", "VaR 99.00%", "ES 99.00%",
+                        "VaR 99.90%", "ES 99.90%"] if c in med.columns]
+    lin = [[tx(_rotulo(r[0]))] + [nb(v) for v in r[1:]]
+           for r in med[cols].itertuples(index=False)]
+    cab = ["Modelo", "EL", "UL", r"VaR$_{99\%}$", r"ES$_{99\%}$",
+           r"VaR$_{99,9\%}$", r"ES$_{99,9\%}$"][:len(cols)]
+    base_g = med[med["modelo"].str.startswith("Threshold Gaussiano 1F")]
+    vg = float(base_g.iloc[0][col999]) if len(base_g) else None
+    col_es = col999.replace("VaR", "ES")
+    lin2 = []
+    for _, r in med.iterrows():
+        v9 = r.get(col999)
+        if v9 is None or v9 != v9:
+            continue
+        e9 = r.get(col_es)
+        lin2.append([tx(_rotulo(r["modelo"])), nb(v9 / total, 3, pct=True),
+                     nb(v9 / r["EL"]) if r["EL"] else "---",
+                     nb(e9 / v9) if e9 == e9 and v9 else "---",
+                     nb(v9 / vg) if vg else "---"])
+    _fig_hierarquia(med, total, col999, os.path.join(figdir, "hierarquia.pdf"))
+    figs.append("hierarquia.pdf")
+    T.append(r"""
+\section{Resultados por modelo}
+A Tabela~\ref{tab:medidas} reporta as medidas de risco de cada modelo, nas unidades monetárias da base de entrada; a Tabela~\ref{tab:relativos} normaliza as caudas, e a Figura~\ref{fig:hier} ordena os modelos pelo VaR 99{,}90\%. A hierarquia reflete a estrutura de dependência de cada modelo sob a calibração comum.
+""" + _tabela(cab, lin, "l" + "r" * (len(cols) - 1),
+              "Medidas de risco por modelo (unidades monetárias).", "tab:medidas")
+             + _tabela(["Modelo", r"VaR/expos.", r"VaR/EL", r"ES/VaR", r"$\times$ Gauss 1F"],
+                       lin2, "lrrrr",
+                       "Indicadores relativos no quantil 99{,}90\\%.", "tab:relativos")
+             + r"""
+\begin{figure}[htb]
+\centering
+\includegraphics[width=0.85\textwidth]{hierarquia.pdf}
+\caption{VaR 99{,}90\% por modelo, em percentual da exposição líquida.}
+\label{fig:hier}
+\end{figure}
+""")
+    dists = results.get("distribuicoes") or {}
+    if dists:
+        _fig_distribuicoes(dists, total, os.path.join(figdir, "distribuicoes.pdf"))
+        figs.append("distribuicoes.pdf")
+        T.append(r"""
+\begin{figure}[htb]
+\centering
+\includegraphics[width=\textwidth]{distribuicoes.pdf}
+\caption{Distribuições de perda. Esquerda: corpo até o quantil 99{,}9\%, na escala dos modelos com dependência; a curva tracejada do modelo independente, quase degenerada em torno da EL, pode ultrapassar o topo do gráfico. Direita: cauda $\Pr(L>x)$ em escala logarítmica, com a linha pontilhada no nível $10^{-3}$.}
+\label{fig:dist}
+\end{figure}
+""")
+
+    # ---------------- 5. diagnósticos ----------------
+    drows = _diagnosticos(results, prm, pooled, mig, rel_agg)
+    cor = {"OK": r"\textcolor{okgreen}{\textbf{OK}}",
+           "Atenção": r"\textcolor{alertred}{\textbf{Atenção}}",
+           "Esperado": r"\textcolor{linkblue}{\textbf{Esperado}}"}
+    n_ok = sum(r[3] == "OK" for r in drows)
+    n_at = sum(r[3] == "Atenção" for r in drows)
+    T.append(rf"""
+\section{{Diagnósticos de validação}}
+\label{{sec:diag}}
+Os testes da Tabela~\ref{{tab:diag}} verificam a consistência interna da execução. A EL simulada deve reproduzir a analítica dentro do erro de Monte Carlo,
+\begin{{equation}}
+\bigl|\widehat{{\E}}[L]-\E[L]\bigr|\le 3\,\widehat\sigma_L/\sqrt{{M}},
+\end{{equation}}
+em que $\widehat{{\E}}[L]$ é a média das $M$ perdas simuladas e $\widehat\sigma_L$ o seu desvio-padrão (Glasserman, 2004); as calibrações são verificadas recalculando $\rho_D$ a partir dos parâmetros calibrados por \eqref{{eq:rhoD}}; a variante t-Student deve ter cauda maior ou igual à gaussiana; e a precisão do quantil é medida pelo intervalo de confiança de 95\% por estatísticas de ordem,
+\begin{{equation}}
+\bigl[L_{{(k_-)}},\,L_{{(k_+)}}\bigr],\qquad k_\pm=\alpha M\pm1{{,}}96\sqrt{{M\alpha(1-\alpha)}},
+\end{{equation}}
+em que $L_{{(k)}}$ é a $k$-ésima menor perda simulada (David e Nagaraja, 2003). ``Atenção'' não invalida a execução: indica ponto a ser examinado pelo validador. Resultado: \textbf{{{n_ok} testes OK}}, {n_at} em atenção e {len(drows) - n_ok - n_at} com comportamento esperado documentado.
+""" + _tabela(["Teste", "Resultado", "Critério", "Status"],
+              [[tx(a), tx(b), tx(c), cor.get(d, tx(d))] for a, b, c, d in drows],
+              r">{\raggedright\arraybackslash}p{5.9cm}>{\raggedright\arraybackslash}p{3.6cm}>{\raggedright\arraybackslash}p{4.4cm}c",
+              "Diagnósticos de validação da execução.", "tab:diag", H=True))
+
+    # ---------------- 6. capital ----------------
+    if irb:
+        lin_k = [["Capital IRB ($K^*$, 99{,}9\\%)", f"{nb(irb.get('capital_total_999'))} ({nb(irb.get('capital_pct_exposicao'), 3, pct=True)} da exposição líquida)"],
+                 ["Ajuste de granularidade (GA)", nb(irb.get("ajuste_granularidade"))],
+                 ["Capital com GA", nb(irb.get("capital_com_ga"))],
+                 ["RWA equivalente ($12{,}5\\times$)", nb(irb.get("rwa_equivalente"))],
+                 ["$R$ regulatório ponderado", nb(irb.get("rho_basel_ponderado"), 3, pct=True)]]
+        T.append(r"""
+\section{Capital regulatório e concentração}
+""" + _tabela(["Indicador", "Valor"], lin_k, "lr",
+              "Capital regulatório IRB (Resolução BCB 303/2023).", "tab:irb", H=True))
+        seg = irb.get("por_segmento")
+        if seg is not None and len(seg):
+            ls = [[tx(r.descricao), nb(r.linhas, 0), nb(r.exposicao_liquida),
+                   nb(r.R_ponderado, 3, pct=True), nb(r.capital),
+                   nb(r.capital_pct, 3, pct=True)]
+                  for r in seg.itertuples(index=False)]
+            T.append(_tabela(["Categoria", "Linhas", "Expos. líquida", "$R$",
+                              "Capital", "Capital/expos."], ls, "lrrrrr",
+                             "Capital IRB por categoria da Resolução BCB 303/2023; $R$ é a correlação média ponderada pela severidade.",
+                             "tab:irbseg"))
+        if mf and mf.get("contrib_por_setor") is not None:
+            cps = mf["contrib_por_setor"]
+            lst = [[tx(r.setor), nb(r.exposicao_pct, 3, pct=True),
+                    nb(r.contrib_ES_pct, 3, pct=True),
+                    nb(r.razao_risco_exposicao)]
+                   for r in cps.itertuples(index=False)]
+            T.append(rf"""
+A Tabela~\ref{{tab:setores}} decompõe a cauda por setor pela alocação de Euler; razão acima de 1 indica setor que contribui ao risco de cauda mais do que à exposição. HHI setorial: {nb(mf.get('hhi_setorial'), 5)}.
+""" + _tabela(["Setor", "Exposição", "Contrib. ES", "Razão risco/expos."],
+              lst, "lrrr", "Decomposição setorial (contribuições de Euler ao ES).",
+              "tab:setores"))
+
+    # ---------------- 7. migração ----------------
+    if mig is not None:
+        ecl_df, sim_m = mig.get("ecl"), mig.get("sim")
+        e12 = float(ecl_df["ECL_12m"].sum())
+        eli = float(ecl_df["ECL_lifetime"].sum())
+        lm = [["ECL 12 meses", f"{nb(e12)} ({nb(e12 / total, 3, pct=True)} da exposição líquida)"],
+              ["ECL \\emph{lifetime}", f"{nb(eli)} ({nb(eli / e12 if e12 else 0)}$\\times$ o de 12 meses)"]]
+        if "provisao" in ecl_df.columns:
+            lm.append(["Provisão por estágios", nb(float(ecl_df["provisao"].sum()))])
+        if sim_m and sim_m.get("T"):
+            Tn = int(sim_m["T"])
+            lm += [[f"VaR 99{{,}}90\\% em {Tn} anos", nb(sim_m["VaR"].get("99.90%"))],
+                   [f"ES 99{{,}}90\\% em {Tn} anos", nb(sim_m["ES"].get("99.90%"))],
+                   ["EL multiperíodo descontada", nb(sim_m["EL"])]]
+        T.append(r"""
+\section{Migração, ECL e horizonte multiperíodo}
+""" + _tabela(["Indicador", "Valor"], lm, "lr",
+              "Perda esperada de crédito e capital multiperíodo.", "tab:mig", H=True))
+        if sim_m and len(np.atleast_1d(sim_m.get("perdas", []))) > 10:
+            _fig_multiperiodo(sim_m, os.path.join(figdir, "multiperiodo.pdf"))
+            figs.append("multiperiodo.pdf")
+            T.append(r"""
+\begin{figure}[htb]
+\centering
+\includegraphics[width=0.85\textwidth]{multiperiodo.pdf}
+\caption{Distribuição das perdas descontadas acumuladas no horizonte multiperíodo, com o VaR 99{,}9\%.}
+\end{figure}
+""")
+
+    # ---------------- 8. limitações e referências ----------------
+    T.append(r"""
+\section{Limitações e condições de uso}
+\begin{itemize}\setlength\itemsep{1pt}
+\item A LGD é determinística: a severidade é tratada como parâmetro fixo por contrato.
+\item As correlações são calibradas a alvos informados pelo usuário, não estimadas da série histórica da carteira; a sensibilidade a esses alvos deve ser testada.
+\item Nos grupos homogêneos, a PD é atribuída uniformemente; o coeficiente de variação de PD intra-grupo é o diagnóstico de adequação (desigualdade de Jensen).
+\item A matriz de transição é homogênea no tempo; horizontes acima de cinco anos devem ser lidos como cenário exploratório.
+\item O Monte Carlo é simples: o erro do quantil 99{,}9\% decai com $1/\sqrt{M}$, e o diagnóstico de intervalo de confiança indica quando $M$ é insuficiente.
+\item No IRB, não são calculados o piso de 72{,}5\% do RWA padronizado (art.~34 da Resolução BCB 303), os pisos de LGD da abordagem avançada e o tratamento de exposições em descumprimento.
+\item Este documento é gerado automaticamente a partir dos parâmetros escolhidos e não substitui a validação independente exigida pela governança de modelos da instituição.
+\end{itemize}
+
+\section*{Referências}
+\addcontentsline{toc}{section}{Referências}
+\begin{itemize}\setlength\itemsep{1pt}
+""" + "\n".join(rf"\item[] [{i}] {r}" for i, r in enumerate(REFS_TEX, 1)) + r"""
+\end{itemize}
+\end{document}
+""")
+    return "".join(T), figs
+
+
+def gerar_paper_latex(port, results, mig=None, nome_base="", extra=None,
+                      rel_agg=None, timeout=180):
+    """Compila o paper. Devolve (pdf_bytes, zip_fonte_bytes).
+    Levanta RuntimeError se a compilação falhar."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tex, figs = montar_tex(port, results, mig, nome_base, extra,
+                               rel_agg, figdir=tmp)
+        with open(os.path.join(tmp, "paper.tex"), "w", encoding="utf-8") as f:
+            f.write(tex)
+        for _ in range(2):           # 2 passagens: sumário e referências
+            r = subprocess.run(
+                ["pdflatex", "-interaction=nonstopmode", "-halt-on-error",
+                 "paper.tex"], cwd=tmp, capture_output=True, timeout=timeout)
+        pdf_path = os.path.join(tmp, "paper.pdf")
+        if r.returncode != 0 or not os.path.exists(pdf_path):
+            log = r.stdout.decode("latin-1", "ignore")[-1500:]
+            raise RuntimeError(f"Falha na compilação LaTeX:\n{log}")
+        pdf = open(pdf_path, "rb").read()
+        zbuf = io.BytesIO()
+        with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("paper.tex", tex)
+            for fg in figs:
+                z.write(os.path.join(tmp, fg), fg)
+        return pdf, zbuf.getvalue()

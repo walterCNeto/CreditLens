@@ -528,15 +528,32 @@ with tabs[7]:
                 "fundamentação teórica, os parâmetros desta execução e as "
                 "referências bibliográficas auditáveis.")
     if st.button("Gerar paper de validação"):
-        from engine.report_paper import gerar_paper
+        from engine.report_tex import latex_disponivel, gerar_paper_latex
+        args = dict(mig=st.session_state.get("mig"),
+                    nome_base=st.session_state.get("nome_base", ""),
+                    extra=st.session_state.get("params_ui"),
+                    rel_agg=st.session_state.get("rel_agg"))
+        pdf_bytes, tex_zip = None, None
         with st.spinner("Compondo o paper..."):
-            buf_pdf = io.BytesIO()
-            gerar_paper(buf_pdf, port, results,
-                        mig=st.session_state.get("mig"),
-                        nome_base=st.session_state.get("nome_base", ""),
-                        extra=st.session_state.get("params_ui"),
-                        rel_agg=st.session_state.get("rel_agg"))
-        st.download_button("⬇ Baixar paper de validação (PDF)",
-                           buf_pdf.getvalue(),
+            if latex_disponivel():
+                try:
+                    pdf_bytes, tex_zip = gerar_paper_latex(port, results,
+                                                           **args)
+                except Exception as e:
+                    st.warning("A compilação LaTeX falhou; gerando a versão "
+                               f"simplificada. Detalhe: {str(e)[:300]}")
+            if pdf_bytes is None:
+                from engine.report_paper import gerar_paper
+                buf_pdf = io.BytesIO()
+                gerar_paper(buf_pdf, port, results, **args)
+                pdf_bytes = buf_pdf.getvalue()
+                if not latex_disponivel():
+                    st.info("LaTeX indisponível neste ambiente: paper gerado "
+                            "na versão simplificada (matplotlib).")
+        st.download_button("⬇ Baixar paper de validação (PDF)", pdf_bytes,
                            file_name="paper_validacao.pdf",
                            mime="application/pdf")
+        if tex_zip is not None:
+            st.download_button("⬇ Fonte LaTeX do paper (.zip)", tex_zip,
+                               file_name="paper_validacao_latex.zip",
+                               mime="application/zip")
