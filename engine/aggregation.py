@@ -78,8 +78,15 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
     grandes = df[grandes_mask].copy()
     resto = df[~grandes_mask]
 
-    # ---- agregação GH x setor com pesos de severidade ----
-    g = resto.groupby([gh_col, "setor"], observed=True)
+    # ---- agregação GH x setor (x categoria IRB) com pesos de severidade ----
+    tem_seg = "segmento_irb" in df.columns
+    if tem_seg:
+        df["segmento_irb"] = (df["segmento_irb"].astype(str).str.strip()
+                              .str.lower())
+        resto = df[~grandes_mask]
+        grandes = df[grandes_mask].copy()
+    chave = [gh_col, "setor"] + (["segmento_irb"] if tem_seg else [])
+    g = resto.groupby(chave, observed=True)
     agg = pd.DataFrame({
         "exposicao": g["exposicao"].sum(),
         "severidade": g["severidade"].sum(),
@@ -89,6 +96,11 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
                                                    weights=x["severidade"]),
                               include_groups=False),
         "n_contratos": g.size(),
+        **({"receita_bruta_mi": g.apply(
+            lambda x: (np.average(x["receita_bruta_mi"].fillna(300.0),
+                                  weights=x["severidade"])),
+            include_groups=False)} if "receita_bruta_mi" in df.columns
+           else {}),
         "pd_cv": g.apply(lambda x: (np.std(x["pd"]) / np.mean(x["pd"])
                                     if np.mean(x["pd"]) > 0 else 0.0),
                          include_groups=False),
@@ -96,7 +108,9 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
     agg["lgd"] = agg["severidade"] / agg["exposicao"]
     agg["rating"] = agg[gh_col].astype(str)
     agg["id_contraparte"] = ("GH_" + agg[gh_col].astype(str) + "_"
-                             + agg["setor"].astype(str))
+                             + agg["setor"].astype(str)
+                             + (("_" + agg["segmento_irb"].astype(str))
+                                if tem_seg else ""))
     agg["nome"] = ("Pool " + agg[gh_col].astype(str) + " / "
                    + agg["setor"].astype(str))
 
@@ -109,6 +123,9 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
     if "rating_origem" in grandes.columns:
         cols.append("rating_origem")
         agg["rating_origem"] = agg["rating"]
+    for extra in ["segmento_irb", "receita_bruta_mi"]:
+        if extra in grandes.columns and extra in agg.columns:
+            cols.append(extra)
     out = pd.concat([grandes[cols], agg[cols]], ignore_index=True)
 
     el_agregada = float((out["pd"] * out["exposicao"] * out["lgd"]).sum())

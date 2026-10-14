@@ -20,7 +20,7 @@ st.title("CreditLens — Análise de Carteira de Crédito")
 st.caption(
     "Motor quantitativo baseado em Bolder (2018), *Credit-Risk Modelling* (Springer): "
     "modelos independentes, mixture models (beta-binomial, CreditRisk+), threshold models "
-    "(Gaussiano/t, ASRF), capital IRB de Basileia com ajuste de granularidade e "
+    "(Gaussiano/t, ASRF), capital IRB segundo a Res. BCB 303/2023 com ajuste de granularidade e "
     "decomposição de contribuições de risco."
 )
 
@@ -75,6 +75,10 @@ with st.expander("Padrão do arquivo"):
         "- **Obrigatórias:** `id_contraparte`, `exposicao` (EAD > 0), `pd` ∈ (0,1)\n"
         "- **Opcionais:** `lgd` ∈ (0,1] *(default 1,0)*, `prazo_anos` *(default 2,5; "
         "truncado a [1,5] para o IRB)*, `rating`, `setor`, `nome`\n"
+        "- **Categoria IRB (Res. BCB 303/2023):** `segmento_irb` ∈ {`corporate`, "
+        "`sme`, `hvcre`, `if`, `if_s1s2`, `varejo_residencial`, `varejo_rotativo`, "
+        "`varejo_demais`} *(default `corporate`)*; para `sme`, informe "
+        "`receita_bruta_mi` (receita bruta anual em R$ milhões; teto SME de R$ 300 mi)\n"
         "- Separador vírgula, decimal ponto, UTF-8. Severidade Bolder: c = EAD × LGD."
     )
 
@@ -355,7 +359,32 @@ with tabs[2]:
     c2.metric("Ajuste de granularidade", f"{irb_res['ajuste_granularidade']:,.1f}")
     c3.metric("Capital + GA", f"{irb_res['capital_com_ga']:,.1f}")
     c4.metric("RWA equivalente (12,5×)", f"{irb_res['rwa_equivalente']:,.0f}")
-    df_irb = port.df[["id_contraparte", "exposicao", "pd", "lgd", "prazo_anos"]].copy()
+    st.caption("Função de capital da Resolução BCB nº 303/2023: correlação por "
+               "categoria (atacado, SME, HVCRE, IF, varejo residencial, rotativo "
+               "qualificado e demais varejo), ajuste de maturidade só no atacado, "
+               "pisos de PD de 0,05% (0,10% no rotativo).")
+    seg_tab = irb_res.get("por_segmento")
+    if seg_tab is not None and len(seg_tab):
+        if not irb_res.get("segmentado"):
+            st.warning("A carteira não traz a coluna `segmento_irb`: todas as "
+                       "exposições foram tratadas como atacado (corporate). Em "
+                       "carteiras de varejo isso superestima o capital.")
+        if irb_res.get("sme_sem_receita"):
+            st.warning(f"{irb_res['sme_sem_receita']} exposição(ões) SME sem "
+                       "`receita_bruta_mi`: aplicada correlação sem redução de "
+                       "porte (conservador).")
+        if irb_res.get("n_pd_piso"):
+            st.info(f"{irb_res['n_pd_piso']} PD(s) elevada(s) ao piso "
+                    "regulatório (art. 61).")
+        st.markdown("**Capital por categoria IRB**")
+        st.dataframe(seg_tab.drop(columns=["segmento"]).style.format({
+            "ead": "{:,.3f}", "exposicao_liquida": "{:,.3f}",
+            "R_ponderado": "{:.3%}", "capital": "{:,.3f}",
+            "capital_pct": "{:.3%}", "rwa": "{:,.3f}"}),
+            width='stretch', hide_index=True)
+    cols_irb = ["id_contraparte", "exposicao", "pd", "lgd", "prazo_anos"]
+    cols_irb += [c for c in ["segmento_irb"] if c in port.df.columns]
+    df_irb = port.df[cols_irb].copy()
     df_irb["K"] = irb_res["coeficiente_k"]
     df_irb["capital_IRB"] = irb_res["capital_por_contraparte"]
     st.dataframe(

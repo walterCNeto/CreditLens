@@ -15,6 +15,11 @@ Colunas opcionais:
     rating         : rótulo de rating interno/externo (texto)
     setor          : setor/segmento (texto ou inteiro)
     nome           : nome da contraparte (texto)
+    segmento_irb   : categoria IRB da Res. BCB 303/2023 — corporate, sme,
+                     hvcre, if, if_s1s2, varejo_residencial,
+                     varejo_rotativo, varejo_demais. Default: corporate
+    receita_bruta_mi : receita bruta anual em R$ milhões (ajuste de porte
+                     da subcategoria SME; S < 15 é tratado como 15)
 
 Convenção Bolder: a severidade por contraparte é c_n = EAD_n × LGD_n
 (exposição líquida sujeita a perda), usada em todos os modelos.
@@ -132,6 +137,21 @@ def load_portfolio(path_or_buffer, sep: str = ",", decimal: str = ".") -> Portfo
     if clipped:
         df["prazo_anos"] = df["prazo_anos"].clip(1.0, 5.0)
         warnings.append(f"{int(clipped)} prazo(s) truncado(s) ao intervalo IRB [1, 5] anos.")
+
+    # categoria IRB (Res. BCB 303/2023)
+    if "segmento_irb" in df.columns:
+        from .irb_bcb import SEGMENTOS, SEGMENTO_PADRAO
+        seg = (df["segmento_irb"].astype(str).str.strip().str.lower()
+               .replace({"": SEGMENTO_PADRAO, "nan": SEGMENTO_PADRAO}))
+        invalidos = sorted(set(seg) - set(SEGMENTOS))
+        if invalidos:
+            raise ValueError(
+                f"segmento_irb inválido: {invalidos}. Valores aceitos: "
+                f"{list(SEGMENTOS)}.")
+        df["segmento_irb"] = seg
+    if "receita_bruta_mi" in df.columns:
+        df["receita_bruta_mi"] = pd.to_numeric(df["receita_bruta_mi"],
+                                               errors="coerce")
 
     if df["id_contraparte"].duplicated().any():
         raise ValueError("Há id_contraparte duplicados na carteira.")

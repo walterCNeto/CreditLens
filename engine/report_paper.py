@@ -70,6 +70,13 @@ REFS = [
     "[14] IFRS FOUNDATION (2014). IFRS 9 - Financial Instruments. "
     "Londres. / CONSELHO MONETÁRIO NACIONAL (2021). Resolução no 4.966, "
     "de 25 de novembro de 2021. Brasília: Banco Central do Brasil.",
+    "[15] BANCO CENTRAL DO BRASIL (2023). Resolução BCB no 303, de 16 de "
+    "março de 2023: cálculo da parcela dos ativos ponderados pelo risco "
+    "relativa às exposições ao risco de crédito sob abordagem IRB "
+    "(revoga a Circular no 3.648/2013). Brasília: BCB.",
+    "[16] BANCO CENTRAL DO BRASIL (2022). Resolução BCB no 229, de 12 de "
+    "maio de 2022: abordagem padronizada (RWACPAD), arts. 36 e 46 — "
+    "definições de porte SME e de exposição de varejo. Brasília: BCB.",
 ]
 
 
@@ -326,6 +333,19 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
 
     # 6. IRB / GA
     irb = results.get("irb") or {}
+    if irb:
+        rows.append(["IRB: categoria das exposições",
+                     "informada (segmento_irb)" if irb.get("segmentado")
+                     else "ausente: tudo como atacado",
+                     "classe Res. BCB 303 por linha",
+                     "OK" if irb.get("segmentado") else "Esperado"])
+        if irb.get("sme_sem_receita"):
+            rows.append(["IRB: SME sem receita bruta",
+                         f"{irb['sme_sem_receita']} exposição(ões)",
+                         "receita informada (ajuste de porte)", "Atenção"])
+        rows.append(["IRB: PDs elevadas ao piso",
+                     f"{irb.get('n_pd_piso', 0)} linha(s)",
+                     "piso 0,050% (0,100% rotativo)", "OK"])
     ga = irb.get("ajuste_granularidade")
     if ga is not None:
         rows.append(["Ajuste de granularidade",
@@ -399,8 +419,14 @@ def _parametros(results, prm, pooled, tem, mig, extra):
     if pooled and ex.get("max_grandes") is not None:
         R.append(["Máx. grandes exposições", str(ex["max_grandes"]),
                   "corte de materialidade nominal", "[2, 7]"])
-    R.append(["IRB: α / ajuste de maturidade", "99,900% / b(PD)",
-              "função supervisora regulatória", "[3, 4]"])
+    irb_ = results.get("irb") or {}
+    seg_ = irb_.get("por_segmento")
+    R.append(["IRB: norma / α", "Res. BCB 303 / 99,900%",
+              "função de capital regulatório", "[3, 15]"])
+    R.append(["IRB: categorias",
+              (str(len(seg_)) if seg_ is not None else "1")
+              + (" informadas" if irb_.get("segmentado") else " (padrão)"),
+              "R e ajuste de maturidade por classe", "[15, 16]"])
     if mig is not None:
         R.append(["Horizonte multiperíodo",
                   f"{ex.get('horizonte', '—')} ano(s)",
@@ -613,21 +639,41 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                       r"\Phi^{-1}(\alpha)}{\sqrt{1-\rho}}\right)$",
                       secao="Metodologia")
         if irb:
-            secao("Capital regulatório IRB e ajuste de granularidade")
-            D.par("Função supervisora de Basileia II [3, 4] com correlação "
-                  "regulatória interpolada e ajuste de maturidade; o ajuste "
-                  "de granularidade corrige o risco de nomes que o IRB "
-                  "assume diversificado, pela expansão de segunda ordem do "
-                  "quantil [5, 6, 7]"
-                  + (", com o termo c²/n por pool na variância condicional"
-                     if pooled else "") + ".")
+            secao("Capital regulatório IRB (Res. BCB 303/2023) e GA")
+            seg = irb.get("por_segmento")
+            cats = (", ".join(seg["descricao"]) if seg is not None
+                    and len(seg) else "atacado — demais")
+            D.par("Função de capital da abordagem IRB do Banco Central do "
+                  "Brasil [15], derivada do modelo assintótico de fator único "
+                  "[1, 2, 3]. A correlação R depende da categoria da "
+                  "exposição (arts. 39 e 46): no atacado, 0,12·f + 0,24·(1−f) "
+                  "com f = (1−e^(−50·PD))/(1−e^(−50)), reduzida em até 4 p.p. "
+                  "pelo porte nas SME (receita bruta S entre R$ 15 e 300 "
+                  "milhões [16]), elevada a 0,30 no limite superior nas HVCRE "
+                  "e multiplicada por 1,25 nas instituições financeiras S1/S2; "
+                  "no varejo, 0,15 (residencial), 0,04 (rotativo qualificado) "
+                  "e 0,03·g + 0,16·(1−g) com fator 35 (demais). O ajuste de "
+                  "maturidade, com coeficiente oficial 0,11852, aplica-se só "
+                  "ao atacado; pisos de PD de 0,05% (0,10% no rotativo) "
+                  f"(art. 61). Categorias presentes nesta carteira: {cats}."
+                  + ("" if irb.get("segmentado") else
+                     " A carteira não informa a coluna segmento_irb: todas "
+                     "as exposições foram tratadas como atacado — demais."))
             D.formula(r"$K=\left[\Phi\!\left(\frac{\Phi^{-1}(PD)+"
-                      r"\sqrt{\rho}\,\Phi^{-1}(0{,}999)}{\sqrt{1-\rho}}"
-                      r"\right)-PD\right]\cdot MA(PD,M)$",
+                      r"\sqrt{R}\,\Phi^{-1}(0{,}999)}{\sqrt{1-R}}"
+                      r"\right)-PD\right]\cdot MA$",
                       secao="Metodologia")
-            D.formula(r"$GA=-\frac{1}{2\mu'(x)}\left[v'(x)-x\,v(x)-"
-                      r"\frac{v(x)\,\mu''(x)}{\mu'(x)}\right]$",
+            D.formula(r"$MA=\frac{1+(M-2{,}5)\,b}{1-1{,}5\,b}\ "
+                      r"\mathrm{(atacado)},\quad MA=1\ \mathrm{(varejo)},"
+                      r"\quad b=(0{,}11852-0{,}05478\,\ln PD)^2$",
                       secao="Metodologia")
+            D.par("O ajuste de granularidade segue Gordy e Lütkebohmert "
+                  "[7], na formulação baseada no CreditRisk+ implementada "
+                  "por Bolder (cap. 6) [8, 13]: corrige o risco de nomes "
+                  "que a função IRB assume diversificado"
+                  + (", com o termo c² substituído por C²/n por pool"
+                     if pooled else "") + ".")
+
         if mig is not None:
             secao("Migração de ratings, ECL e capital multiperíodo")
             D.par("A matriz de transição anual fornece a estrutura a termo "
@@ -782,9 +828,24 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                  br(irb.get("ajuste_granularidade"))),
                 ("Capital com GA", br(irb.get("capital_com_ga"))),
                 ("RWA equivalente (12,5×)", br(irb.get("rwa_equivalente"))),
-                ("ρ regulatório ponderado",
+                ("R regulatório ponderado",
                  br(irb.get("rho_basel_ponderado"), 3, pct=True)),
             ], "Capital e concentração")
+            seg = irb.get("por_segmento")
+            if seg is not None and len(seg):
+                D.y -= 0.010
+                D.h2("Capital IRB por categoria (Res. BCB 303/2023)",
+                     "Capital e concentração")
+                lin_s = [[r.descricao, str(r.linhas),
+                          br(r.exposicao_liquida),
+                          br(r.R_ponderado, 3, pct=True),
+                          br(r.capital), br(r.capital_pct, 3, pct=True)]
+                         for r in seg.itertuples(index=False)]
+                D.tabela(["Categoria", "Linhas", "Expos. líquida", "R",
+                          "Capital", "Capital/expos."], lin_s,
+                         [0.31, 0.09, 0.16, 0.12, 0.16, 0.16],
+                         0.030 + 0.0215 * len(lin_s),
+                         "Capital e concentração")
             if mf and mf.get("contrib_por_setor") is not None:
                 D.y -= 0.012
                 D.h2("Decomposição setorial (contribuições de Euler ao ES)",

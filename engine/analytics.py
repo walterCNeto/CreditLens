@@ -138,11 +138,11 @@ def run_full_analysis(
             var_asrf, es_asrf, time.time() - t0)
 
     # ---------------- Cap. 6: IRB de Basileia ----------------
-    _tick("Capital IRB de Basileia...")
+    _tick("Capital IRB (Res. BCB 303/2023)...")
     t0 = time.time()
-    k_n = irb.getBaselK(p, tenor, 0.999)  # vetorizado por contraparte
-    cap_n = c * k_n
-    rho_basel = irb.getRho(p)
+    from .irb_bcb import calcular as _irb_bcb
+    irb_b = _irb_bcb(port)
+    k_n, cap_n, rho_basel = irb_b["k"], irb_b["capital"], irb_b["R"]
     # Ajuste de granularidade Gordy–Lütkebohmert via CreditRisk+ (Bolder, ex. cap. 6)
     rho_g = float(np.dot(rho_basel, c) / c.sum())
     ga_a, ga_xi, ga_gbar = 0.25, 0.25, 1.0
@@ -158,9 +158,13 @@ def run_full_analysis(
         "coeficiente_k": k_n,
         "rho_basel_medio": float(np.mean(rho_basel)),
         "rho_basel_ponderado": rho_g,
+        "por_segmento": irb_b["por_segmento"],
+        "n_pd_piso": irb_b["n_pd_piso"],
+        "sme_sem_receita": irb_b["sme_sem_receita"],
+        "segmentado": irb_b["segmentado"],
         "tempo_s": time.time() - t0,
     }
-    add_row("IRB Basileia (VaR 99,90% regulatório)",
+    add_row("IRB Bacen (Res. BCB 303, K + EL)",
             pbar * total, np.nan,
             [np.nan if abs(a - 0.999) > 1e-9 else cap_n.sum() + pbar * total for a in alphas],
             [np.nan] * len(alphas), time.time() - t0)
@@ -233,12 +237,19 @@ def results_to_excel(results: dict, port, path: str):
 
         # IRB por contraparte
         irb_res = results["irb"]
-        df_irb = port.df[["id_contraparte", "exposicao", "pd", "lgd", "prazo_anos"]].copy()
+        cols_irb = ["id_contraparte", "exposicao", "pd", "lgd", "prazo_anos"]
+        cols_irb += [c for c in ["segmento_irb", "receita_bruta_mi"]
+                     if c in port.df.columns]
+        df_irb = port.df[cols_irb].copy()
         df_irb["coeficiente_K"] = irb_res["coeficiente_k"]
         df_irb["capital_IRB"] = irb_res["capital_por_contraparte"]
         df_irb["capital_pct_EAD"] = df_irb["capital_IRB"] / df_irb["exposicao"]
         df_irb.sort_values("capital_IRB", ascending=False).to_excel(
             xw, sheet_name="Capital IRB", index=False)
+        if irb_res.get("por_segmento") is not None and len(
+                irb_res["por_segmento"]):
+            irb_res["por_segmento"].to_excel(
+                xw, sheet_name="IRB por segmento", index=False)
 
         # contribuições
         if "contribuicoes" in results:
@@ -321,11 +332,12 @@ def run_pooled_analysis(
         row[f"VaR {a:.2%}"] = float(v); row[f"ES {a:.2%}"] = float(e)
     medidas = pd.concat([medidas, pd.DataFrame([row])], ignore_index=True)
 
-    k_n = irb.getBaselK(p, tenor, 0.999)
-    cap_n = C * k_n
+    from .irb_bcb import calcular as _irb_bcb
+    irb_b = _irb_bcb(port)
+    k_n, cap_n = irb_b["k"], irb_b["capital"]
     # GA com c^2 -> C^2/n (bucket homogêneo); grandes tem n=1
     ga_a, ga_xi, ga_gbar = 0.25, 0.25, 1.0
-    rho_basel = irb.getRho(p)
+    rho_basel = irb_b["R"]
     rho_g_w = float(np.dot(rho_basel, C) / C.sum())
     ga_w = irb.getW(pbar, ga_a, rho_g_w, 0.999)
     myDelta = irb.getDelta(ga_a, 0.999)
@@ -361,6 +373,10 @@ def run_pooled_analysis(
             "coeficiente_k": k_n,
             "rho_basel_medio": float(np.mean(rho_basel)),
             "rho_basel_ponderado": rho_g_w,
+            "por_segmento": irb_b["por_segmento"],
+            "n_pd_piso": irb_b["n_pd_piso"],
+            "sme_sem_receita": irb_b["sme_sem_receita"],
+            "segmentado": irb_b["segmentado"],
         },
         "contrib_bucket": res_sim["contribuicoes_bucket"],
         "contrib_alpha": res_sim["contrib_alpha"],
