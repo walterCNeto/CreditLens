@@ -21,7 +21,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .report_paper import (PALETA, _diagnosticos, _parametros, _rotulo, br)
+from .report_paper import (LEGENDA_STATUS, PALETA, _diagnosticos,
+                           _interpretar, _parametros, _rotulo, br)
 
 
 def latex_disponivel() -> bool:
@@ -437,8 +438,7 @@ A Tabela~\ref{tab:medidas} reporta as medidas de risco de cada modelo, nas unida
     cor = {"OK": r"\textcolor{okgreen}{\textbf{OK}}",
            "Atenção": r"\textcolor{alertred}{\textbf{Atenção}}",
            "Esperado": r"\textcolor{linkblue}{\textbf{Esperado}}"}
-    n_ok = sum(r[3] == "OK" for r in drows)
-    n_at = sum(r[3] == "Atenção" for r in drows)
+    sint, itens = _interpretar(drows, prm.get("M"))
     T.append(rf"""
 \section{{Diagnósticos de validação}}
 \label{{sec:diag}}
@@ -450,11 +450,18 @@ em que $\widehat{{\E}}[L]$ é a média das $M$ perdas simuladas e $\widehat\sigm
 \begin{{equation}}
 \bigl[L_{{(k_-)}},\,L_{{(k_+)}}\bigr],\qquad k_\pm=\alpha M\pm1{{,}}96\sqrt{{M\alpha(1-\alpha)}},
 \end{{equation}}
-em que $L_{{(k)}}$ é a $k$-ésima menor perda simulada (David e Nagaraja, 2003). ``Atenção'' não invalida a execução: indica ponto a ser examinado pelo validador. Resultado: \textbf{{{n_ok} testes OK}}, {n_at} em atenção e {len(drows) - n_ok - n_at} com comportamento esperado documentado.
+em que $L_{{(k)}}$ é a $k$-ésima menor perda simulada (David e Nagaraja, 2003). Cada teste recebe um de três status:
+\begin{{description}}\setlength\itemsep{{1pt}}
+""" + "".join(rf"\item[{cor[k]}] {tx(v)}" + "\n" for k, v in LEGENDA_STATUS) + r"""\end{description}
 """ + _tabela(["Teste", "Resultado", "Critério", "Status"],
               [[tx(a), tx(b), tx(c), cor.get(d, tx(d))] for a, b, c, d in drows],
               r">{\raggedright\arraybackslash}p{5.9cm}>{\raggedright\arraybackslash}p{3.6cm}>{\raggedright\arraybackslash}p{4.4cm}c",
-              "Diagnósticos de validação da execução.", "tab:diag", H=True))
+              "Diagnósticos de validação da execução.", "tab:diag", H=True)
+             + r"""
+\subsection*{Leitura dos resultados}
+""" + tx(sint) + ("\n\\begin{itemize}\\setlength\\itemsep{2pt}\n" + "".join(
+                rf"\item {cor[st_]} --- \textbf{{{tx(teste)}}}: {tx(leitura)} \emph{{Ação:}} {tx(acao)}" + "\n"
+                for st_, teste, leitura, acao in itens) + "\\end{itemize}\n" if itens else "\n"))
 
     # ---------------- 6. capital ----------------
     if irb:

@@ -320,7 +320,8 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
     # 5. agregação
     if pooled and rel_agg:
         rows.append(["Agregação: preservação da EL",
-                     f"diferença {rel_agg['el_diferenca_pct']:.3e}",
+                     ("diferença nula" if rel_agg["el_diferenca_pct"] == 0
+                      else f"diferença {rel_agg['el_diferenca_pct']:.3e}"),
                      "≤ 1e-9 (identidade algébrica)",
                      "OK" if rel_agg["el_diferenca_pct"] <= 1e-9
                      else "Atenção"])
@@ -370,6 +371,124 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
                          "não decrescente no prazo",
                          "OK" if mono else "Atenção"])
     return rows
+
+
+LEGENDA_STATUS = [
+    ("OK", "o resultado está dentro do critério; nenhuma ação é necessária."),
+    ("Atenção", "o resultado ficou fora do critério. Os números da execução "
+     "continuam válidos, mas o ponto deve ser examinado pelo validador; em "
+     "geral há uma ação corretiva simples, indicada na leitura dos "
+     "resultados."),
+    ("Esperado", "o resultado se afasta do critério por um efeito conhecido "
+     "do próprio modelo, explicado no texto; não requer ação."),
+]
+
+
+def _num(txt):
+    """Primeiro número (formato brasileiro) de um texto de resultado."""
+    import re
+    m = re.search(r"-?[\d.]+,\d+", txt)
+    return float(m.group().replace(".", "").replace(",", ".")) if m else None
+
+
+def _interpretar(drows, M):
+    """Síntese em prosa e leitura de cada teste fora do critério.
+    Devolve (sintese, itens) com itens = [(status, teste, leitura, ação)]."""
+    n = len(drows)
+    n_ok = sum(r[3] == "OK" for r in drows)
+    n_at = sum(r[3] == "Atenção" for r in drows)
+    n_es = sum(r[3] == "Esperado" for r in drows)
+    if n_ok == n:
+        sint = (f"Todos os {n} testes passaram: a execução é internamente "
+                "consistente — a perda esperada simulada adere à analítica, "
+                "as calibrações reproduzem os alvos, a ordem das caudas é a "
+                "prevista pela teoria e os quantis têm precisão adequada.")
+    else:
+        partes = [f"{n_ok} de {n} testes passaram"]
+        if n_at:
+            partes.append(f"{n_at} {'ficou' if n_at == 1 else 'ficaram'} "
+                          "em atenção")
+        if n_es:
+            partes.append(f"{n_es} {'apresenta' if n_es == 1 else 'apresentam'}"
+                          " comportamento esperado e documentado")
+        sint = (", ".join(partes[:-1]) + " e " + partes[-1]
+                if len(partes) > 1 else partes[0]) + "."
+        sint += (" Os itens abaixo explicam cada caso e a ação recomendada."
+                 if n_at or n_es else "")
+    itens = []
+    for teste, res, crit, st in drows:
+        if st == "OK":
+            continue
+        v = _num(res)
+        if teste.startswith("IC95%"):
+            M_sug = None
+            if v and M:
+                # mira 4,5% (margem de 10% sobre o critério de 5%)
+                M_sug = int(np.ceil(M * (v / 4.5) ** 2 / 50_000) * 50_000)
+            leitura = (f"a meia-amplitude do intervalo de confiança do VaR "
+                       f"99,9% é {res.replace('± ', '±')}, acima de 5%: o VaR "
+                       "reportado é correto em média, mas oscila mais que o "
+                       "tolerado entre simulações — típico de modelos de "
+                       "cauda pesada.")
+            acao = ("aumentar o número de simulações; como o erro do "
+                    "quantil cai com 1/√M, M ≈ "
+                    f"{br(M_sug, 0)} deve reduzir a meia-amplitude para menos de 5%."
+                    if M_sug else "aumentar o número de simulações M.")
+        elif teste.startswith("EL simulada"):
+            if st == "Esperado":
+                leitura = ("no fluxo granular, o CreditRisk+ declara default "
+                           "quando há ao menos um evento de Poisson, o que dá "
+                           "probabilidade 1−e^(−p) < p: a EL fica levemente "
+                           "abaixo da analítica por construção.")
+                acao = "nenhuma."
+            else:
+                leitura = (f"a EL simulada desvia da analítica ({res}) além "
+                           "de três erros-padrão de Monte Carlo.")
+                acao = ("rodar novamente com outra semente ou M maior; se o "
+                        "desvio persistir, revisar a implementação do modelo.")
+        elif teste.startswith("Calibração"):
+            leitura = (f"a correlação de default implícita ({res}) não "
+                       "reproduz o alvo dentro de 0,1 p.p.")
+            acao = ("verificar a convergência do otimizador de calibração e "
+                    "se o alvo é atingível para a PD média da carteira.")
+        elif teste.startswith("Ordem de caudas"):
+            leitura = ("o VaR do t-Student ficou abaixo do gaussiano, contra "
+                       "a teoria (a variante t acrescenta dependência de "
+                       "cauda).")
+            acao = ("aumentar M; se persistir, revisar a implementação.")
+        elif teste.startswith("Agregação: preservação"):
+            leitura = "a agregação não preservou a perda esperada."
+            acao = "revisar a camada de agregação (deveria ser identidade)."
+        elif teste.startswith("Agregação: homogeneidade"):
+            leitura = ("há grupos homogêneos com PDs muito dispersas, o que "
+                       "enviesa as funções de capital (desigualdade de "
+                       "Jensen).")
+            acao = ("refinar a formação dos grupos (coluna gh) ou subir o "
+                    "corte de grandes exposições.")
+        elif teste.startswith("IRB: categoria"):
+            leitura = ("a carteira não informa a categoria IRB: todas as "
+                       "exposições foram tratadas como atacado — adequado a "
+                       "carteiras corporativas, conservador para varejo.")
+            acao = ("se houver varejo ou SME, informar a coluna "
+                    "segmento_irb.")
+        elif teste.startswith("IRB: SME"):
+            leitura = ("há exposições SME sem receita bruta: aplicou-se a "
+                       "correlação sem redução de porte (conservador).")
+            acao = "informar a coluna receita_bruta_mi."
+        elif teste.startswith("Ajuste de granularidade"):
+            leitura = "o ajuste de granularidade resultou negativo."
+            acao = "revisar a concentração da carteira e os parâmetros do GA."
+        elif teste.startswith("ECL"):
+            leitura = "o ECL lifetime ficou abaixo do de 12 meses."
+            acao = "revisar a matriz de transição e os prazos."
+        elif teste.startswith("PD acumulada"):
+            leitura = "a PD acumulada não é monótona no prazo."
+            acao = ("revisar a matriz de transição: linhas devem somar 1 e o "
+                    "default deve ser absorvente.")
+        else:
+            leitura, acao = f"{res} (critério: {crit}).", "examinar."
+        itens.append((st, teste, leitura, acao))
+    return sint, itens
 
 
 def _parametros(results, prm, pooled, tem, mig, extra):
@@ -791,8 +910,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
               "implícita é recalculada a partir dos parâmetros calibrados), "
               "ordenação teórica das caudas, precisão do quantil 99,9% por "
               "estatística de ordem e coerência dos módulos de agregação, "
-              "capital e migração. 'Atenção' não invalida a execução: indica "
-              "ponto a ser examinado pelo validador.", color=CINZA)
+              "capital e migração.", color=CINZA)
         drows = _diagnosticos(results, prm, pooled, mig, rel_agg)
         D.tabela(["Teste", "Resultado", "Critério", "Status"], drows,
                  [0.33, 0.22, 0.33, 0.12],
@@ -803,17 +921,15 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
         for i, r in enumerate(drows, start=1):
             cor = {"OK": "#1E6B3C", "Atenção": VERM}.get(r[3], AZUL2)
             tb[i, 3].set_text_props(color=cor, fontweight="bold")
-        n_ok = sum(r[3] == "OK" for r in drows)
-        n_at = sum(r[3] == "Atenção" for r in drows)
-        D.par(f"Síntese: {n_ok} teste(s) OK, {n_at} em atenção, "
-              f"{len(drows) - n_ok - n_at} com comportamento esperado "
-              "documentado. Os intervalos de confiança das distribuições "
-              "usadas nos gráficos são reescalados para o M da tabela "
-              "(erro ∝ 1/√M).", color=CINZA)
-        for r in drows:
-            if r[3] == "Atenção":
-                D.par(f"• Atenção — {r[0]}: {r[1]} (critério: {r[2]}).",
-                      color=VERM)
+        sint, itens = _interpretar(drows, prm.get("M"))
+        D.h2("Significado dos status", "Diagnósticos")
+        for st_, sig in LEGENDA_STATUS:
+            D.par(f"• {st_}: {sig}")
+        D.h2("Leitura dos resultados", "Diagnósticos")
+        D.par(sint)
+        for st_, teste, leitura, acao in itens:
+            D.par(f"• {st_} — {teste}: {leitura} Ação: {acao}",
+                  color=VERM if st_ == "Atenção" else AZUL2)
 
         # ----- capital / setores -----
         if irb:
