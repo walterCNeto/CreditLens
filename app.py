@@ -274,28 +274,63 @@ with tabs[0]:
 
 # --- Distribuições ---
 with tabs[1]:
+    def _rotulo(n):
+        for suf in [" (pooled)", " (setores)", " (setores, nu=10)",
+                    " (pooled, nu=10)", " (nu=10)"]:
+            n = n.replace(suf, "")
+        return n.replace(" multifatorial", " MF")
+
     PAL = {"Binomial independente": "#9aa0a6",
+           "Beta-binomial": "#6a5acd",
+           "CreditRisk+": "#0e8a8a",
            "Threshold Gaussiano 1F": "#1f4e79",
            "Threshold t-Student 1F": "#b02418",
-           "Threshold Gaussiano multifatorial (setores)": "#2e8b57",
-           "Threshold t-Student multifatorial (setores, nu=10)": "#e07b00"}
-    LBL = {"Threshold Gaussiano multifatorial (setores)": "Threshold Gaussiano MF",
-           "Threshold t-Student multifatorial (setores, nu=10)": "Threshold t-Student MF"}
+           "Threshold Gaussiano MF": "#2e8b57",
+           "Threshold t-Student MF": "#e07b00"}
     dists = results["distribuicoes"]
     xmax = max(np.quantile(d, 0.999) for d in dists.values())
     bins = np.linspace(0, xmax, 90)
+
+    # escala do corpo governada pelos modelos COM dependência: o binomial
+    # independente (quase degenerado pela lei dos grandes números) é
+    # tracejado e pode estourar o topo -- com anotação do pico.
+    picos = {}
+    for nome, dist in dists.items():
+        h, _ = np.histogram(dist, bins=bins, density=True)
+        picos[nome] = float(h.max())
+    dep = [v for k, v in picos.items() if "independente" not in k.lower()]
+    ylim = (max(dep) if dep else max(picos.values())) * 1.25
+
     fig, ax = plt.subplots(1, 2, figsize=(11.5, 4.2))
     for nome, dist in dists.items():
-        cor, rot = PAL.get(nome, "#555"), LBL.get(nome, nome)
+        rot = _rotulo(nome)
+        indep = "independente" in nome.lower()
+        cor = PAL.get(rot, "#555")
         ax[0].hist(dist, bins=bins, density=True, histtype="step",
-                   label=rot, color=cor, lw=1.5)
+                   label=rot, color=cor, lw=1.1 if indep else 1.6,
+                   ls="--" if indep else "-")
         srt = np.sort(dist)
         tail = 1.0 - np.arange(1, len(srt) + 1) / len(srt)
         ax[1].semilogy(srt / total * 100, np.maximum(tail, 1e-6),
-                       label=rot, color=cor, lw=1.5)
+                       label=rot, color=cor, lw=1.1 if indep else 1.6,
+                       ls="--" if indep else "-")
     ax[0].set_xlim(0, xmax)
-    ax[0].set_title("Corpo (até o quantil 99,9%)"); ax[0].legend(fontsize=7)
+    ax[0].set_ylim(0, ylim)
+    for nome, pico in picos.items():
+        if "independente" in nome.lower() and pico > ylim:
+            el_x = float(np.mean(dists[nome]))
+            ax[0].annotate("Binomial indep.: pico fora da escala\n"
+                           "(risco idiossincrático eliminado pela LLN)",
+                           xy=(el_x, ylim),
+                           xytext=(el_x + 0.18 * xmax, ylim * 0.72),
+                           fontsize=7, color="#555",
+                           arrowprops=dict(arrowstyle="->",
+                                           color="#9aa0a6", lw=1.0))
+    ax[0].set_title("Corpo (até 99,9%) — escala dos modelos com dependência",
+                    fontsize=10)
+    ax[0].legend(fontsize=7)
     ax[1].set_title("Cauda P(L > x)"); ax[1].set_ylim(1e-5, 1)
+    ax[1].axhline(1e-3, color="k", ls=":", lw=0.8)
     ax[1].legend(fontsize=7); ax[1].grid(alpha=0.2, which="both")
     ax[1].set_xlabel("Perda (% exposição líquida)")
     st.pyplot(fig)
