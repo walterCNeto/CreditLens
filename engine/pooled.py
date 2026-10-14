@@ -56,12 +56,17 @@ def _bucket_losses(p_cond, C, n, cbar, rng):
 
 def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]),
                     rho=0.20, rho_g=None, rho_s=None, nu=10.0,
+                    beta_ab=None, crp=None,
                     contrib_alpha=0.99, contrib_S=10, seed=42,
                     progress=None):
-    """Roda a suíte pooled: binomial independente, CreditRisk+ (via
-    parâmetros padrão do chamador), threshold gaussiano/t 1F e, se
-    rho_g/rho_s informados e houver setor, multifatorial. Devolve medidas,
-    distribuições e contribuições de ES por bucket."""
+    """Roda a suíte pooled: binomial independente; mixture models quando
+    calibrados pelo chamador — beta-binomial (beta_ab=(a, b): Z ~ Beta
+    comum, bucket ~ Binomial(n_g, Z) nos três regimes) e CreditRisk+
+    (crp=(w, v): S ~ Gamma(v, 1/v), H_g ~ Poisson(n_g p_g (1-w+wS)),
+    perda (C_g/n_g) H_g — a soma de Poissons agrega exatamente); threshold
+    gaussiano/t 1F e, se rho_g/rho_s informados e houver setor,
+    multifatorial. Devolve medidas, distribuições e contribuições de ES
+    por bucket."""
     rng = np.random.default_rng(seed)
     df = port.df
     n = df["n_contratos"].to_numpy(int) if "n_contratos" in df.columns \
@@ -97,6 +102,36 @@ def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]
     el, ul, var, es = _measures(np.sort(loss), M, alphas)
     rows.append(("Binomial independente (pooled)", el, ul, var, es))
     dists["Binomial independente"] = np.sort(loss)
+
+    # ---------- mixture models (pooled) ----------
+    _B2 = 20_000
+    if beta_ab is not None:
+        tick("Beta-binomial (mixture, pooled)...")
+        a_b, b_b = beta_ab
+        loss = np.empty(M)
+        for i0 in range(0, M, _B2):
+            m = min(_B2, M - i0)
+            Z = rng.beta(a_b, b_b, (m, 1)).astype(np.float32)
+            p_cond = np.broadcast_to(Z, (m, G_))
+            loss[i0:i0 + m] = _bucket_losses(p_cond, C, n, cbar,
+                                             rng).sum(axis=1)
+        el, ul, var, es = _measures(np.sort(loss), M, alphas)
+        rows.append(("Beta-binomial (mixture, pooled)", el, ul, var, es))
+        dists["Beta-binomial"] = np.sort(loss)
+
+    if crp is not None:
+        tick("CreditRisk+ (pooled)...")
+        w_c, v_c = crp
+        loss = np.empty(M)
+        for i0 in range(0, M, _B2):
+            m = min(_B2, M - i0)
+            S = rng.gamma(v_c, 1.0 / v_c, (m, 1))
+            lam = (n * p) * (1.0 - w_c + w_c * S)
+            loss[i0:i0 + m] = (rng.poisson(lam) * cbar).sum(axis=1)
+        el, ul, var, es = _measures(np.sort(loss), M, alphas)
+        rows.append(("CreditRisk+ (Poisson-gama 1F, pooled)",
+                     el, ul, var, es))
+        dists["CreditRisk+"] = np.sort(loss)
 
     # ---------- threshold gaussiano / t, 1F e multifatorial ----------
     BLOCO = 20_000   # simulação em blocos p/ controle de memória

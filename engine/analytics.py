@@ -273,6 +273,8 @@ def run_pooled_analysis(
     rho_intra: float = 0.08,
     rho_inter: float = 0.03,
     nu: float = 10.0,
+    crp_w: float = 0.35,
+    crp_v: float = 1.2,
     contrib_alpha: float = 0.99,
     seed: int | None = 42,
     progress=None,
@@ -300,10 +302,13 @@ def run_pooled_analysis(
     rho_g = calibrate_rho(pbar, rho_inter)
     use_mf = "setor" in df.columns
 
+    import mixtureModels as mix
+    a_beta, b_beta = mix.betaCalibrate(pbar, rho_target)
     res_sim = simulate_pooled(
         port, M=M, alphas=alphas, rho=rho1,
         rho_g=rho_g if use_mf else None, rho_s=rho_s if use_mf else None,
-        nu=nu, contrib_alpha=contrib_alpha, seed=seed, progress=progress)
+        nu=nu, beta_ab=(a_beta, b_beta), crp=(crp_w, crp_v),
+        contrib_alpha=contrib_alpha, seed=seed, progress=progress)
 
     medidas = res_sim["medidas"]
 
@@ -339,6 +344,8 @@ def run_pooled_analysis(
         "pooled": True,
         "parametros": {"M": M, "alphas": list(map(float, alphas)),
                        "rho_alvo": rho_target, "rho_intra": rho_intra,
+                       "crplus_w": crp_w, "crplus_v": crp_v,
+                       "beta_a": float(a_beta), "beta_b": float(b_beta),
                        "rho_inter": rho_inter, "nu_t": nu, "seed": seed},
         "calibracao_gaussiana": {"rho_default_alvo": rho_target,
                                  "rho_ativos": rho1, "pbar": pbar},

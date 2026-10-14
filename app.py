@@ -181,6 +181,7 @@ if st.button("▶ Executar modelos", type="primary"):
             results = run_pooled_analysis(
                 port, M=M, rho_target=rho_target,
                 rho_intra=rho_intra, rho_inter=rho_inter, nu=float(nu),
+                crp_w=crp_w, crp_v=crp_v,
                 contrib_alpha=contrib_alpha, seed=int(seed), progress=tick)
         else:
             results = run_full_analysis(
