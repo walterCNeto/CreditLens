@@ -21,8 +21,8 @@ Probabilidades condicionais (limiar de ativos):
 
     Gaussiano 1F : p_cond = Phi( (Phi^{-1}(p_g) - sqrt(rho) G) / sqrt(1-rho) )
     Multifatorial: substitui sqrt(rho) G pela parte sistemática de dois
-                   níveis sqrt(rho_G) G + sqrt(rho_S-rho_G) F_s, e o
-                   denominador por sqrt(1-rho_S)
+                   níveis a_s G + b_s F_s, e o denominador por d_s
+                   (cargas uniformes ou por setor; ver multifactor.cargas)
     t-Student    : com limiar K = t_nu^{-1}(p_g) e choque radial V ~ chi2_nu,
                    p_cond = Phi( (K sqrt(V/nu) - sistematica) / sqrt(1-rho) )
 
@@ -108,6 +108,9 @@ def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]
     if use_mf:
         _, sec_idx = np.unique(df["setor"].astype(str), return_inverse=True)
         n_sec = sec_idx.max() + 1
+        from .multifactor import cargas
+        a_s, b_s, d_s = cargas(rho_g, rho_s, n_sec)   # escalar ou por setor
+        a_n, b_n, d_n = a_s[sec_idx], b_s[sec_idx], d_s[sec_idx]
 
     K_g = norm.ppf(p)
     K_t = myT.ppf(p, nu)
@@ -172,9 +175,8 @@ def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]
             Gf = rng.normal(0, 1, (m, 1))
             if mf:
                 F = rng.normal(0, 1, (m, n_sec))
-                syst = (np.sqrt(rho_g) * Gf
-                        + np.sqrt(max(rho_s - rho_g, 0)) * F[:, sec_idx])
-                denom = np.sqrt(1 - rho_s)
+                syst = a_n * Gf + b_n * F[:, sec_idx]
+                denom = d_n
             else:
                 syst = np.sqrt(rho) * Gf
                 denom = np.sqrt(1 - rho)

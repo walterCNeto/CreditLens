@@ -192,6 +192,10 @@ def simulate_multiperiod(
     disc = (1.0 + discount_rate) ** -np.arange(1, T + 1)
     multi = rho_s is not None and sector_idx is not None
     n_sec = int(sector_idx.max()) + 1 if multi else 0
+    if multi:
+        from .multifactor import cargas
+        a_s, b_s, d_s = cargas(rho_g, rho_s, n_sec)   # escalar ou por setor
+        a_n, b_n, d_n = a_s[sector_idx], b_s[sector_idx], d_s[sector_idx]
 
     losses = np.empty(M)
     defaults_por_ano = np.zeros(T)
@@ -211,9 +215,7 @@ def simulate_multiperiod(
             eps = rng.standard_normal((mb, N), dtype=dtype)
             if multi:
                 F = rng.standard_normal((mb, n_sec), dtype=dtype)
-                Y = (np.sqrt(rho_g) * G
-                     + np.sqrt(max(rho_s - rho_g, 0.0)) * F[:, sector_idx]
-                     + np.sqrt(1.0 - rho_s) * eps)
+                Y = (a_n * G + b_n * F[:, sector_idx] + d_n * eps)
             else:
                 Y = np.sqrt(rho_g) * G + np.sqrt(1.0 - rho_g) * eps
 
@@ -301,15 +303,17 @@ def simulate_multiperiod_pooled(
     multi = rho_s is not None and sector_idx is not None
     if multi:
         n_sec = int(sector_idx.max()) + 1
-        denom = dtype(np.sqrt(1.0 - rho_s))
-        load_g = dtype(np.sqrt(rho_g))
-        load_s = dtype(np.sqrt(max(rho_s - rho_g, 0.0)))
+        from .multifactor import cargas
+        a_s, b_s, d_s = cargas(rho_g, rho_s, n_sec)   # escalar ou por setor
+        denom_s = d_s.astype(dtype)                    # n_sec
+        load_g = a_s.astype(dtype)
+        load_s = b_s.astype(dtype)
         sec_of = sector_idx
     else:
         n_sec = 1
-        denom = dtype(np.sqrt(1.0 - rho_g))
-        load_g = dtype(np.sqrt(rho_g))
-        load_s = dtype(0.0)
+        denom_s = np.array([np.sqrt(1.0 - rho_g)], dtype=dtype)
+        load_g = np.array([np.sqrt(rho_g)], dtype=dtype)
+        load_s = np.array([0.0], dtype=dtype)
         sec_of = np.zeros(port.N, int)
 
     pool = n_eq > 1
@@ -349,7 +353,8 @@ def simulate_multiperiod_pooled(
                 if len(sel) == 0:
                     continue
                 gcols = np.searchsorted(idx_pool, sel)
-                z = (bands[None, :, :] - syst_sec[:, sec, None, None]) / denom
+                z = (bands[None, :, :] - syst_sec[:, sec, None, None]) \
+                    / denom_s[sec]
                 cdf = norm.cdf(z).astype(dtype)          # mb x Kst x Kst
                 probs = np.diff(cdf, axis=2, prepend=0.0)
                 probs[:, :, -1] += 1.0 - cdf[:, :, -1]   # fecha a última banda
@@ -383,7 +388,7 @@ def simulate_multiperiod_pooled(
             # ---- singles: trajetória discreta ----
             if Ns:
                 eps = rng.standard_normal((mb, Ns), dtype=dtype)
-                Y = syst_sec[:, sec_of[idx_sing]] + denom * eps
+                Y = syst_sec[:, sec_of[idx_sing]] + denom_s[sec_of[idx_sing]] * eps
                 y_shift = Y + (ratingS * _OFFSET).astype(dtype)
                 ss_idx = np.searchsorted(flat_bands, y_shift.ravel(),
                                          side="left").reshape(Y.shape)

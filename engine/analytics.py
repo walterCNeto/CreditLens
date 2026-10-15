@@ -58,6 +58,7 @@ def run_full_analysis(
     contrib_S: int = 10,
     contrib_alpha: float = 0.99,
     seed: int | None = 42,
+    rho_setor=None,
     progress=None,
 ) -> dict:
     """Executa a suíte completa e devolve dicionário de resultados."""
@@ -76,6 +77,10 @@ def run_full_analysis(
         "M": M, "alphas": list(map(float, alphas)), "rho_alvo": rho_target,
         "nu_t": nu, "crplus_w": crp_w, "crplus_v": crp_v, "seed": seed,
     }}
+    if run_multifactor:
+        results["parametros"].update({
+            "rho_intra": rho_intra, "rho_inter": rho_inter,
+            "cargas_por_setor": rho_setor is not None and len(rho_setor) > 0})
 
     rows = []
 
@@ -208,7 +213,8 @@ def run_full_analysis(
         mf = run_multifactor_analysis(
             port, M=M, alphas=alphas, rho_intra_target=rho_intra,
             rho_inter_target=rho_inter, nu=nu,
-            contrib_alpha=contrib_alpha, contrib_S=contrib_S)
+            contrib_alpha=contrib_alpha, contrib_S=contrib_S,
+            rho_setor=rho_setor)
         for row in mf["medidas"]:
             row["tempo_s"] = np.nan
             rows.append(row)
@@ -265,13 +271,22 @@ def results_to_excel(results: dict, port, path: str):
         if "multifator" in results:
             results["multifator"]["contrib_por_setor"].to_excel(
                 xw, sheet_name="Setores", index=False)
+            cal_mf = results["multifator"]["calibracao"]
+            if cal_mf.get("cargas_por_setor"):
+                cal_mf["por_setor"].to_excel(
+                    xw, sheet_name="Correlação por setor", index=False)
+                cal_mf["matriz_ativos"].to_excel(
+                    xw, sheet_name="Matriz ρ ativos")
+                cal_mf["matriz_default"].to_excel(
+                    xw, sheet_name="Matriz ρ default")
 
         # parâmetros e calibração
         params = dict(results["parametros"])
         params.update({f"beta_{k}": v for k, v in results.get("calibracao_beta", {}).items()})
         params.update({f"gauss_{k}": v for k, v in results.get("calibracao_gaussiana", {}).items()})
         if "multifator" in results:
-            params.update({f"mf_{k}": v for k, v in results["multifator"]["calibracao"].items()})
+            params.update({f"mf_{k}": v for k, v in results["multifator"]["calibracao"].items()
+                           if not isinstance(v, (pd.DataFrame, list))})
         pd.DataFrame([{"parâmetro": k, "valor": str(v)} for k, v in params.items()]
                      ).to_excel(xw, sheet_name="Parâmetros", index=False)
 
@@ -289,6 +304,7 @@ def run_pooled_analysis(
     contrib_alpha: float = 0.99,
     seed: int | None = 42,
     progress=None,
+    rho_setor=None,
 ) -> dict:
     """Análise para carteiras AGREGADAS (pools + grandes exposições).
 
@@ -312,15 +328,24 @@ def run_pooled_analysis(
     total = summary["exposicao_liquida_total"]
 
     rho1 = calibrate_rho(pbar, rho_target)
-    rho_s = calibrate_rho(pbar, rho_intra)
-    rho_g = calibrate_rho(pbar, rho_inter)
     use_mf = "setor" in df.columns
+    cal_setor = None
+    if use_mf and rho_setor is not None and len(rho_setor):
+        from .multifactor import calibrar_por_setor, rhos_para_motor
+        cal_setor = calibrar_por_setor(df["setor"], C, p, rho_intra,
+                                       rho_inter, rho_setor)
+        rho_g_m, rho_s_m = rhos_para_motor(cal_setor)
+        rho_s, rho_g = cal_setor["rho_ativos_intra"], cal_setor["rho_ativos_inter"]
+    else:
+        rho_s = calibrate_rho(pbar, rho_intra)
+        rho_g = calibrate_rho(pbar, rho_inter)
+        rho_g_m, rho_s_m = rho_g, rho_s
 
     import mixtureModels as mix
     a_beta, b_beta = mix.betaCalibrate(pbar, rho_target)
     res_sim = simulate_pooled(
         port, M=M, alphas=alphas, rho=rho1,
-        rho_g=rho_g if use_mf else None, rho_s=rho_s if use_mf else None,
+        rho_g=rho_g_m if use_mf else None, rho_s=rho_s_m if use_mf else None,
         nu=nu, beta_ab=(a_beta, b_beta), crp=(crp_w, crp_v),
         rho_d_alvo=rho_target,
         contrib_alpha=contrib_alpha, seed=seed, progress=progress)
@@ -362,7 +387,8 @@ def run_pooled_analysis(
                        "rho_alvo": rho_target, "rho_intra": rho_intra,
                        "crplus_w": crp_w, "crplus_v": crp_v,
                        "beta_a": float(a_beta), "beta_b": float(b_beta),
-                       "rho_inter": rho_inter, "nu_t": nu, "seed": seed},
+                       "rho_inter": rho_inter, "nu_t": nu, "seed": seed,
+                       "cargas_por_setor": cal_setor is not None},
         "calibracao_gaussiana": {"rho_default_alvo": rho_target,
                                  "rho_ativos": rho1, "pbar": pbar},
         "medidas": medidas,
@@ -407,7 +433,8 @@ def run_pooled_analysis(
             "calibracao": {"rho_default_intra_alvo": rho_intra,
                            "rho_default_inter_alvo": rho_inter,
                            "rho_ativos_intra": rho_s,
-                           "rho_ativos_inter": rho_g, "pbar": pbar},
+                           "rho_ativos_inter": rho_g, "pbar": pbar,
+                           **(cal_setor or {})},
             "contrib_por_setor": sec.sort_values(
                 "contrib_ES", ascending=False).reset_index(),
             "hhi_setorial": float((w ** 2).sum()),

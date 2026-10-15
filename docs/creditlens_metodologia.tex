@@ -31,7 +31,7 @@
 \large Análise Quantitativa de Carteiras de Crédito:\\
 Documentação Metodológica e Estudo de Caso}
 \author{Walter C.~Neto\\[1mm]\small Baseado em D.~J.~Bolder, \emph{Credit-Risk Modelling} (Springer, 2018)}
-\date{Outubro de 2026 --- versão 0.9}
+\date{Outubro de 2026 --- versão 0.10}
 
 \begin{document}
 \maketitle
@@ -226,6 +226,20 @@ Y_n \;=\; \sqrt{\rho_G}\;G \;+\; \sqrt{\rho_S-\rho_G}\;F_{s(n)} \;+\; \sqrt{1-\r
 \label{eq:mf}
 \end{equation}
 em que $G$ é o fator global comum a toda a carteira, $F_{s(n)}$ é o fator do setor $s(n)$ ao qual pertence a contraparte $n$ (informado pela coluna \texttt{setor}), $\varepsilon_n$ é o choque idiossincrático (todos normais-padrão independentes), $\rho_G$ é a correlação de ativos entre contrapartes de setores \emph{distintos} e $\rho_S\ge\rho_G$ é a correlação de ativos dentro do \emph{mesmo} setor. O default continua ocorrendo quando $Y_n<\Phi^{-1}(p_n)$, e a variante t-Student é obtida como antes, multiplicando $Y_n$ pelo choque radial $\sqrt{\nu/V}$. A calibração espelha a do modelo de um fator: o usuário define dois alvos de correlação de \emph{default} --- intra-setor e inter-setor --- e o aplicativo resolve numericamente $\rho_S$ e $\rho_G$ por meio de \eqref{eq:rhoD}.
+
+\paragraph{Cargas por setor.} Em \eqref{eq:mf}, todos os setores compartilham as mesmas cargas. A partir da versão 0.10, o usuário pode informar alvos de correlação de default por setor --- uma tabela com $\rho_D^{\mathrm{intra}}$ e $\rho_D^{\mathrm{inter}}$ de cada setor ---, e cada setor $s$ recebe as próprias correlações de ativos:
+\begin{equation}
+Y_n \;=\; \sqrt{\rho_{G,s}}\;G \;+\; \sqrt{\rho_{S,s}-\rho_{G,s}}\;F_{s} \;+\; \sqrt{1-\rho_{S,s}}\;\varepsilon_n,\qquad s=s(n),
+\label{eq:mf-setor}
+\end{equation}
+de modo que a correlação de ativos dentro do setor $s$ é $\rho_{S,s}$ e, entre os setores $s$ e $t$,
+\begin{equation}
+\operatorname{corr}(Y_n,Y_m) \;=\; \sqrt{\rho_{G,s}\,\rho_{G,t}},\qquad s(n)=s\neq t=s(m).
+\label{eq:mf-par}
+\end{equation}
+Os pares de setores passam a ter correlações distintas --- agro com varejo difere de agro com energia sempre que as cargas de varejo e energia diferem ---, e a matriz resultante é positiva semidefinida por construção, sem reparo numérico. A estrutura, porém, é de posto 1: a razão $\operatorname{corr}(s,t)/\operatorname{corr}(s,u)=\sqrt{\rho_{G,t}/\rho_{G,u}}$ é a mesma para todo setor $s$. Ela não representa \emph{blocos} --- por exemplo, \emph{commodities} (agro, energia, mineração) fortemente correlacionadas entre si e pouco com consumo ---, o que exigiria um segundo fator global; a implementação trata as cargas como vetores por setor justamente para que essa extensão não altere o motor.
+
+Cada setor informado é calibrado por \eqref{eq:rhoD} na \emph{sua} PD média ponderada pela exposição líquida, e não na PD média da carteira. A distinção importa: a correlação de default implícita por uma mesma correlação de ativos cresce com a PD, e a calibração uniforme só atinge o alvo no setor cuja PD coincide com a média da carteira. Setores ausentes da tabela mantêm a calibração uniforme, de modo que uma tabela parcial altera apenas os setores que lista; com cargas iguais, \eqref{eq:mf-setor} reproduz \eqref{eq:mf} exatamente, número a número. O motor granular, o \emph{pooled} e os dois motores multiperíodo usam as mesmas cargas, e o \emph{paper} de validação recalcula, setor a setor, a correlação de default implícita e a compara ao alvo.
 
 Além das medidas de risco usuais, o modelo multifatorial habilita o relatório de \emph{contribuições por setor}: as contribuições de ES por contraparte são agregadas pelo setor de cada nome, e a razão entre a participação do setor no ES e a sua participação na exposição identifica os setores que concentram proporcionalmente mais cauda do que carteira --- a métrica natural para calibrar limites setoriais. Carteiras sem a coluna \texttt{setor} seguem funcionando normalmente no modo de um fator.
 
@@ -547,6 +561,36 @@ Nível $\alpha$ & 1 fator & Multif. & $\Delta$VaR & $\Delta$ES & 1 fator & Multi
 
 Há uma leitura de gestão importante aqui: o resultado \emph{não} diz que o multifatorial ``economiza capital'' por construção. Ele diz que, \emph{dada esta carteira bem espalhada em oito setores}, a premissa de correlação uniforme do fator único é conservadora. Numa carteira concentrada em poucos setores a comparação se inverteria --- os pares intra-setor a 8\% passariam a dominar --- e é exatamente essa sensibilidade à composição setorial que o modelo de um fator é incapaz de exibir.
 
+\subsection{Calibração por setor}
+\label{sec:mf-setor-ex}
+
+A calibração uniforme da Seção~\ref{sec:mf-ex} resolve $\rho_S=0{,}337$ e $\rho_G=0{,}170$ na PD média da carteira, de $2{,}159\%$. Como as PDs setoriais vão de $0{,}866\%$ (Logística) a $4{,}281\%$ (Serviços), a correlação de default intra-setor efetivamente implícita varia de $5{,}270\%$ a $10{,}724\%$ --- e não é de 8\% em nenhum setor específico. A Tabela~\ref{tab:mf-setor-ex} mostra o efeito de pedir os mesmos alvos (8\% e 3\%) \emph{setor a setor}, cada um calibrado na própria PD.
+
+\begin{table}[H]
+\centering\small
+\caption{Calibração uniforme vs.\ por setor, com os mesmos alvos de 8\% (intra) e 3\% (inter). $\rho_D^{\mathrm{intra}}$ uniforme é a correlação de default intra-setor implícita pela calibração uniforme na PD do setor.}
+\label{tab:mf-setor-ex}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrrrrrr}
+\toprule
+& & \multicolumn{1}{c}{Uniforme} & \multicolumn{2}{c}{Por setor} & \multicolumn{2}{c}{Participação no ES 99\%}\\
+\cmidrule(lr){3-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Setor & PD média & $\rho_D^{\mathrm{intra}}$ & $\rho_{S,s}$ & $\rho_{G,s}$ & Uniforme & Por setor\\
+\midrule
+Agro         & 3{,}248\% & 9{,}553\%  & 0{,}298 & 0{,}142 & 5{,}133\%  & 4{,}572\% \\
+Construção   & 2{,}043\% & 7{,}807\%  & 0{,}342 & 0{,}174 & 11{,}570\% & 11{,}548\% \\
+Energia      & 1{,}739\% & 7{,}264\%  & 0{,}357 & 0{,}187 & 20{,}528\% & 21{,}069\% \\
+Indústria    & 3{,}153\% & 9{,}433\%  & 0{,}301 & 0{,}144 & 20{,}597\% & 18{,}202\% \\
+Logística    & 0{,}866\% & 5{,}270\%  & 0{,}420 & 0{,}242 & 9{,}540\%  & 12{,}542\% \\
+Petroquímica & 1{,}321\% & 6{,}411\%  & 0{,}382 & 0{,}208 & 4{,}308\%  & 4{,}904\% \\
+Serviços     & 4{,}281\% & 10{,}724\% & 0{,}272 & 0{,}124 & 15{,}751\% & 13{,}020\% \\
+Varejo       & 1{,}392\% & 6{,}567\%  & 0{,}378 & 0{,}204 & 12{,}572\% & 14{,}143\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A calibração por setor eleva as correlações de ativos dos setores de PD baixa e reduz as dos de PD alta. Como os setores de PD baixa concentram exposição (Energia, Logística, Varejo), a média ponderada sobe de $0{,}337$ para $0{,}348$ ($\rho_S$) e de $0{,}170$ para $0{,}181$ ($\rho_G$), e a cauda acompanha: o VaR 99{,}9\% gaussiano multifatorial passa de $784{,}745$ para $809{,}550$ ($+3{,}161\%$), o ES 99{,}9\% de $902{,}913$ para $937{,}303$ ($+3{,}809\%$) e o VaR 99{,}9\% t-Student de $1\,246{,}851$ para $1\,289{,}375$ ($+3{,}410\%$), com a mesma semente. A alocação da cauda também se desloca: Logística passa de $9{,}540\%$ para $12{,}542\%$ do ES, e Serviços e Indústria perdem participação. A leitura para o validador é que o alvo de correlação de default só tem significado junto com a PD em que é medido; com setores de PDs muito distintas, a calibração uniforme distribui a dependência de forma desigual sem que o usuário tenha escolhido isso.
+
 \subsection{Contribuições por setor: exposição, provisão e cauda}
 \label{sec:setores-ex}
 
@@ -613,7 +657,7 @@ Na simulação multiperíodo de $5$ anos ($M=100\,000$, blocos de $10\,000$, est
 
 O segundo estudo de caso reproduz, ponta a ponta, uma execução no aplicativo sobre a base analítica de demonstração de $300\,000$ contratos --- varejo pulverizado combinado a $300$ operações \emph{corporate} de porte duas ordens de grandeza maior, concentradas em poucos setores --- exercitando a camada de agregação (Seção~\ref{sec:agregacao}), o motor \emph{pooled} com o portfólio completo de modelos, o IRB segmentado por categoria (Seção~\ref{sec:irb}), o IRB segmentado por categoria (Seção~\ref{sec:irb}), o módulo de migração em modo agregado e a bateria de diagnósticos da Seção~\ref{sec:paper}. Parâmetros: $M=100\,000$, semente 42, alvos de correlação de default de $5\%$ (um fator), $8\%$ intra-setor e $3\%$ inter-setor, $\nu=10$, $(w,v)=(0{,}35;\,1{,}2)$ no CreditRisk\textsuperscript{+}, matriz de transição de exemplo e desconto de $10\%$~a.a.
 
-Nota de versão: na versão 0.9, o multiperíodo agregado passou a sortear os \emph{defaults} de cada grupo fora do limite de carteira grande (equação~\eqref{eq:mig-binom}); apenas os números multiperíodo deste caso mudaram. Na versão 0.8, o motor \emph{pooled} passou a representar cada grupo pelo seu número efetivo de contratos e a aplicar o limite de carteira grande apenas pelo critério de razão de variâncias (Seção~\ref{sec:agregacao}); os números deste caso foram regenerados com o motor revisado. A partir da versão 0.7, o gerador da base de demonstração usa um gerador aleatório local com semente fixa, de modo que cada geração reproduz exatamente a mesma base --- e esta coincide com o arquivo de teste distribuído. Na versão 0.6, o gerador era global e avançava a cada chamada, e a base descrita neste caso não era reprodutível; todos os números abaixo foram regenerados sobre a base determinística, que passa a trazer também a categoria IRB de cada contrato: o varejo pulverizado repartido entre demais varejo ($55\%$), rotativo qualificado ($30\%$) e residencial ($15\%$), e as operações \emph{corporate} entre atacado ($70\%$) e SME ($30\%$, com receita bruta entre R\$~15 e 300 milhões). A categoria é sorteada com gerador próprio, sem alterar nenhum outro campo da base.
+Nota de versão: a versão 0.10 acrescenta as cargas por setor (Seção~\ref{sec:mf}), sem alterar nenhum número deste caso com a calibração uniforme. Na versão 0.9, o multiperíodo agregado passou a sortear os \emph{defaults} de cada grupo fora do limite de carteira grande (equação~\eqref{eq:mig-binom}); apenas os números multiperíodo deste caso mudaram. Na versão 0.8, o motor \emph{pooled} passou a representar cada grupo pelo seu número efetivo de contratos e a aplicar o limite de carteira grande apenas pelo critério de razão de variâncias (Seção~\ref{sec:agregacao}); os números deste caso foram regenerados com o motor revisado. A partir da versão 0.7, o gerador da base de demonstração usa um gerador aleatório local com semente fixa, de modo que cada geração reproduz exatamente a mesma base --- e esta coincide com o arquivo de teste distribuído. Na versão 0.6, o gerador era global e avançava a cada chamada, e a base descrita neste caso não era reprodutível; todos os números abaixo foram regenerados sobre a base determinística, que passa a trazer também a categoria IRB de cada contrato: o varejo pulverizado repartido entre demais varejo ($55\%$), rotativo qualificado ($30\%$) e residencial ($15\%$), e as operações \emph{corporate} entre atacado ($70\%$) e SME ($30\%$, com receita bruta entre R\$~15 e 300 milhões). A categoria é sorteada com gerador próprio, sem alterar nenhum outro campo da base.
 
 \subsection{Fluxo de uso}
 
@@ -772,7 +816,7 @@ A correlação intra-setor é uniforme: todos os setores compartilham o mesmo $\
 
 O Monte Carlo é simples. Para quantis muito extremos (99{,}97\% e além) ou carteiras grandes, o capítulo~8 do livro fornece \emph{importance sampling} com deslocamento ótimo de média, capaz de estimar a cauda com uma fração das simulações; as rotinas correspondentes já acompanham a biblioteca. O teste de precisão do quantil do \emph{paper} de validação \eqref{eq:diag-ic} indica, execução a execução, quando o $M$ escolhido é insuficiente.
 
-No módulo de migração, a matriz de transição opera com a PD \emph{do grau} --- por definição do instrumento ---, e não com a PD individual da coluna \texttt{pd}; a distância entre o ECL de 12 meses e a perda esperada da carteira mede, na prática, a dispersão de PD dentro dos graus, e um escalonamento bayesiano simples da linha da matriz pela razão entre as duas PDs seria o refinamento natural. Na simulação multiperíodo, o prazo de cada operação não trunca a exposição: um contrato que vence no ano dois segue exposto nos anos seguintes, o que equivale a assumir \emph{rolagem} da carteira --- premissa defensável para um livro em regime, mas que superestima a perda acumulada de carteiras em amortização; a extinção de cada nome (ou fração de bucket) no vencimento é uma extensão direta do motor. Na camada de agregação, os grupos são tratados como internamente homogêneos em PD --- a dispersão de severidades é capturada pelo número efetivo ---; no horizonte multiperíodo, o sorteio binomial alcança o \emph{default}, mas as migrações entre ratings não default dos grupos seguem as frações esperadas --- a migração multinomial completa por grupo, relevante apenas para uma revalorização \emph{mark-to-market}, é a extensão natural; dispersões intra-bucket relevantes pedem GHs mais finos, e o relatório de CV de PD existe para vigiar essa premissa. A matriz de transição é insumo do usuário, e o ajuste de granularidade usa os parâmetros de volatilidade setorial de referência do livro. As extensões naturais são, respectivamente: estimar a matriz a partir do histórico de ratings da própria carteira, pelos métodos de coorte e de \emph{hazard rate} com intervalos de confiança por \emph{bootstrap} (módulo \texttt{markovChain}); estimar a volatilidade setorial a partir dos dados; e evoluir o módulo de migração para o modo \emph{mark-to-market} à la CreditMetrics, que reutilizaria a mesma escada de limiares da Seção~\ref{sec:migracao} com revalorização por banda de destino.
+No módulo de migração, a matriz de transição opera com a PD \emph{do grau} --- por definição do instrumento ---, e não com a PD individual da coluna \texttt{pd}; a distância entre o ECL de 12 meses e a perda esperada da carteira mede, na prática, a dispersão de PD dentro dos graus, e um escalonamento bayesiano simples da linha da matriz pela razão entre as duas PDs seria o refinamento natural. Na simulação multiperíodo, o prazo de cada operação não trunca a exposição: um contrato que vence no ano dois segue exposto nos anos seguintes, o que equivale a assumir \emph{rolagem} da carteira --- premissa defensável para um livro em regime, mas que superestima a perda acumulada de carteiras em amortização; a extinção de cada nome (ou fração de bucket) no vencimento é uma extensão direta do motor. Na camada de agregação, os grupos são tratados como internamente homogêneos em PD --- a dispersão de severidades é capturada pelo número efetivo ---; no horizonte multiperíodo, o sorteio binomial alcança o \emph{default}, mas as migrações entre ratings não default dos grupos seguem as frações esperadas --- a migração multinomial completa por grupo, relevante apenas para uma revalorização \emph{mark-to-market}, é a extensão natural; dispersões intra-bucket relevantes pedem GHs mais finos, e o relatório de CV de PD existe para vigiar essa premissa. A matriz de transição é insumo do usuário, e o ajuste de granularidade usa os parâmetros de volatilidade setorial de referência do livro. As extensões naturais são, respectivamente: estimar a matriz a partir do histórico de ratings da própria carteira, pelos métodos de coorte e de \emph{hazard rate} com intervalos de confiança por \emph{bootstrap} (módulo \texttt{markovChain}); estimar a volatilidade setorial a partir dos dados; estimar os alvos de correlação por setor pelo método dos momentos sobre séries históricas de inadimplência setorial (com intervalos de confiança, que tendem a ser largos em séries curtas) e acrescentar um segundo fator global para representar blocos de setores; e evoluir o módulo de migração para o modo \emph{mark-to-market} à la CreditMetrics, que reutilizaria a mesma escada de limiares da Seção~\ref{sec:migracao} com revalorização por banda de destino.
 
 \section*{Referências}
 

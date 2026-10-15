@@ -18,6 +18,19 @@ A calibração segue a mesma estratégia do modelo de um fator: rho_G e
 rho_S são obtidos numericamente para que as correlações de default
 implícitas (via normal bivariada) atinjam os alvos inter e intra-setor
 definidos pelo usuário.
+
+Cargas por setor (opcional). Com uma tabela de alvos por setor, cada setor
+s recebe as próprias correlações de ativos, rho_G,s e rho_S,s:
+
+    Y_n = a_s G + b_s F_s + d_s eps_n,
+    a_s = sqrt(rho_G,s),  b_s = sqrt(rho_S,s - rho_G,s),  d_s = sqrt(1 - rho_S,s)
+
+A correlação de ativos dentro do setor s é rho_S,s; entre os setores s e
+t, a_s a_t = sqrt(rho_G,s rho_G,t). A estrutura entre setores é de posto 1
+(um fator global): pares diferem pela carga de cada setor, mas a razão
+corr(s,t)/corr(s,u) = a_t/a_u é a mesma para todo s. Cada setor é
+calibrado com a sua PD média ponderada. Com escalares, o modelo é o de
+carga uniforme acima, e os resultados são idênticos.
 """
 import numpy as np
 import pandas as pd
@@ -36,15 +49,105 @@ def calibrate_rho(pbar: float, rho_d_target: float) -> float:
     return float(res.x)
 
 
+def cargas(rho_g, rho_s, n_sec):
+    """Cargas por setor (a, b, d): Y = a_s G + b_s F_s + d_s eps.
+    rho_g e rho_s podem ser escalares (carga uniforme) ou vetores com uma
+    entrada por setor, na ordem de np.unique dos nomes de setor."""
+    g = np.broadcast_to(np.asarray(rho_g, dtype=float), (n_sec,)).copy()
+    s = np.broadcast_to(np.asarray(rho_s, dtype=float), (n_sec,)).copy()
+    return np.sqrt(g), np.sqrt(np.maximum(s - g, 0.0)), np.sqrt(1.0 - s)
+
+
+def rho_default_par(rho_a, p1, p2):
+    """Correlação de default implícita entre dois devedores com PDs p1 e p2
+    e correlação de ativos rho_a (normal bivariada)."""
+    from scipy.stats import multivariate_normal
+    k1, k2 = norm.ppf(p1), norm.ppf(p2)
+    p12 = multivariate_normal(mean=[0, 0], cov=[[1, rho_a], [rho_a, 1]]).cdf(
+        [k1, k2])
+    return float((p12 - p1 * p2) / np.sqrt(p1 * (1 - p1) * p2 * (1 - p2)))
+
+
+def calibrar_por_setor(setores, c, p, rho_intra, rho_inter, rho_setor):
+    """Calibra rho_S,s e rho_G,s setor a setor.
+
+    `rho_setor`: DataFrame com colunas setor, rho_intra, rho_inter (alvos de
+    correlação de DEFAULT). Cada setor informado é calibrado na sua PD média
+    ponderada pela exposição líquida; os setores ausentes da tabela mantêm
+    as correlações de ativos da carga uniforme (alvos globais calibrados na
+    PD média da carteira), de modo que uma tabela parcial só altera os
+    setores que ela lista."""
+    nomes, idx = np.unique(np.asarray(setores).astype(str), return_inverse=True)
+    tab = {}
+    if rho_setor is not None and len(rho_setor):
+        for _, r in pd.DataFrame(rho_setor).iterrows():
+            tab[str(r["setor"])] = (float(r["rho_intra"]), float(r["rho_inter"]))
+    pbar = float(np.dot(c, p) / c.sum())
+    rs0, rg0 = calibrate_rho(pbar, rho_intra), calibrate_rho(pbar, rho_inter)
+    linhas, vg, vs, pb = [], [], [], []
+    for k, nome in enumerate(nomes):
+        m = idx == k
+        p_s = float(np.dot(c[m], p[m]) / c[m].sum())
+        intra, inter = tab.get(nome, (rho_intra, rho_inter))
+        if inter > intra:
+            raise ValueError(f"Setor {nome}: o alvo inter-setor ({inter:.3f}) "
+                             f"excede o intra-setor ({intra:.3f}).")
+        if nome in tab:
+            rs, rg = calibrate_rho(p_s, intra), calibrate_rho(p_s, inter)
+        else:
+            rs, rg = rs0, rg0
+        vg.append(rg); vs.append(rs); pb.append(p_s)
+        linhas.append({"setor": nome, "pd_media": p_s,
+                       "exposicao_liquida": float(c[m].sum()),
+                       "rho_default_intra_alvo": intra,
+                       "rho_default_inter_alvo": inter,
+                       "pd_calibracao": p_s if nome in tab else pbar,
+                       "rho_ativos_intra": rs, "rho_ativos_inter": rg,
+                       "carga_global": float(np.sqrt(rg)),
+                       "carga_setorial": float(np.sqrt(max(rs - rg, 0.0))),
+                       "informado": nome in tab})
+    vg, vs, pb = np.array(vg), np.array(vs), np.array(pb)
+    w = np.array([l["exposicao_liquida"] for l in linhas]); w = w / w.sum()
+    # matriz de correlação de ativos entre setores (diagonal: intra)
+    mat = np.sqrt(np.outer(vg, vg))
+    np.fill_diagonal(mat, vs)
+    # correlação de default implícita, par a par, nas PDs dos setores
+    n = len(nomes)
+    md = np.empty((n, n))
+    for i in range(n):
+        for j in range(i, n):
+            md[i, j] = md[j, i] = rho_default_par(mat[i, j], pb[i], pb[j])
+    return {
+        "por_setor": pd.DataFrame(linhas),
+        "rho_ativos_inter_vec": vg.tolist(),
+        "rho_ativos_intra_vec": vs.tolist(),
+        "matriz_ativos": pd.DataFrame(mat, index=nomes, columns=nomes),
+        "matriz_default": pd.DataFrame(md, index=nomes, columns=nomes),
+        "rho_ativos_inter": float(np.dot(w, vg)),
+        "rho_ativos_intra": float(np.dot(w, vs)),
+        "cargas_por_setor": True,
+    }
+
+
+def rhos_para_motor(cal):
+    """(rho_g, rho_s) para os motores: vetores por setor, se calibrados,
+    ou os escalares da carga uniforme."""
+    if cal.get("cargas_por_setor"):
+        return (np.asarray(cal["rho_ativos_inter_vec"]),
+                np.asarray(cal["rho_ativos_intra_vec"]))
+    return cal["rho_ativos_inter"], cal["rho_ativos_intra"]
+
+
 def get_y_sector(N, M, p, rho_g, rho_s, sector_idx, nu, is_t=0, rng=np.random):
     """Gera a matriz latente Y (M x N) do modelo de dois níveis."""
     n_sec = int(sector_idx.max()) + 1
+    a, b, d = cargas(rho_g, rho_s, n_sec)
     G = rng.normal(0, 1, (M, 1))                      # fator global
     F = rng.normal(0, 1, (M, n_sec))                  # fatores setoriais
     eps = rng.normal(0, 1, (M, N))                    # idiossincrático
-    Y = (np.sqrt(rho_g) * G
-         + np.sqrt(max(rho_s - rho_g, 0.0)) * F[:, sector_idx]
-         + np.sqrt(1.0 - rho_s) * eps)
+    Y = (a[sector_idx] * G
+         + b[sector_idx] * F[:, sector_idx]
+         + d[sector_idx] * eps)
     if is_t == 1:
         W = np.sqrt(nu / rng.chisquare(nu, (M, 1)))
         Y = W * Y
@@ -70,6 +173,7 @@ def run_multifactor_analysis(
     nu: float = 10.0,
     contrib_alpha: float = 0.99,
     contrib_S: int = 10,
+    rho_setor=None,
 ) -> dict:
     """Executa o modelo multifatorial setorial (gaussiano e t) e devolve
     medidas de risco, calibração e contribuições por setor e por nome."""
@@ -85,18 +189,23 @@ def run_multifactor_analysis(
     pbar = float(np.dot(c / c.sum(), p))
 
     # ---- calibração: correlações de ativos que atingem os alvos de default ----
-    rho_s = calibrate_rho(pbar, rho_intra_target)   # intra-setor
-    rho_g = calibrate_rho(pbar, rho_inter_target)   # inter-setor (fator global)
+    calib = {
+        "rho_default_intra_alvo": rho_intra_target,
+        "rho_default_inter_alvo": rho_inter_target,
+        "pbar": pbar,
+    }
+    if rho_setor is not None and len(rho_setor):
+        calib.update(calibrar_por_setor(sectors, c, p, rho_intra_target,
+                                        rho_inter_target, rho_setor))
+        rho_g, rho_s = rhos_para_motor(calib)
+    else:
+        rho_s = calibrate_rho(pbar, rho_intra_target)   # intra-setor
+        rho_g = calibrate_rho(pbar, rho_inter_target)   # inter-setor (global)
+        calib.update({"rho_ativos_intra": rho_s, "rho_ativos_inter": rho_g})
 
     out = {
         "setores": list(sector_names),
-        "calibracao": {
-            "rho_default_intra_alvo": rho_intra_target,
-            "rho_default_inter_alvo": rho_inter_target,
-            "rho_ativos_intra": rho_s,
-            "rho_ativos_inter": rho_g,
-            "pbar": pbar,
-        },
+        "calibracao": calib,
         "medidas": [],
     }
 

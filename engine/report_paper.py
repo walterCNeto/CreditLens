@@ -281,10 +281,29 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
                      "|desvio| ≤ 0,100 p.p.",
                      "OK" if abs(imp - alvo) <= 0.001 else "Atenção"])
     mfc = (results.get("multifator") or {}).get("calibracao", {})
+    if mfc.get("cargas_por_setor"):
+        from .multifactor import rho_default_par
+        ps = mfc["por_setor"]
+        for chave, alvo_c, rot in [
+                ("rho_ativos_intra", "rho_default_intra_alvo", "intra-setor"),
+                ("rho_ativos_inter", "rho_default_inter_alvo", "inter-setor")]:
+            desv = []
+            for _, r in ps.iterrows():
+                pc = r.get("pd_calibracao", r["pd_media"])
+                imp = rho_default_par(r[chave], pc, pc)
+                desv.append((abs(imp - r[alvo_c]), r["setor"]))
+            dmax, smax = max(desv)
+            rows.append([f"Calibração MF por setor ({rot}): ρ_D implícita",
+                         f"desvio máx. {br(dmax * 100, 3)} p.p. ({smax}; "
+                         f"{len(desv)} setores)",
+                         "|desvio| ≤ 0,100 p.p. em todos os setores",
+                         "OK" if dmax <= 0.001 else "Atenção"])
     for chave, alvo_k, rot in [("rho_ativos_intra", prm.get("rho_intra"),
                                 "intra-setor"),
                                ("rho_ativos_inter", prm.get("rho_inter"),
                                 "inter-setor")]:
+        if mfc.get("cargas_por_setor"):
+            break
         if mfc.get(chave) and alvo_k and pbar:
             imp = _rho_default_gauss(mfc[chave], pbar)
             rows.append([f"Calibração MF {rot}: ρ_D implícita",
@@ -534,10 +553,17 @@ def _parametros(results, prm, pooled, tem, mig, extra):
                   f"{br(prm.get('rho_inter'), 3, pct=True)}",
                   "dependência setorial (dois níveis)", "[11, 13]"])
         if mfc:
-            R.append(["ρ de ativos intra / inter",
+            por_setor = bool(mfc.get("cargas_por_setor"))
+            R.append(["ρ de ativos intra / inter"
+                      + (" (média ponderada)" if por_setor else ""),
                       f"{br(mfc.get('rho_ativos_intra'), 3)} / "
                       f"{br(mfc.get('rho_ativos_inter'), 3)}",
                       "cargas fatoriais calibradas", "[11]"])
+            R.append(["Cargas por setor",
+                      "sim" if por_setor else "não (uniformes)",
+                      "alvos de ρ_D e calibração setor a setor"
+                      if por_setor else "mesmos alvos em todos os setores",
+                      "[11, 13]"])
     if ex.get("contrib_alpha") is not None:
         R.append(["α das contribuições", br(ex["contrib_alpha"], 3),
                   "nível da alocação de Euler do ES", "[9]"])
@@ -759,10 +785,20 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   f"{br(mfc.get('rho_ativos_intra'), 3)} e "
                   f"{br(mfc.get('rho_ativos_inter'), 3)}. A decomposição "
                   "de risco por setor usa alocação de Euler: contribuição "
-                  "ao ES como perda esperada condicional à cauda [9].")
-            D.formula(r"$Y_i=\sqrt{\rho_G}\,G+\sqrt{\rho_S-\rho_G}\,"
-                      r"F_{s(i)}+\sqrt{1-\rho_S}\;\epsilon_i$",
-                      secao="Metodologia")
+                  "ao ES como perda esperada condicional à cauda [9]."
+                  + (" As cargas foram calibradas por setor, cada setor "
+                     "com os seus alvos e a sua PD média; os valores acima "
+                     "são médias ponderadas pela exposição. Entre os "
+                     "setores s e t, a correlação de ativos é "
+                     "√(ρ_G,s·ρ_G,t)." if mfc.get("cargas_por_setor") else ""))
+            if mfc.get("cargas_por_setor"):
+                D.formula(r"$Y_i=\sqrt{\rho_{G,s}}\,G+\sqrt{\rho_{S,s}"
+                          r"-\rho_{G,s}}\,F_{s}+\sqrt{1-\rho_{S,s}}\;"
+                          r"\epsilon_i,\quad s=s(i)$", secao="Metodologia")
+            else:
+                D.formula(r"$Y_i=\sqrt{\rho_G}\,G+\sqrt{\rho_S-\rho_G}\,"
+                          r"F_{s(i)}+\sqrt{1-\rho_S}\;\epsilon_i$",
+                          secao="Metodologia")
         if tem("ASRF"):
             secao("ASRF (carteira assintoticamente granular)")
             D.par("Limite analítico de Vasicek [1] — infinitos créditos, um "

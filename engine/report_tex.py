@@ -61,6 +61,34 @@ def nm(v, dec=3, pct=False):
     return br(v, dec, pct=pct).replace(",", "{,}").replace("%", r"\%")
 
 
+def _tabela_longa(cab, linhas, spec, legenda, rotulo, small=True):
+    """Tabela que quebra entre páginas (longtable), repetindo o cabeçalho."""
+    corpo = "\n".join(" & ".join(l) + r" \\" for l in linhas)
+    n = len(cab)
+    h = " & ".join(cab) + r" \\"
+    return rf"""
+{{{r'\small' if small else ''}\setlength{{\tabcolsep}}{{4pt}}
+\begin{{longtable}}{{{spec}}}
+\caption{{{legenda}}}\label{{{rotulo}}}\\
+\toprule
+{h}
+\midrule
+\endfirsthead
+\multicolumn{{{n}}}{{l}}{{\emph{{Tabela~\ref{{{rotulo}}} --- continuação}}}}\\
+\toprule
+{h}
+\midrule
+\endhead
+\midrule
+\multicolumn{{{n}}}{{r}}{{\emph{{continua na próxima página}}}}\\
+\endfoot
+\bottomrule
+\endlastfoot
+{corpo}
+\end{{longtable}}}}
+"""
+
+
 def _tabela(cab, linhas, spec, legenda, rotulo, small=True, H=False):
     corpo = "\n".join(" & ".join(l) + r" \\" for l in linhas)
     return rf"""
@@ -92,6 +120,7 @@ PREAMBULO = r"""\documentclass[11pt,a4paper]{article}
 \usepackage{amsmath,amssymb,bm}
 \usepackage[margin=2.4cm]{geometry}
 \usepackage{booktabs}
+\usepackage{longtable}
 \usepackage{graphicx}
 \usepackage{float}
 \usepackage{array}
@@ -371,6 +400,26 @@ Y_n=\sqrt{{\rho_G}}\,G+\sqrt{{\rho_S-\rho_G}}\,F_{{s(n)}}+\sqrt{{1-\rho_S}}\,\va
 \end{{equation}}
 em que $F_{{s(n)}}$ é o fator do setor do devedor $n$, $\rho_S$ a correlação de ativos intra-setor e $\rho_G$ a entre setores. Os alvos de correlação de default, {nb(prm.get('rho_intra'), 3, pct=True)} e {nb(prm.get('rho_inter'), 3, pct=True)}, resultaram em $\rho_S={nm(mfc.get('rho_ativos_intra'))}$ e $\rho_G={nm(mfc.get('rho_ativos_inter'))}$. As contribuições setoriais seguem a alocação de Euler: a contribuição ao ES é a perda esperada da posição condicional à cauda (Tasche, 2008).
 """)
+        if mfc.get("cargas_por_setor"):
+            ps = mfc["por_setor"]
+            T.append(r"""
+\paragraph{Cargas por setor.} Nesta execução, cada setor $s$ recebeu os próprios alvos de correlação de default, e as correlações de ativos foram calibradas setor a setor, na PD média do setor:
+\begin{equation}
+Y_n=\sqrt{\rho_{G,s}}\,G+\sqrt{\rho_{S,s}-\rho_{G,s}}\,F_{s}+\sqrt{1-\rho_{S,s}}\,\varepsilon_n,\qquad s=s(n).
+\end{equation}
+A correlação de ativos dentro do setor $s$ é $\rho_{S,s}$; entre os setores $s$ e $t$, $\sqrt{\rho_{G,s}\,\rho_{G,t}}$. A estrutura entre setores é de posto 1: os pares diferem pela carga de cada setor no fator global, mas a razão entre as correlações de um setor com outros dois é a mesma para todo setor --- blocos de setores exigiriam um segundo fator global. Os valores de $\rho_S$ e $\rho_G$ acima são médias ponderadas pela exposição; a Tabela~\ref{tab:mf-setor} traz a calibração de cada setor."""
+                     + _tabela(
+                         ["Setor", "PD média", r"$\rho_D$ intra", r"$\rho_D$ inter",
+                          r"$\rho_{S,s}$", r"$\rho_{G,s}$"],
+                         [[tx(r["setor"]), nb(r["pd_media"], 3, pct=True),
+                           nb(r["rho_default_intra_alvo"], 3, pct=True),
+                           nb(r["rho_default_inter_alvo"], 3, pct=True),
+                           nb(r["rho_ativos_intra"]), nb(r["rho_ativos_inter"])]
+                          for _, r in ps.iterrows()],
+                         "lrrrrr",
+                         "Calibração das cargas por setor (alvos de correlação "
+                         "de default e correlações de ativos).",
+                         "tab:mf-setor", H=True))
     if tem("ASRF"):
         T.append(r"""
 \subsection{ASRF: carteira assintoticamente granular}
@@ -475,10 +524,10 @@ em que $\widehat{{\E}}[L]$ é a média das $M$ perdas simuladas e $\widehat\sigm
 em que $L_{{(k)}}$ é a $k$-ésima menor perda simulada (David e Nagaraja, 2003). Cada teste recebe um de três status:
 \begin{{description}}\setlength\itemsep{{1pt}}
 """ + "".join(rf"\item[{cor[k]}] {tx(v)}" + "\n" for k, v in LEGENDA_STATUS) + r"""\end{description}
-""" + _tabela(["Teste", "Resultado", "Critério", "Status"],
+""" + _tabela_longa(["Teste", "Resultado", "Critério", "Status"],
               [[tx(a), tx(b), tx(c), cor.get(d, tx(d))] for a, b, c, d in drows],
               r">{\raggedright\arraybackslash}p{5.9cm}>{\raggedright\arraybackslash}p{3.6cm}>{\raggedright\arraybackslash}p{4.4cm}c",
-              "Diagnósticos de validação da execução.", "tab:diag", H=True)
+              "Diagnósticos de validação da execução.", "tab:diag")
              + r"""
 \subsection*{Leitura dos resultados}
 """ + tx(sint) + ("\n\\begin{itemize}\\setlength\\itemsep{2pt}\n" + "".join(

@@ -11,6 +11,28 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+
+def _recarregar_engine():
+    """O Streamlit recarrega o app.py a cada atualização do código, mas
+    mantém em memória os módulos de engine/ já importados. Recarrega cada
+    módulo cujo arquivo mudou desde a última carga (ou que ainda não foi
+    marcado por esta versão do app), evitando chamar funções antigas."""
+    import importlib, sys
+    ordem = ["portfolio", "irb_bcb", "multifactor", "pooled", "aggregation",
+             "migration", "report_paper", "report_tex", "analytics"]
+    for nome in ordem:
+        mod = sys.modules.get(f"engine.{nome}")
+        arq = getattr(mod, "__file__", None)
+        if mod is None or arq is None or not os.path.exists(arq):
+            continue
+        mt = os.path.getmtime(arq)
+        if getattr(mod, "_creditlens_mtime", None) != mt:
+            mod = importlib.reload(mod)
+            mod._creditlens_mtime = mt
+
+
+_recarregar_engine()
+
 from engine.portfolio import load_portfolio
 from engine.analytics import run_full_analysis, results_to_excel
 
@@ -171,6 +193,45 @@ c5.metric("HHI (N efetivo)", f"{s['hhi']:.4f}", f"{s['n_efetivo']:.0f} nomes",
 with st.expander("Ver carteira carregada"):
     st.dataframe(port.df, width='stretch', height=280)
 
+# ---------------- Correlação por setor (multifatorial) ----------------
+rho_setor = None
+if run_mf and "setor" in port.df.columns:
+    with st.expander("Correlação por setor (multifatorial, opcional)"):
+        usar_setor = st.checkbox(
+            "Calibrar correlações por setor", value=False,
+            help="Cada setor recebe os próprios alvos de correlação de "
+                 "default, calibrados na PD média do setor. Desmarcado, "
+                 "todos os setores usam os alvos da barra lateral, "
+                 "calibrados na PD média da carteira.")
+        st.caption(
+            "ρ intra: correlação de default entre dois devedores do setor. "
+            "ρ inter: correlação de default do setor com os demais via fator "
+            "global. Entre os setores s e t, a correlação de ativos é "
+            "√(ρ_G,s·ρ_G,t): pares diferem pela carga de cada setor, mas "
+            "blocos de setores (ex.: commodities × consumo) exigiriam um "
+            "segundo fator global.")
+        _sets = sorted(port.df["setor"].astype(str).unique())
+        _base = pd.DataFrame({"setor": _sets,
+                              "rho_intra": [float(rho_intra)] * len(_sets),
+                              "rho_inter": [float(rho_inter)] * len(_sets)})
+        if usar_setor:
+            _ed = st.data_editor(
+                _base, key=f"rho_setor_{len(_sets)}", hide_index=True,
+                disabled=["setor"], width='stretch',
+                column_config={
+                    "rho_intra": st.column_config.NumberColumn(
+                        "ρ default intra", min_value=0.001, max_value=0.5,
+                        step=0.005, format="%.3f"),
+                    "rho_inter": st.column_config.NumberColumn(
+                        "ρ default inter", min_value=0.001, max_value=0.5,
+                        step=0.005, format="%.3f")})
+            _bad = _ed[_ed["rho_inter"] > _ed["rho_intra"]]
+            if len(_bad):
+                st.error("O ρ inter não pode exceder o intra nos setores: "
+                         + ", ".join(_bad["setor"]) + ".")
+            else:
+                rho_setor = _ed
+
 # ---------------- Execução ----------------
 st.subheader("3. Análise")
 if st.button("▶ Executar modelos", type="primary"):
@@ -188,7 +249,8 @@ if st.button("▶ Executar modelos", type="primary"):
                 port, M=M, rho_target=rho_target,
                 rho_intra=rho_intra, rho_inter=rho_inter, nu=float(nu),
                 crp_w=crp_w, crp_v=crp_v,
-                contrib_alpha=contrib_alpha, seed=int(seed), progress=tick)
+                contrib_alpha=contrib_alpha, seed=int(seed), progress=tick,
+                rho_setor=rho_setor)
         else:
             results = run_full_analysis(
             port, M=M, rho_target=rho_target, nu=float(nu),
@@ -198,6 +260,7 @@ if st.button("▶ Executar modelos", type="primary"):
             run_multifactor=run_mf and rho_inter <= rho_intra
                 and "setor" in port.df.columns,
             rho_intra=rho_intra, rho_inter=rho_inter,
+            rho_setor=rho_setor,
         )
     # --- migração & ECL ---
     mtx_src = mtx_up if mtx_up is not None else (
@@ -208,6 +271,7 @@ if st.button("▶ Executar modelos", type="primary"):
         try:
             from engine.migration import (load_transition_matrix, compute_ecl,
                                           simulate_multiperiod)
+            from engine.multifactor import rhos_para_motor
             P_m, ratings_m = load_transition_matrix(mtx_src)
             ecl_df, cum_m, _ = compute_ecl(port, P_m, ratings_m,
                                            discount_rate=taxa_desc)
@@ -218,8 +282,8 @@ if st.button("▶ Executar modelos", type="primary"):
                     _, sector_idx = np.unique(port.df["setor"].astype(str),
                                               return_inverse=True)
                     sim_m = simulate_multiperiod_pooled(port, P_m, ratings_m,
-                        M=M, T=horizonte, rho_g=cal_mf["rho_ativos_inter"],
-                        rho_s=cal_mf["rho_ativos_intra"], sector_idx=sector_idx,
+                        M=M, T=horizonte, rho_g=rhos_para_motor(cal_mf)[0],
+                        rho_s=rhos_para_motor(cal_mf)[1], sector_idx=sector_idx,
                         discount_rate=taxa_desc, block_size=block_sz,
                         seed=int(seed), progress=tick,
                         rho_d_alvo=rho_target)
@@ -238,8 +302,8 @@ if st.button("▶ Executar modelos", type="primary"):
                 _, sector_idx = np.unique(port.df["setor"].astype(str),
                                           return_inverse=True)
                 sim_m = simulate_multiperiod(port, P_m, ratings_m, M=M,
-                    T=horizonte, rho_g=cal_mf["rho_ativos_inter"],
-                    rho_s=cal_mf["rho_ativos_intra"], sector_idx=sector_idx,
+                    T=horizonte, rho_g=rhos_para_motor(cal_mf)[0],
+                    rho_s=rhos_para_motor(cal_mf)[1], sector_idx=sector_idx,
                     discount_rate=taxa_desc, block_size=block_sz,
                     seed=int(seed), progress=tick)
             else:
@@ -441,6 +505,23 @@ with tabs[4]:
                   f"alvo default {cal['rho_default_inter_alvo']:.0%}", delta_color="off")
         c3.metric("HHI setorial", f"{mf['hhi_setorial']:.4f}",
                   f"{1/mf['hhi_setorial']:.1f} setores efetivos", delta_color="off")
+        if cal.get("cargas_por_setor"):
+            st.markdown("**Correlações calibradas por setor** — as métricas "
+                        "acima são médias ponderadas pela exposição.")
+            st.dataframe(cal["por_setor"][[
+                "setor", "pd_media", "rho_default_intra_alvo",
+                "rho_default_inter_alvo", "rho_ativos_intra",
+                "rho_ativos_inter", "carga_global", "carga_setorial"]
+            ].style.format({k: "{:.3f}" for k in [
+                "rho_default_intra_alvo", "rho_default_inter_alvo",
+                "rho_ativos_intra", "rho_ativos_inter", "carga_global",
+                "carga_setorial"]} | {"pd_media": "{:.3%}"}),
+                width='stretch', hide_index=True)
+            st.markdown("**Correlação de default implícita entre setores** "
+                        "(diagonal: intra-setor)")
+            st.dataframe(cal["matriz_default"].style.format("{:.3f}")
+                         .background_gradient(cmap="Reds", axis=None),
+                         width='stretch')
         st.caption(f"Contribuições ao ES {mf['contrib_alpha']:.0%} do modelo "
                    f"gaussiano multifatorial (ES médio {mf['es_medio']:,.1f}). "
                    "A razão risco/exposição > 1 indica setor que concentra "
