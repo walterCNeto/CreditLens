@@ -198,14 +198,11 @@ st.success(
 
 
 # ---------------- 2. Correlação por setor (multifatorial) ----------------
-def _mostrar_leitura_setores(port, tab, rho_intra, rho_inter):
-    """Leitura, ao vivo, do que os alvos digitados significam. `port` só
-    precisa de .c, .p e .df['setor'] — aqui, os totais por setor."""
-    from engine.multifactor import (calibrar_por_setor, calibrate_rho,
-                                    leitura_setores)
-    c, p = port.c, port.p
-    pbar = float(np.dot(c, p) / c.sum())
-    cal = calibrar_por_setor(port.df["setor"], c, p, rho_intra, rho_inter, tab)
+def _mostrar_leitura_setores(cal, rho_intra, rho_inter):
+    """Leitura do que os alvos por setor significam, a partir da calibração
+    feita na execução (nada é calculado antes de Executar)."""
+    from engine.multifactor import calibrate_rho, leitura_setores
+    pbar = cal["pbar"]
     ps, pares, res = leitura_setores(
         cal, rho_intra, rho_inter,
         calibrate_rho(pbar, rho_intra), calibrate_rho(pbar, rho_inter))
@@ -260,11 +257,7 @@ def _mostrar_leitura_setores(port, tab, rho_intra, rho_inter):
 rho_setor = None
 setor_invalido = False
 if run_mf and previa["setores"] is not None:
-    from types import SimpleNamespace
     _tot = previa["setores"]
-    _port_setores = SimpleNamespace(c=_tot["c"].to_numpy(float),
-                                    p=_tot["p"].to_numpy(float),
-                                    df=_tot[["setor"]])
     st.subheader("2. Correlação por setor (opcional)")
     usar_setor = st.checkbox(
         "Calibrar correlações por setor", value=False,
@@ -302,7 +295,10 @@ if run_mf and previa["setores"] is not None:
                      + ", ".join(_bad["setor"]) + ".")
         else:
             rho_setor = _ed
-            _mostrar_leitura_setores(_port_setores, _ed, rho_intra, rho_inter)
+            st.caption("A leitura destas escolhas — perfil de cada setor, "
+                       "pares mais e menos ligados e efeito esperado no "
+                       "capital — é gerada ao executar e aparece na aba "
+                       "**Setores**.")
 
 
 # ---------------- 3. Execução: o pipeline inteiro, com a configuração atual ---
@@ -640,22 +636,20 @@ with tabs[4]:
         c3.metric("HHI setorial", f"{mf['hhi_setorial']:.4f}",
                   f"{1/mf['hhi_setorial']:.1f} setores efetivos", delta_color="off")
         if cal.get("cargas_por_setor"):
-            st.markdown("**Correlações calibradas por setor** — as métricas "
-                        "acima são médias ponderadas pela exposição.")
-            st.dataframe(cal["por_setor"][[
-                "setor", "pd_media", "rho_default_intra_alvo",
-                "rho_default_inter_alvo", "rho_ativos_intra",
-                "rho_ativos_inter", "carga_global", "carga_setorial"]
-            ].style.format({k: "{:.3f}" for k in [
-                "rho_default_intra_alvo", "rho_default_inter_alvo",
-                "rho_ativos_intra", "rho_ativos_inter", "carga_global",
-                "carga_setorial"]} | {"pd_media": "{:.3%}"}),
-                width='stretch', hide_index=True)
-            st.markdown("**Correlação de default implícita entre setores** "
-                        "(diagonal: intra-setor)")
-            st.dataframe(cal["matriz_default"].style.format("{:.3f}")
-                         .background_gradient(cmap="Reds", axis=None),
-                         width='stretch')
+            st.caption("Correlações calibradas por setor — as métricas acima "
+                       "são médias ponderadas pela exposição.")
+            _mostrar_leitura_setores(cal, cal["rho_default_intra_alvo"],
+                                     cal["rho_default_inter_alvo"])
+            with st.expander("Calibração detalhada por setor"):
+                st.dataframe(cal["por_setor"][[
+                  "setor", "pd_media", "rho_default_intra_alvo",
+                  "rho_default_inter_alvo", "rho_ativos_intra",
+                  "rho_ativos_inter", "carga_global", "carga_setorial"]
+              ].style.format({k: "{:.3f}" for k in [
+                  "rho_default_intra_alvo", "rho_default_inter_alvo",
+                  "rho_ativos_intra", "rho_ativos_inter", "carga_global",
+                  "carga_setorial"]} | {"pd_media": "{:.3%}"}),
+                  width='stretch', hide_index=True)
         st.caption(f"Contribuições ao ES {mf['contrib_alpha']:.0%} do modelo "
                    f"gaussiano multifatorial (ES médio {mf['es_medio']:,.1f}). "
                    "A razão risco/exposição > 1 indica setor que concentra "
