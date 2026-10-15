@@ -16,7 +16,7 @@ Python* (Springer, 2018)** — o referencial teórico do projeto (`model.pdf`).
 | Contribuições | Decomposição Monte Carlo de VaR/ES por contraparte (limiar gaussiano) | Cap. 7 |
 | Multifatorial | Limiar gaussiano/t com fatores setoriais (dois níveis: global + setor), calibração intra/inter-setor, contribuições de ES por setor | Cap. 4 (estrutura de correlação) |
 | Migração & ECL | Matriz de transição anual (upload), estrutura a termo de PD por potências, ECL 12m vs. lifetime com estágios IFRS 9/CMN 4.966, simulação multiperíodo com escada de limiares sobre a estrutura de fatores — inclusive em modo pooled (frações por rating × matriz condicional) | Caps. 4 (pMap) e sobre cadeias de Markov |
-| Agregação & pooled | Base analítica (milhões de contratos) → grandes exposições + buckets GH×setor com EL preservada exatamente; motor pooled (Binomial condicional / large-pool de Vasicek), GA com c² → C²/n, relatório de qualidade (CV de PD intra-bucket) | Gordy–Lütkebohmert (pool-based) |
+| Agregação & pooled | Base analítica (milhões de contratos) → grandes exposições + buckets GH×setor com EL preservada exatamente; motor pooled (Binomial condicional / granularidade infinita de Vasicek), GA com c² → C²/n, relatório de qualidade (CV de PD intra-bucket) | Gordy–Lütkebohmert (pool-based) |
 
 Medidas em cada modelo: **EL, UL (volatilidade da perda), VaR e Expected
 Shortfall** nos níveis 95% / 99% / 99,9% / 99,97% (configuráveis).

@@ -271,7 +271,7 @@ def simulate_multiperiod_pooled(
     Pools: o estado do grupo é o VETOR DE FRAÇÕES por rating, que evolui
     pela matriz de transição condicional ao cenário sistemático do ano —
     as probabilidades de banda da escada de limiares avaliadas no fator
-    sorteado. Nos grupos fora do limite de carteira grande (critério de
+    sorteado. Nos grupos fora do limite de granularidade infinita (critério de
     razão de variâncias do motor de um período, com o número efetivo de
     contratos n_eff), os DEFAULTS de cada ano são sorteados:
 
@@ -282,7 +282,7 @@ def simulate_multiperiod_pooled(
     frações por rating; conservadora pela desigualdade de Hoeffding). A
     migração entre ratings não-default segue as frações condicionais; a
     massa viva é reescalada para refletir os defaults sorteados. Nos
-    grupos no limite de carteira grande, a fração em default é a esperança
+    grupos no limite de granularidade infinita, a fração em default é a esperança
     condicional (lei dos grandes números). Grandes exposições (n = 1):
     trajetória de rating DISCRETA, compartilhando os fatores do ano.
     Perdas de default descontadas ao ano de ocorrência."""
@@ -335,7 +335,7 @@ def simulate_multiperiod_pooled(
         # pools: frações por rating
         frac = np.zeros((mb, Gp, Kst), dtype=dtype)
         frac[:, np.arange(Gp), r0[idx_pool]] = 1.0
-        # contratos equivalentes vivos (grupos fora do limite de carteira grande)
+        # contratos equivalentes vivos (grupos fora do limite de granularidade infinita)
         vivos = np.tile(n_eq[idx_pool], (mb, 1)).astype(np.int64)
         # singles: estado discreto
         ratingS = np.tile(r0[idx_sing], (mb, 1))

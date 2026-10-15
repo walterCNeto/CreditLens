@@ -310,7 +310,7 @@ def run_pooled_analysis(
 
     Estrutura de resultados compatível com run_full_analysis para reuso
     das abas do aplicativo; modelos executados no motor pooled (ramos
-    binomial condicional / large pool), IRB por bucket e ajuste de
+    binomial condicional / granularidade infinita), IRB por bucket e ajuste de
     granularidade com o termo c^2 corrigido para C_g^2/n_eff,
     n_eff = C_g^2 / soma c_i^2."""
     from .pooled import simulate_pooled

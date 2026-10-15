@@ -351,12 +351,12 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
                      "OK" if rel_agg["pd_cv_max_bucket"] <= 0.5
                      else "Atenção"])
 
-    # 5b. regime de carteira grande (motor pooled)
+    # 5b. regime de granularidade infinita (motor pooled)
     rg = results.get("regimes_pooled")
     if pooled and rg:
-        rows.append(["Regime de carteira grande: idiossincrático descartado",
+        rows.append(["Regime de granularidade infinita: idiossincrático descartado",
                      f"máx. {br(rg['razao_max_lln'], 3, pct=True)} "
-                     f"({rg['carteira_grande']} grupo(s))",
+                     f"({rg['granularidade_infinita']} grupo(s))",
                      f"≤ {br(rg['tau'], 3, pct=True)} da variância sistemática",
                      "OK" if rg["razao_max_lln"] <= rg["tau"] else "Atenção"])
 
@@ -685,7 +685,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   "cada grupo é representado pelo seu número efetivo de "
                   "contratos, n_eff = C²/Σc², que preserva a média e a "
                   "variância idiossincrática condicional. O limite de "
-                  "carteira grande de Vasicek [1, 2], que descarta essa "
+                  "granularidade infinita de Vasicek [1, 2], que descarta essa "
                   "variância, só é usado quando ela é inferior a 1% da "
                   "sistemática, isto é, (1 − ρ_D)/(n_eff·ρ_D) < 1%; os "
                   "demais grupos são simulados pela Binomial condicional. "
@@ -856,7 +856,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   "de um parâmetro [10] — acumulando perdas descontadas."
                   + (" Na carteira agregada, cada grupo evolui como vetor de "
                      "frações por rating; nos grupos fora do limite de "
-                     "carteira grande, os defaults de cada ano são sorteados "
+                     "granularidade infinita, os defaults de cada ano são sorteados "
                      "por Binomial(A, q) sobre o número inteiro de contratos "
                      "equivalentes vivos A, com a taxa de default condicional "
                      "entre os vivos q — o risco idiossincrático intragrupo "

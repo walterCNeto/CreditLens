@@ -8,11 +8,11 @@ e a perda do bucket é gerada em três regimes:
 
     n_eq = 1          : Bernoulli(p_cond) x C_g            (grande exposição)
     pool binomial     : Binomial(n_eq, p_cond) x C_g/n_eq
-    carteira grande   : C_g x p_cond                       (LLN de Vasicek)
+    granular. infinita: C_g x p_cond                       (LLN de Vasicek)
 
 n_eq = round(n_eff) é o número de contratos equivalentes: o pool homogêneo
 com a mesma EL e a mesma variância idiossincrática condicional do grupo
-(n_eff = C_g^2 / soma c_i^2). O limite de carteira grande descarta a
+(n_eff = C_g^2 / soma c_i^2). O limite de granularidade infinita descarta a
 variância idiossincrática; ele só é usado quando a razão entre essa
 variância e a sistemática, (1 - rho_D) / (n_eff rho_D), fica abaixo de
 TAU_LLN (1%) — caso contrário, o grupo é simulado pela Binomial.
@@ -95,7 +95,7 @@ def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]
     info_regimes = {
         "nomes": int((n == 1).sum()),
         "binomial": int(((n > 1) & ~lln).sum()),
-        "carteira_grande": int(lln.sum()),
+        "granularidade_infinita": int(lln.sum()),
         "razao_max_lln": float(razao[lln].max()) if lln.any() else 0.0,
         "limiar_n_eff": float((1.0 - rho_d_alvo) / (TAU_LLN * rho_d_alvo)),
         "tau": TAU_LLN,

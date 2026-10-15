@@ -28,7 +28,7 @@ compacta em duas partes:
 
 A coluna nova `n_contratos` informa aos modelos que a linha é um pool:
 a simulação usa Binomial(n_g, p condicional) para pools moderados e a
-aproximação de carteira grande (perda condicional = C_g x p condicional,
+aproximação de granularidade infinita (perda condicional = C_g x p condicional,
 lei dos grandes números de Vasicek) para pools grandes — o que reduz a
 dimensão da simulação ao número de buckets e torna viável a base de
 milhões de linhas.

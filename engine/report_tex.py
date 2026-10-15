@@ -305,7 +305,7 @@ Cada linha da carteira de modelagem tem severidade $c_n=\mathrm{EAD}_n\times\mat
             txt_rel = (rf"""
 
 \paragraph{{Nesta execução.}} {nb(rel_agg['linhas_analitica'], 0)} contratos foram reduzidos a {nb(rel_agg['linhas_agregada'], 0)} linhas ({nb(rel_agg['n_grandes'], 0)} grandes exposições e {nb(rel_agg['n_buckets'], 0)} grupos), com diferença de EL {dif_txt} e CV de PD intra-grupo máximo de {nb(rel_agg['pd_cv_max_bucket'])}. O número efetivo mediano dos grupos é {nb(rel_agg.get('n_efetivo_mediano', 0))}, {nb(rel_agg.get('razao_n_efetivo_mediana', 1))} vez o número de contratos."""
-                       + (rf""" Na simulação, {rg.get('nomes', 0)} linhas seguiram o regime de Bernoulli, {rg.get('binomial', 0)} o binomial e {rg.get('carteira_grande', 0)} o de carteira grande (limiar $n^{{\mathrm{{eff}}}}>{nm(rg.get('limiar_n_eff', 0), 0)}$ para $\rho_D={nm(prm.get('rho_alvo'), 3, pct=True)}$)."""
+                       + (rf""" Na simulação, {rg.get('nomes', 0)} linhas seguiram o regime de Bernoulli, {rg.get('binomial', 0)} o binomial e {rg.get('granularidade_infinita', 0)} o de granularidade infinita (limiar $n^{{\mathrm{{eff}}}}>{nm(rg.get('limiar_n_eff', 0), 0)}$ para $\rho_D={nm(prm.get('rho_alvo'), 3, pct=True)}$)."""
                           if rg else ""))
         T.append(r"""
 \subsection{Tratamento dos dados: agregação e motor de grupos}
@@ -323,7 +323,7 @@ C_g=\sum_{i\in g}c_i,\qquad p_g=\frac{\sum_{i\in g}p_i\,c_i}{C_g},\qquad n_g^{\m
 \end{equation}
 em que $C_g$ é a severidade total, $p_g$ a PD ponderada --- com a qual $p_g C_g=\sum_i p_i c_i$ e a EL é preservada exatamente --- e $n_g^{\mathrm{eff}}$ o número efetivo de contratos, um índice de Herfindahl interno ao grupo. Com severidades desiguais, a variância idiossincrática condicional do grupo é $\sum_i c_i^2\,p_g(Z)(1-p_g(Z))=C_g^2\,p_g(Z)(1-p_g(Z))/n_g^{\mathrm{eff}}$: simular $\mathrm{Binomial}(n_g^{\mathrm{eff}},p_g(Z))$ com severidade $C_g/n_g^{\mathrm{eff}}$ por default preserva a média e a variância condicionais, enquanto usar o número bruto de contratos superestimaria a granularidade. Para a parte idiossincrática, tratar PDs heterogêneas como homogêneas é conservador: a variância de uma soma de Bernoullis heterogêneas nunca excede a da Binomial com a PD média (desigualdade de Hoeffding).
 
-\paragraph{Limite de carteira grande e seu critério.} Pela lei dos grandes números condicional, a fração em default converge para $p_g(Z)$ e a perda do grupo para $L_g=C_g\,p_g(Z)$ --- o limite de Vasicek (2002) que fundamenta o ASRF e o IRB (Gordy, 2003). O limite descarta a variância idiossincrática; a razão entre ela e a sistemática é
+\paragraph{Limite de granularidade infinita e seu critério.} Chama-se de \emph{granularidade infinita} o limite em que o grupo tem tantos contratos, e tão pequenos, que o risco idiossincrático se dilui por completo --- na literatura em inglês, \emph{large pool} ou carteira \emph{infinitely fine-grained} (Gordy, 2003). Pela lei dos grandes números condicional, a fração em default converge para $p_g(Z)$ e a perda do grupo para $L_g=C_g\,p_g(Z)$ --- o limite de Vasicek (2002) que fundamenta o ASRF e o IRB (Gordy, 2003). O limite descarta a variância idiossincrática; a razão entre ela e a sistemática é
 \begin{equation}
 r_g=\frac{\E\bigl[p_g(Z)(1-p_g(Z))\bigr]/n_g^{\mathrm{eff}}}{\mathrm{Var}\bigl[p_g(Z)\bigr]}=\frac{1-\rho_D}{n_g^{\mathrm{eff}}\,\rho_D},
 \end{equation}
@@ -463,7 +463,7 @@ em que $M\in[1,5]$ é o prazo efetivo, aplica-se só ao atacado e às instituiç
         T.append(r"""
 \subsection{Migração de ratings, ECL e capital multiperíodo}
 A matriz de transição anual $P$ fornece a estrutura a termo de PD pelas potências $P^t$; o ECL desconta as perdas marginais em 12 meses e no prazo de cada contrato (\emph{lifetime}), com estágios por deterioração de rating, conforme o IFRS 9 e a Resolução CMN 4.966. O capital multiperíodo evolui a carteira ano a ano pela matriz condicional ao fator sistemático --- generalização do deslocamento de crédito de um parâmetro de Belkin, Suchower e Forest (1998) ---, acumulando perdas descontadas."""
-            + (r" Na carteira agregada, cada grupo evolui como vetor de frações por rating; nos grupos fora do limite de carteira grande, os \emph{defaults} de cada ano são sorteados, $D_t\mid Z_t\sim\mathrm{Binomial}(A_{t-1},q_t)$, sobre o número inteiro de contratos equivalentes vivos $A_t$ (com $A_0=n^{\mathrm{eq}}$) e a taxa de \emph{default} condicional entre os vivos $q_t$, de modo que o risco idiossincrático intragrupo entra no capital multiperíodo; as migrações entre ratings não \emph{default} seguem as frações condicionais."
+            + (r" Na carteira agregada, cada grupo evolui como vetor de frações por rating; nos grupos fora do limite de granularidade infinita, os \emph{defaults} de cada ano são sorteados, $D_t\mid Z_t\sim\mathrm{Binomial}(A_{t-1},q_t)$, sobre o número inteiro de contratos equivalentes vivos $A_t$ (com $A_0=n^{\mathrm{eq}}$) e a taxa de \emph{default} condicional entre os vivos $q_t$, de modo que o risco idiossincrático intragrupo entra no capital multiperíodo; as migrações entre ratings não \emph{default} seguem as frações condicionais."
                if pooled else "") + "\n")
 
     # ---------------- 4. resultados ----------------
