@@ -194,6 +194,64 @@ with st.expander("Ver carteira carregada"):
     st.dataframe(port.df, width='stretch', height=280)
 
 # ---------------- Correlação por setor (multifatorial) ----------------
+def _mostrar_leitura_setores(port, tab, rho_intra, rho_inter):
+    """Leitura, ao vivo, do que os alvos digitados significam."""
+    from engine.multifactor import (calibrar_por_setor, calibrate_rho,
+                                    leitura_setores)
+    c, p = port.c, port.p
+    pbar = float(np.dot(c, p) / c.sum())
+    cal = calibrar_por_setor(port.df["setor"], c, p, rho_intra, rho_inter, tab)
+    ps, pares, res = leitura_setores(
+        cal, rho_intra, rho_inter,
+        calibrate_rho(pbar, rho_intra), calibrate_rho(pbar, rho_inter))
+    st.markdown("##### O que estas escolhas significam")
+    st.markdown(
+        "- **ρ intra** responde: *se um devedor do setor quebra, quanto "
+        "aumenta a chance de outro do mesmo setor quebrar?*\n"
+        "- **ρ inter** responde: *quanto o setor quebra junto com a economia "
+        "— e, por ela, com os outros setores?*\n"
+        "- A **fração global** (ρ ativos inter ÷ ρ ativos intra) diz de onde "
+        "vem a dependência: perto de 1, o setor é **cíclico** (move-se com a "
+        "economia e contagia os demais); perto de 0, é **concentrado** (um "
+        "choque próprio derruba muitos nomes juntos, mas pouco se espalha).")
+    _q = ps[["setor", "pd_media", "rho_default_intra_alvo",
+             "rho_default_inter_alvo", "fracao_global", "perfil",
+             "leitura"]].rename(columns={
+        "pd_media": "PD média", "rho_default_intra_alvo": "ρ intra",
+        "rho_default_inter_alvo": "ρ inter",
+        "fracao_global": "fração global"})
+    st.dataframe(_q.style.format({"PD média": "{:.3%}", "ρ intra": "{:.3%}",
+                                  "ρ inter": "{:.3%}",
+                                  "fração global": "{:.3f}"}),
+                 width='stretch', hide_index=True)
+    (v1, a1, b1), (v2, a2, b2) = pares[0], pares[1]
+    vz, az, bz = pares[-1]
+    st.markdown(
+        f"**Pares de setores resultantes** (correlação de default): os mais "
+        f"ligados são **{a1}–{b1}** ({v1:.3%}) e **{a2}–{b2}** ({v2:.3%}); o "
+        f"menos ligado, **{az}–{bz}** ({vz:.3%}). Os pares não são digitados: "
+        "saem da carga de cada setor no fator global.")
+    dir_txt = {"acima": "**acima** do padrão uniforme — espere VaR e ES "
+                        "multifatoriais maiores",
+               "abaixo": "**abaixo** do padrão uniforme — espere VaR e ES "
+                         "multifatoriais menores",
+               "em linha com": "**em linha** com o padrão uniforme"}
+    st.markdown(
+        f"**Efeito esperado no capital:** correlações de ativos médias "
+        f"(ponderadas pela exposição) de {res['rho_s_medio']:.3f} intra e "
+        f"{res['rho_g_medio']:.3f} inter, contra {res['rho_s_ref']:.3f} e "
+        f"{res['rho_g_ref']:.3f} no uniforme — "
+        f"{dir_txt[res['direcao']]}. Setores grandes pesam mais nessa média.")
+    with st.expander("Matriz de correlação de default entre setores"):
+        st.dataframe(cal["matriz_default"].style.format("{:.3%}")
+                     .background_gradient(cmap="Reds", axis=None),
+                     width='stretch')
+    st.caption("Os alvos são hipóteses do usuário. Num uso formal, cada ρ "
+               "precisa de fonte (séries de inadimplência por setor ou "
+               "estudo de referência); o paper registra os valores e "
+               "verifica a calibração, mas não justifica a escolha.")
+
+
 rho_setor = None
 if run_mf and "setor" in port.df.columns:
     with st.expander("Correlação por setor (multifatorial, opcional)"):
@@ -231,6 +289,7 @@ if run_mf and "setor" in port.df.columns:
                          + ", ".join(_bad["setor"]) + ".")
             else:
                 rho_setor = _ed
+                _mostrar_leitura_setores(port, _ed, rho_intra, rho_inter)
 
 # ---------------- Execução ----------------
 st.subheader("3. Análise")

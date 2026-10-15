@@ -129,6 +129,73 @@ def calibrar_por_setor(setores, c, p, rho_intra, rho_inter, rho_setor):
     }
 
 
+def _pct(x):
+    return f"{100 * x:.3f}%".replace(".", ",")
+
+
+def _num(x):
+    return f"{x:.3f}".replace(".", ",")
+
+
+def leitura_setores(cal, rho_intra_ref, rho_inter_ref, rs_ref=None, rg_ref=None):
+    """Interpretação, em linguagem de negócio, das correlações por setor.
+
+    Para cada setor: o nível da dependência intra-setor (alvo de default
+    comparado à referência uniforme) e a sua origem — a fração da
+    correlação de ativos intra-setor que vem do fator global,
+    rho_G,s / rho_S,s. Perto de 1, o setor é CÍCLICO (os defaults andam
+    juntos porque a economia os move juntos, e o setor contagia os demais);
+    perto de 0, é CONCENTRADO (um choque próprio do setor derruba muitos
+    nomes de uma vez, mas pouco se espalha). Devolve (quadro, pares, resumo)."""
+    ps = cal["por_setor"].copy()
+    ps["fracao_global"] = ps["rho_ativos_inter"] / ps["rho_ativos_intra"]
+
+    def nivel(x):
+        if x < 0.75 * rho_intra_ref:
+            return "baixa"
+        if x > 1.25 * rho_intra_ref:
+            return "alta"
+        return "na referência"
+
+    def perfil(f):
+        if f >= 0.75:
+            return "cíclico"
+        if f <= 0.40:
+            return "concentrado"
+        return "misto"
+
+    def frase(r):
+        txt = {"cíclico": "quase toda a dependência vem do ciclo econômico; "
+                          "quebra junto com a economia e contagia os demais "
+                          "setores",
+               "concentrado": "o choque próprio do setor domina; muitos nomes "
+                              "quebram juntos, mas o risco pouco se espalha",
+               "misto": "dependência repartida entre o choque do setor e o "
+                        "ciclo econômico"}[r["perfil"]]
+        return (f"dependência intra-setor {r['nivel']} "
+                f"({_pct(r['rho_default_intra_alvo'])}); {txt}")
+
+    ps["nivel"] = ps["rho_default_intra_alvo"].map(nivel)
+    ps["perfil"] = ps["fracao_global"].map(perfil)
+    ps["leitura"] = ps.apply(frase, axis=1)
+
+    md = cal["matriz_default"]
+    nomes = list(md.index)
+    pares = sorted(((md.iloc[i, j], nomes[i], nomes[j])
+                    for i in range(len(nomes)) for j in range(i + 1, len(nomes))),
+                   reverse=True)
+    w = ps["exposicao_liquida"] / ps["exposicao_liquida"].sum()
+    rs_m = float((w * ps["rho_ativos_intra"]).sum())
+    rg_m = float((w * ps["rho_ativos_inter"]).sum())
+    resumo = {"rho_s_medio": rs_m, "rho_g_medio": rg_m,
+              "rho_s_ref": rs_ref, "rho_g_ref": rg_ref}
+    if rs_ref is not None and rg_ref is not None:
+        d = (rs_m - rs_ref) + (rg_m - rg_ref)
+        resumo["direcao"] = ("acima" if d > 0.005 else
+                             "abaixo" if d < -0.005 else "em linha com")
+    return ps, pares, resumo
+
+
 def rhos_para_motor(cal):
     """(rho_g, rho_s) para os motores: vetores por setor, se calibrados,
     ou os escalares da carga uniforme."""

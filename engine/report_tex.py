@@ -420,6 +420,19 @@ A correlação de ativos dentro do setor $s$ é $\rho_{S,s}$; entre os setores $
                          "Calibração das cargas por setor (alvos de correlação "
                          "de default e correlações de ativos).",
                          "tab:mf-setor", H=True))
+            from .multifactor import leitura_setores, calibrate_rho
+            _pb = mfc.get("pbar", pbar)
+            _ri, _re = prm.get("rho_intra", 0.08), prm.get("rho_inter", 0.03)
+            lps, lpares, lres = leitura_setores(
+                mfc, _ri, _re, calibrate_rho(_pb, _ri), calibrate_rho(_pb, _re))
+            (v1, a1, b1), (vz, az, bz) = lpares[0], lpares[-1]
+            T.append(r"""
+\paragraph{Leitura das escolhas.} A fração da correlação de ativos intra-setor que vem do fator global, $\rho_{G,s}/\rho_{S,s}$, indica a origem da dependência: perto de 1, o setor é \emph{cíclico} --- os defaults andam juntos porque a economia os move juntos, e o setor contagia os demais; perto de 0, é \emph{concentrado} --- um choque próprio derruba muitos nomes de uma vez, mas pouco se espalha. Nesta execução:
+\begin{itemize}\setlength\itemsep{1pt}
+""" + "".join(rf"\item \textbf{{{tx(r['setor'])}}} (fração global {nb(r['fracao_global'])}, {tx(r['perfil'])}): {tx(r['leitura'])}." + "\n"
+              for _, r in lps.iterrows()) + rf"""\end{{itemize}}
+O par de setores mais ligado é {tx(a1)}--{tx(b1)}, com correlação de default de {nb(v1, 3, pct=True)}; o menos ligado, {tx(az)}--{tx(bz)}, com {nb(vz, 3, pct=True)}. As correlações de ativos médias, ponderadas pela exposição, ficaram em {nm(lres['rho_s_medio'])} (intra) e {nm(lres['rho_g_medio'])} (inter), ante {nm(lres['rho_s_ref'])} e {nm(lres['rho_g_ref'])} na calibração uniforme --- {tx({'acima': 'acima do padrão', 'abaixo': 'abaixo do padrão'}.get(lres['direcao'], 'em linha com o padrão'))}. Os alvos por setor são hipóteses do usuário; esta seção verifica a sua calibração, não a sua fundamentação empírica.
+""")
     if tem("ASRF"):
         T.append(r"""
 \subsection{ASRF: carteira assintoticamente granular}
