@@ -42,7 +42,8 @@ st.title("CreditLens — Análise de Carteira de Crédito")
 st.caption(
     "Motor quantitativo baseado em Bolder (2018), *Credit-Risk Modelling* (Springer): "
     "modelos independentes, mixture models (beta-binomial, CreditRisk+), threshold models "
-    "(Gaussiano/t, ASRF), capital IRB segundo a Res. BCB 303/2023 com ajuste de granularidade e "
+    "(Gaussiano/t, ASRF), capital regulatório pelas abordagens IRB (Res. BCB 303/2023, com "
+    "ajuste de granularidade) e padronizada (Res. BCB 229/2022), com o piso de 72,5%, e "
     "decomposição de contribuições de risco."
 )
 
@@ -78,6 +79,13 @@ with st.sidebar:
     contrib_S = st.slider("Iterações da decomposição (S)", 5, 30, 10)
     contrib_alpha = st.selectbox("Nível α das contribuições", [0.95, 0.99, 0.999], index=1)
     seed = st.number_input("Semente aleatória", value=42, step=1)
+    st.subheader("Capital padronizado")
+    _unid = st.selectbox("Unidade monetária da coluna `exposicao`",
+                         ["R$", "R$ mil", "R$ milhões"], index=0,
+                         help="Usada nos limites em reais do varejo "
+                              "(art. 46 da Res. BCB 229: R$ 5 milhões por "
+                              "contraparte).")
+    escala_reais = {"R$": 1.0, "R$ mil": 1e3, "R$ milhões": 1e6}[_unid]
 
 # ---------------- 1. Base de dados (só a escolha; nada é processado) --------
 st.subheader("1. Escolha a base")
@@ -105,6 +113,13 @@ with st.expander("Padrão do arquivo"):
         "`sme`, `hvcre`, `if`, `if_s1s2`, `varejo_residencial`, `varejo_rotativo`, "
         "`varejo_demais`} *(default `corporate`)*; para `sme`, informe "
         "`receita_bruta_mi` (receita bruta anual em R$ milhões; teto SME de R$ 300 mi)\n"
+        "- **Capital padronizado (Res. BCB 229/2022), opcionais:** `ltv` "
+        "(imobiliário, fração), `imovel_dependente_fluxo` (0/1), `transactor` "
+        "(0/1, rotativo sem atraso nem saque em 360 dias — art. 47), "
+        "`ativo_problematico` (0/1) ou `dias_atraso`, `provisao`, "
+        "`categoria_if` (A/B/C), `prazo_original_dias`, `grande_baixo_risco` "
+        "(0/1 — art. 35), `ativo_total_mi`, `fpr` (fator informado, "
+        "prevalece)\n"
         "- Separador vírgula, decimal ponto, UTF-8. Severidade Bolder: c = EAD × LGD."
     )
 
@@ -163,13 +178,14 @@ def _resumo_setores(tipo, nome, conteudo):
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
-def _preparar_carteira(tipo, nome, conteudo, max_grandes):
+def _preparar_carteira(tipo, nome, conteudo, max_grandes, escala_reais=1.0):
     """Carga, validação e (base analítica) agregação — feitas ao executar."""
     if tipo == "analitica":
         df = _ler_base(tipo, nome, conteudo)
         from engine.aggregation import aggregate_portfolio
         df_agg, rel = aggregate_portfolio(df, corte_grandes=None,
-                                          max_grandes=int(max_grandes))
+                                          max_grandes=int(max_grandes),
+                                          escala_reais=escala_reais)
         buf = io.StringIO(); df_agg.to_csv(buf, index=False); buf.seek(0)
         return load_portfolio(buf), rel, True
     port = load_portfolio(io.BytesIO(conteudo) if conteudo is not None
@@ -317,6 +333,7 @@ def _config_atual():
                 hashlib.md5(mtx_up.getvalue()).hexdigest() if mtx_up else None,
                 usar_mtx_demo, horizonte, taxa_desc, block_sz),
         "contrib": (run_contrib, contrib_S, contrib_alpha), "seed": int(seed),
+        "escala_reais": escala_reais,
     }
 
 
@@ -337,7 +354,7 @@ if st.button("▶ Executar", type="primary", disabled=_bloqueio):
         with st.spinner("Carregando e preparando a carteira..."):
             port, rel_agg, pooled_mode = _preparar_carteira(
                 fonte["tipo"], fonte["nome"], fonte["conteudo"],
-                int(max_grandes))
+                int(max_grandes), escala_reais)
     except ValueError as e:
         prog.empty()
         st.error(f"Base inválida: {e}")
@@ -352,7 +369,8 @@ if st.button("▶ Executar", type="primary", disabled=_bloqueio):
                 rho_intra=rho_intra, rho_inter=rho_inter, nu=float(nu),
                 crp_w=crp_w, crp_v=crp_v,
                 contrib_alpha=contrib_alpha, seed=int(seed), progress=tick,
-                rho_setor=rho_setor)
+                rho_setor=rho_setor, escala_reais=escala_reais,
+                rel_agg=rel_agg)
         else:
             results = run_full_analysis(
                 port, M=M, rho_target=rho_target, nu=float(nu),
@@ -362,7 +380,7 @@ if st.button("▶ Executar", type="primary", disabled=_bloqueio):
                 run_multifactor=run_mf and rho_inter <= rho_intra
                     and "setor" in port.df.columns,
                 rho_intra=rho_intra, rho_inter=rho_inter,
-                rho_setor=rho_setor,
+                rho_setor=rho_setor, escala_reais=escala_reais,
             )
     # --- migração & ECL ---
     mtx_src = mtx_up if mtx_up is not None else (
@@ -466,7 +484,7 @@ with st.expander("Ver carteira executada"):
 results = st.session_state["results"]
 total = results["resumo"]["exposicao_liquida_total"]
 
-tabs = st.tabs(["Medidas de risco", "Distribuições", "Capital IRB",
+tabs = st.tabs(["Medidas de risco", "Distribuições", "Capital regulatório",
                 "Contribuições", "Setores", "Migração & ECL",
                 "Calibração", "Download"])
 
@@ -549,6 +567,28 @@ with tabs[1]:
 # --- IRB ---
 with tabs[2]:
     irb_res = results["irb"]
+    cp = results.get("padronizado")
+    if cp:
+        ps_ = cp["piso"]
+        st.markdown("##### Requerimento de capital — visão consolidada")
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("RWA IRB (modelos internos)", f"{ps_['rwa_irb']:,.1f}")
+        k2.metric("RWA padronizado (RWACPAD)", f"{ps_['rwa_cpad']:,.1f}",
+                  f"IRB/padronizado {ps_['razao_irb_cpad']:.3f}",
+                  delta_color="off")
+        k3.metric("Piso: 72,5% × RWACPAD", f"{ps_['piso']:,.1f}",
+                  "vinculante" if ps_["vinculante"] else "não vinculante",
+                  delta_color="inverse" if ps_["vinculante"] else "off")
+        k4.metric("RWA final (art. 34, Res. BCB 303)",
+                  f"{ps_['rwa_final']:,.1f}",
+                  f"capital {ps_['capital_final']:,.1f} (8%)",
+                  delta_color="off")
+        st.caption("RWA final = max(RWA IRB; 72,5% × RWACPAD), calculados "
+                   "sobre as mesmas exposições da carteira ativa. Quando o "
+                   "piso é vinculante, o capital é determinado pela "
+                   "abordagem padronizada, não pelos modelos internos.")
+        st.divider()
+    st.markdown("##### Abordagem IRB (modelos internos) — Res. BCB 303/2023")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Capital IRB (99,90%)", f"{irb_res['capital_total_999']:,.1f}",
               f"{irb_res['capital_pct_exposicao']:.2%} da exposição", delta_color="off")
@@ -588,6 +628,56 @@ with tabs[2]:
         .style.format({"exposicao": "{:,.1f}", "pd": "{:.4%}", "lgd": "{:.0%}",
                        "prazo_anos": "{:.1f}", "K": "{:.4f}", "capital_IRB": "{:,.2f}"}),
         width='stretch', height=350)
+
+    if cp:
+        st.divider()
+        st.markdown("##### Abordagem padronizada (RWACPAD) — Res. BCB 229/2022")
+        q1, q2, q3 = st.columns(3)
+        q1.metric("RWACPAD", f"{cp['rwa_total']:,.1f}")
+        q2.metric("Capital padronizado (8%)", f"{cp['capital']:,.1f}")
+        q3.metric("FPR médio", f"{cp['fpr_medio']:.3%}")
+        st.caption("RWA = EAD × FPR, com o fator de ponderação de risco de "
+                   "cada exposição pela sua categoria (artigos da Res. BCB "
+                   "229). A LGD não entra; na base analítica, o FPR é "
+                   "atribuído contrato a contrato antes da agregação.")
+        av = cp.get("avisos") or {}
+        _msgs = {
+            "residencial_sem_ltv": "exposição(ões) imobiliária(s) residencial(is) "
+                                   "sem `ltv`: aplicada a faixa acima de 100% "
+                                   "(conservador)",
+            "pj_sem_receita": "pessoa(s) jurídica(s) sem `receita_bruta_mi`: "
+                              "FPR de 100% (art. 41)",
+            "pme_sem_ativo_total": "PME(s) sem `ativo_total_mi`: o critério de "
+                                   "ativo do art. 36 foi presumido atendido",
+            "varejo_reprovado_limites": "exposição(ões) de varejo fora dos "
+                                        "limites do art. 46 (R$ 5 mi ou 0,2%)",
+            "if_categoria_padrao_A": "exposição(ões) a IF sem `categoria_if`: "
+                                     "presumida categoria A",
+            "ativos_problematicos": "ativo(s) problemático(s) ponderado(s) pelo "
+                                    "art. 66",
+            "fpr_informado": "exposição(ões) com FPR informado pelo usuário",
+        }
+        for k, txt in _msgs.items():
+            if av.get(k):
+                st.info(f"{av[k]:,} {txt}.")
+        if cp.get("por_artigo") is not None:
+            st.markdown("**RWACPAD por fator de ponderação**")
+            st.dataframe(cp["por_artigo"][["descricao", "linhas", "ead", "rwa",
+                                           "fpr_medio"]].style.format({
+                "linhas": "{:,}", "ead": "{:,.3f}", "rwa": "{:,.3f}",
+                "fpr_medio": "{:.3%}"}), width='stretch', hide_index=True)
+        if cp.get("comparacao") is not None:
+            st.markdown("**IRB × padronizado por categoria**")
+            comp = cp["comparacao"].copy()
+            cols_c = [c for c in ["descricao", "segmento", "ead", "rwa_irb",
+                                  "rwa_cpad", "razao_irb_cpad"]
+                      if c in comp.columns]
+            st.dataframe(comp[cols_c].style.format({
+                "ead": "{:,.3f}", "rwa_irb": "{:,.3f}", "rwa_cpad": "{:,.3f}",
+                "razao_irb_cpad": "{:.3f}"}), width='stretch', hide_index=True)
+            st.caption("Razão abaixo de 1: o modelo interno exige menos "
+                       "capital que o padronizado na categoria; abaixo de "
+                       "0,725 em toda a carteira, o piso passa a vincular.")
 
 # --- Contribuições ---
 with tabs[3]:

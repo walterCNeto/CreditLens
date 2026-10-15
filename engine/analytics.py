@@ -43,6 +43,29 @@ def calibrate_gaussian_rho(pbar: float, rho_target: float) -> float:
     return float(res.x)
 
 
+def _padronizado(port, irb_b, escala_reais=1.0, rel_agg=None):
+    """RWACPAD (Res. BCB 229), comparação por categoria com o IRB e piso de
+    saída de 72,5% (Res. BCB 303, art. 34)."""
+    from .padronizado_bcb import calcular as _cpad, piso_saida, F
+    cp = _cpad(port, escala_reais=escala_reais, rel_agg=rel_agg)
+    rwa_irb = float(irb_b["capital"].sum() / F)
+    cp["piso"] = piso_saida(rwa_irb, cp["rwa_total"])
+    comp = None
+    if cp["por_segmento"] is not None and irb_b.get("por_segmento") is not None \
+            and len(irb_b["por_segmento"]):
+        comp = irb_b["por_segmento"][["segmento", "descricao", "ead",
+                                      "rwa"]].rename(
+            columns={"rwa": "rwa_irb", "ead": "ead_irb"}).merge(
+            cp["por_segmento"], on="segmento", how="outer")
+        comp["razao_irb_cpad"] = comp["rwa_irb"] / comp["rwa_cpad"]
+    elif cp["por_segmento"] is not None:
+        comp = cp["por_segmento"].copy()
+        comp["rwa_irb"] = rwa_irb
+        comp["razao_irb_cpad"] = comp["rwa_irb"] / comp["rwa_cpad"]
+    cp["comparacao"] = comp
+    return cp
+
+
 def run_full_analysis(
     port,
     M: int = 100_000,
@@ -59,6 +82,7 @@ def run_full_analysis(
     contrib_alpha: float = 0.99,
     seed: int | None = 42,
     rho_setor=None,
+    escala_reais: float = 1.0,
     progress=None,
 ) -> dict:
     """Executa a suíte completa e devolve dicionário de resultados."""
@@ -169,6 +193,7 @@ def run_full_analysis(
         "segmentado": irb_b["segmentado"],
         "tempo_s": time.time() - t0,
     }
+    results["padronizado"] = _padronizado(port, irb_b, escala_reais)
     add_row("IRB Bacen (Res. BCB 303, K + EL)",
             pbar * total, np.nan,
             [np.nan if abs(a - 0.999) > 1e-9 else cap_n.sum() + pbar * total for a in alphas],
@@ -257,6 +282,19 @@ def results_to_excel(results: dict, port, path: str):
             irb_res["por_segmento"].to_excel(
                 xw, sheet_name="IRB por segmento", index=False)
 
+        # capital padronizado (Res. BCB 229) e piso de saída (Res. BCB 303)
+        cp = results.get("padronizado")
+        if cp:
+            if cp.get("por_artigo") is not None:
+                cp["por_artigo"].to_excel(xw, sheet_name="Padronizado por FPR",
+                                          index=False)
+            if cp.get("comparacao") is not None:
+                cp["comparacao"].to_excel(xw, sheet_name="IRB x padronizado",
+                                          index=False)
+            pd.DataFrame([{"item": k, "valor": v}
+                          for k, v in cp["piso"].items()]).to_excel(
+                xw, sheet_name="Piso de saída", index=False)
+
         # contribuições
         if "contribuicoes" in results:
             cc = results["contribuicoes"]
@@ -305,6 +343,8 @@ def run_pooled_analysis(
     seed: int | None = 42,
     progress=None,
     rho_setor=None,
+    escala_reais: float = 1.0,
+    rel_agg=None,
 ) -> dict:
     """Análise para carteiras AGREGADAS (pools + grandes exposições).
 
@@ -408,6 +448,7 @@ def run_pooled_analysis(
             "sme_sem_receita": irb_b["sme_sem_receita"],
             "segmentado": irb_b["segmentado"],
         },
+        "padronizado": _padronizado(port, irb_b, escala_reais, rel_agg),
         "contrib_bucket": res_sim["contribuicoes_bucket"],
         "regimes_pooled": res_sim["regimes"],
         "contrib_alpha": res_sim["contrib_alpha"],

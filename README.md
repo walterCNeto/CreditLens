@@ -12,7 +12,7 @@ Python* (Springer, 2018)** — o referencial teórico do projeto (`model.pdf`).
 | Independentes | Binomial (analítico homogêneo + Monte Carlo) | Cap. 2 |
 | Misturas | Beta-binomial calibrado; CreditRisk+ (Poisson-gama 1 fator) | Cap. 3 |
 | Limiar | Gaussiano 1 fator; t-Student 1 fator; ASRF analítico | Cap. 4 |
-| Regulatório | Capital IRB de Basileia por contraparte (VaR 99,90%), RWA equivalente, ajuste de granularidade Gordy–Lütkebohmert (via CreditRisk+) | Cap. 6 |
+| Capital regulatório | Abordagem IRB por modelos internos (Res. BCB 303/2023: correlação por categoria, ajuste de maturidade, pisos de PD) com ajuste de granularidade Gordy–Lütkebohmert (via CreditRisk+); abordagem padronizada RWACPAD (Res. BCB 229/2022: FPR por categoria, LTV, varejo, ativo problemático); piso de saída de 72,5% (art. 34 da Res. BCB 303) | Cap. 6 |
 | Contribuições | Decomposição Monte Carlo de VaR/ES por contraparte (limiar gaussiano) | Cap. 7 |
 | Multifatorial | Limiar gaussiano/t com fatores setoriais (dois níveis: global + setor), calibração intra/inter-setor, contribuições de ES por setor | Cap. 4 (estrutura de correlação) |
 | Migração & ECL | Matriz de transição anual (upload), estrutura a termo de PD por potências, ECL 12m vs. lifetime com estágios IFRS 9/CMN 4.966, simulação multiperíodo com escada de limiares sobre a estrutura de fatores — inclusive em modo pooled (frações por rating × matriz condicional) | Caps. 4 (pMap) e sobre cadeias de Markov |

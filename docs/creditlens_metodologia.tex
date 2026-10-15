@@ -31,7 +31,7 @@
 \large Análise Quantitativa de Carteiras de Crédito:\\
 Documentação Metodológica e Estudo de Caso}
 \author{Walter C.~Neto\\[1mm]\small Baseado em D.~J.~Bolder, \emph{Credit-Risk Modelling} (Springer, 2018)}
-\date{Outubro de 2026 --- versão 0.10}
+\date{Outubro de 2026 --- versão 0.11}
 
 \begin{document}
 \maketitle
@@ -149,7 +149,7 @@ em que $V$ é um choque radial qui-quadrado com $\nu$ graus de liberdade, comum 
 \end{equation}
 em que $\sum_n c_n$ é a exposição líquida total, $\bar p$ a PD homogênea da carteira, $\rho$ a correlação de ativos e $\alpha$ o nível de confiança. É o esqueleto analítico do IRB e, neste documento, funciona também como verificação de consistência do modelo \emph{threshold} simulado.
 
-\subsection{Capital regulatório IRB (Resolução BCB 303/2023) e ajuste de granularidade}
+\subsection{Capital regulatório: abordagem IRB (modelos internos, Resolução BCB 303/2023) e ajuste de granularidade}
 \label{sec:irb}
 
 O capital regulatório segue a abordagem IRB do Banco Central do Brasil, disciplinada pela Resolução BCB nº~303/2023, que revogou a Circular nº~3.648/2013 e vigora desde 1º de julho de 2023. O requerimento, avaliado exposição a exposição, é a perda inesperada condicional ao cenário sistemático de 99{,}90\%, multiplicada pelo ajuste de maturidade quando aplicável (arts.~39 e 46):
@@ -208,6 +208,50 @@ A categoria entra pela coluna opcional \texttt{segmento\_\allowbreak irb} e, par
 \Bigl[\delta\bigl(C_n\mathcal R\mathcal K_n+\mathcal R\mathcal K_n^2\gamma\bigr)-K_n\bigl(C_n+2\mathcal R\mathcal K_n\gamma\bigr)\Bigr],
 \end{equation}
 em que $K^{*}=\sum_n c_n K_n$ é o capital IRB total da carteira, $\mathcal R\mathcal K_n$ agrupa os termos de capital e PD da contraparte $n$, e $\delta$, $\gamma$ e $C_n$ são coeficientes que dependem dos parâmetros de volatilidade setorial e de LGD, fixados nos valores de referência do livro ($a=0{,}25$, $\xi=0{,}25$, $\bar g=1$). O ponto essencial é que o GA cresce com o \emph{quadrado} das participações $c_n^2$ --- é, em essência, uma penalidade de HHI sobre o capital.
+
+\subsection{Capital regulatório: abordagem padronizada (Resolução BCB 229/2022) e piso de saída}
+\label{sec:cpad}
+
+O requerimento de capital de risco de crédito pode ser apurado por duas abordagens, ambas regulatórias: a IRB, por modelos internos (Seção anterior), e a padronizada, pelos fatores da Resolução BCB 229/2022. Na padronizada, o ativo ponderado pelo risco é
+\begin{equation}
+\mathrm{RWA}_{\mathrm{CPAD}}=\sum_n \mathrm{EAD}_n\,\mathrm{FPR}_n ,
+\label{eq:cpad}
+\end{equation}
+em que $\mathrm{FPR}_n$ é o fator de ponderação de risco da categoria da exposição; PD e LGD não entram. O CreditLens calcula a carteira ativa --- as exposições registradas, sem baixas para prejuízo --- e atribui o fator pelos critérios da Tabela~\ref{tab:fpr}, a partir da categoria IRB (\texttt{segmento\_\allowbreak irb}) e de colunas opcionais: \texttt{ltv}, \texttt{imovel\_\allowbreak dependente\_\allowbreak fluxo}, \texttt{transactor}, \texttt{ativo\_\allowbreak problematico} (ou \texttt{dias\_\allowbreak atraso}), \texttt{provisao}, \texttt{categoria\_\allowbreak if}, \texttt{prazo\_\allowbreak original\_\allowbreak dias}, \texttt{grande\_\allowbreak baixo\_\allowbreak risco}, \texttt{ativo\_\allowbreak total\_\allowbreak mi}, \texttt{receita\_\allowbreak bruta\_\allowbreak mi} e \texttt{fpr} (fator informado, que prevalece). Quando falta o atributo, aplica-se o fator conservador --- faixa de LTV acima de 100\%, 100\% para pessoa jurídica sem receita, categoria A para instituição financeira sem classificação --- e o caso é contado nos diagnósticos.
+
+\begin{table}[H]
+\centering\small
+\caption{Fatores de ponderação de risco implementados (Resolução BCB 229/2022, texto consolidado).}
+\label{tab:fpr}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{>{\raggedright\arraybackslash}p{8.6cm}>{\raggedright\arraybackslash}p{3.6cm}l}
+\toprule
+Exposição & FPR & Artigo\\
+\midrule
+Varejo: pessoa natural ou empresa de pequeno porte (receita $<$ R\$~15~mi), sem garantia imobiliária, exposição por contraparte $\le$ R\$~5~mi e $<0{,}2\%$ do varejo & 75\% & 46\\
+Pós-pago ou limite sem atraso, parcelamento ou saque em 360 dias & 45\% & 47\\
+Pessoa natural fora dos arts.~46 e 47 & 100\% & 48\\
+Grande empresa de baixo risco & 65\% & 35\\
+PME: ativo $<$ R\$~240~mi e receita $<$ R\$~300~mi & 85\% & 36\\
+Demais pessoas jurídicas & 100\% & 41\\
+Residencial, sem dependência do fluxo do imóvel, LTV $\le$50 / 60 / 80 / 90 / 100 / $>$100\% & 20 / 25 / 30 / 40 / 50 / 70\% & 50\\
+Residencial, com dependência do fluxo do imóvel, mesmas faixas & 30 / 35 / 45 / 60 / 75 / 105\% & 51\\
+Não residencial, com dependência do fluxo, LTV $\le$60 / 80 / $>$80\% & 70 / 90 / 110\% & 53\\
+Outras exposições imobiliárias & 150\% & 54\\
+Instituição financeira A / B (prazo original $\le$ 90 dias / acima); C & 20 / 40\%; 50 / 75\%; 150\% & 33\\
+Ativo problemático, provisão $<20\%$ / 20--50\% / $\ge50\%$ do saldo (prevalece o maior entre este e o fator específico, art.~22, II) & 150 / 100 / 50\% & 66\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Na base analítica, o fator depende de atributos de cada contrato --- o LTV, o atraso, os limites de varejo por contraparte ---, por isso é atribuído contrato a contrato, antes da agregação. Como o RWA é linear na exposição, a soma por grupo é exata, e cada linha da carteira agregada carrega o seu RWA$_{\mathrm{CPAD}}$; o \emph{paper} de validação verifica a identidade. Os limites monetários do varejo usam a unidade da coluna \texttt{exposicao} informada no aplicativo (reais, milhares ou milhões).
+
+O piso de saída da Resolução BCB 303/2023 (art.~34) limita o benefício dos modelos internos:
+\begin{equation}
+\mathrm{RWA}=\max\bigl\{\mathrm{RWA}_{\mathrm{IRB}};\;0{,}725\cdot\mathrm{RWA}_{\mathrm{CPAD}}\bigr\},
+\label{eq:piso}
+\end{equation}
+com os dois termos calculados sobre as mesmas exposições; o capital é $F=8\%$ do RWA. A razão $\mathrm{RWA}_{\mathrm{IRB}}/\mathrm{RWA}_{\mathrm{CPAD}}$, por categoria e na carteira, mostra onde o modelo interno poupa capital e quanto resta até o piso. Ficam fora do escopo o descasamento cambial (art.~55), a mitigação de risco de crédito, os financiamentos especializados (arts.~37 a 40), participações, cotas de fundos e os fatores de conversão de exposições fora do balanço --- a coluna \texttt{exposicao} é tomada como a EAD final.
 
 \subsection{Contribuições de risco (cap.~7)}
 
@@ -483,7 +527,7 @@ A terceira camada é o ASRF ($1\,265{,}6$) acima do \emph{threshold} gaussiano s
 \label{fig:var}
 \end{figure}
 
-\subsection{Capital regulatório IRB}
+\subsection{Capital regulatório}
 \label{sec:ga-ex}
 
 Como a carteira não informa a coluna \texttt{segmento\_\allowbreak irb}, todas as $250$ contrapartes são tratadas como atacado --- adequado a uma carteira corporativa. Aplicando \eqref{eq:irbK} contraparte a contraparte, o capital IRB é
@@ -493,7 +537,7 @@ K^{*}=\sum_n c_n K_n = 713{,}448
 \qquad
 \mathrm{RWA} = 12{,}5\,K^{*} = 8\,918{,}097,
 \]
-com 3 PDs elevadas ao piso de $0{,}05\%$. O ajuste de granularidade adiciona $\mathrm{GA}=91{,}760$, elevando o requerimento a $805{,}208$ --- um acréscimo de $12{,}862\%$ sobre o capital IRB puro, coerente com os 89 nomes efetivos da carteira. Somado à perda esperada para permitir comparação com os VaRs totais dos modelos internos, o IRB$+$EL de $808{,}498$ ($18{,}364\%$) situa-se entre o \emph{threshold} gaussiano calibrado a $\rho_D=5\%$ e os modelos de cauda pesada. A leitura é direta: a correlação regulatória do atacado, $R\in[12\%,24\%]$, é deliberadamente conservadora frente a calibrações internas típicas, mas a cópula gaussiana subjacente ao IRB não carrega dependência de cauda --- e o t-Student o ultrapassa com folga.
+com 3 PDs elevadas ao piso de $0{,}05\%$. O ajuste de granularidade adiciona $\mathrm{GA}=91{,}760$, elevando o requerimento a $805{,}208$ --- um acréscimo de $12{,}862\%$ sobre o capital IRB puro, coerente com os 89 nomes efetivos da carteira. Pela abordagem padronizada (Seção~\ref{sec:cpad}), como nenhuma contraparte informa receita, ativo ou porte, todas recebem o fator de $100\%$ (art.~41): $\mathrm{RWA}_{\mathrm{CPAD}}=10\,000{,}000$, igual à exposição. O RWA dos modelos internos corresponde a $89{,}181\%$ desse valor, acima do piso de $72{,}5\%$: o piso não é vinculante. Somado à perda esperada para permitir comparação com os VaRs totais dos modelos internos, o IRB$+$EL de $808{,}498$ ($18{,}364\%$) situa-se entre o \emph{threshold} gaussiano calibrado a $\rho_D=5\%$ e os modelos de cauda pesada. A leitura é direta: a correlação regulatória do atacado, $R\in[12\%,24\%]$, é deliberadamente conservadora frente a calibrações internas típicas, mas a cópula gaussiana subjacente ao IRB não carrega dependência de cauda --- e o t-Student o ultrapassa com folga.
 
 \subsection{Contribuições de risco}
 
@@ -659,7 +703,7 @@ Na simulação multiperíodo de $5$ anos ($M=100\,000$, blocos de $10\,000$, est
 
 O segundo estudo de caso reproduz, ponta a ponta, uma execução no aplicativo sobre a base analítica de demonstração de $300\,000$ contratos --- varejo pulverizado combinado a $300$ operações \emph{corporate} de porte duas ordens de grandeza maior, concentradas em poucos setores --- exercitando a camada de agregação (Seção~\ref{sec:agregacao}), o motor \emph{pooled} com o portfólio completo de modelos, o IRB segmentado por categoria (Seção~\ref{sec:irb}), o IRB segmentado por categoria (Seção~\ref{sec:irb}), o módulo de migração em modo agregado e a bateria de diagnósticos da Seção~\ref{sec:paper}. Parâmetros: $M=100\,000$, semente 42, alvos de correlação de default de $5\%$ (um fator), $8\%$ intra-setor e $3\%$ inter-setor, $\nu=10$, $(w,v)=(0{,}35;\,1{,}2)$ no CreditRisk\textsuperscript{+}, matriz de transição de exemplo e desconto de $10\%$~a.a.
 
-Nota de versão: a versão 0.10 acrescenta as cargas por setor (Seção~\ref{sec:mf}), sem alterar nenhum número deste caso com a calibração uniforme. Na versão 0.9, o multiperíodo agregado passou a sortear os \emph{defaults} de cada grupo fora do limite de granularidade infinita (equação~\eqref{eq:mig-binom}); apenas os números multiperíodo deste caso mudaram. Na versão 0.8, o motor \emph{pooled} passou a representar cada grupo pelo seu número efetivo de contratos e a aplicar o limite de granularidade infinita apenas pelo critério de razão de variâncias (Seção~\ref{sec:agregacao}); os números deste caso foram regenerados com o motor revisado. A partir da versão 0.7, o gerador da base de demonstração usa um gerador aleatório local com semente fixa, de modo que cada geração reproduz exatamente a mesma base --- e esta coincide com o arquivo de teste distribuído. Na versão 0.6, o gerador era global e avançava a cada chamada, e a base descrita neste caso não era reprodutível; todos os números abaixo foram regenerados sobre a base determinística, que passa a trazer também a categoria IRB de cada contrato: o varejo pulverizado repartido entre demais varejo ($55\%$), rotativo qualificado ($30\%$) e residencial ($15\%$), e as operações \emph{corporate} entre atacado ($70\%$) e SME ($30\%$, com receita bruta entre R\$~15 e 300 milhões). A categoria é sorteada com gerador próprio, sem alterar nenhum outro campo da base.
+Nota de versão: a versão 0.11 acrescenta a abordagem padronizada e o piso de saída (Seção~\ref{sec:cpad}) e as colunas \texttt{ltv} e \texttt{transactor} à base de demonstração, sorteadas com gerador próprio, sem alterar os demais campos nem os números anteriores deste caso. A versão 0.10 acrescenta as cargas por setor (Seção~\ref{sec:mf}), sem alterar nenhum número deste caso com a calibração uniforme. Na versão 0.9, o multiperíodo agregado passou a sortear os \emph{defaults} de cada grupo fora do limite de granularidade infinita (equação~\eqref{eq:mig-binom}); apenas os números multiperíodo deste caso mudaram. Na versão 0.8, o motor \emph{pooled} passou a representar cada grupo pelo seu número efetivo de contratos e a aplicar o limite de granularidade infinita apenas pelo critério de razão de variâncias (Seção~\ref{sec:agregacao}); os números deste caso foram regenerados com o motor revisado. A partir da versão 0.7, o gerador da base de demonstração usa um gerador aleatório local com semente fixa, de modo que cada geração reproduz exatamente a mesma base --- e esta coincide com o arquivo de teste distribuído. Na versão 0.6, o gerador era global e avançava a cada chamada, e a base descrita neste caso não era reprodutível; todos os números abaixo foram regenerados sobre a base determinística, que passa a trazer também a categoria IRB de cada contrato: o varejo pulverizado repartido entre demais varejo ($55\%$), rotativo qualificado ($30\%$) e residencial ($15\%$), e as operações \emph{corporate} entre atacado ($70\%$) e SME ($30\%$, com receita bruta entre R\$~15 e 300 milhões). A categoria é sorteada com gerador próprio, sem alterar nenhum outro campo da base.
 
 \subsection{Fluxo de uso}
 
@@ -744,6 +788,30 @@ Total & 440 & 44\,959{,}348 & 10{,}385\% & 4\,000{,}996 & 8{,}899\% \\
 
 O contrafactual mede o efeito da segmentação: a mesma carteira agregada, tratada inteiramente como atacado --- o comportamento da versão 0.6 ---, teria capital IRB de $8\,275{,}604$ ($18{,}407\%$), $2{,}068$ vezes o valor correto. Em carteiras de varejo, a categoria não é um refinamento: é a diferença entre o capital regulatório e o dobro dele. O ajuste de granularidade é de apenas $10{,}104$ --- ante $91{,}760$ na carteira de 250 nomes --- porque os grupos têm granularidade interna elevada ($C_g^2/n_g^{\mathrm{eff}}$ pequeno) e o ajuste passa a medir somente as $200$ exposições nominais.
 
+\paragraph{Abordagem padronizada e piso de saída.} Na base analítica, o gerador da demonstração informa o LTV de cada financiamento residencial (uniforme entre 30\% e 105\%) e marca como \emph{transactor} 35\% dos contratos de rotativo; as $220$ exposições de atacado não informam receita e recebem $100\%$, e as $80$ SME, sem ativo total, são tratadas como PME ($85\%$). O RWA$_{\mathrm{CPAD}}$ da carteira é $68\,811{,}398$ (FPR médio de $68{,}811\%$), e a soma contrato a contrato coincide com a da carteira agregada. A Tabela~\ref{tab:irb-cpad} compara as abordagens.
+
+\begin{table}[H]
+\centering\small
+\caption{Estudo de caso 2 --- RWA pelas abordagens IRB e padronizada, por categoria.}
+\label{tab:irb-cpad}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrrr}
+\toprule
+Categoria & RWA IRB & RWA padronizado & IRB / padronizado \\
+\midrule
+Atacado --- demais & 7\,687{,}092 & 7\,747{,}233 & 0{,}992 \\
+Atacado --- SME & 2\,738{,}249 & 2\,437{,}014 & 1{,}124 \\
+Varejo --- demais & 22\,013{,}428 & 36\,789{,}807 & 0{,}598 \\
+Varejo --- residencial & 10\,278{,}433 & 4\,474{,}950 & 2{,}297 \\
+Varejo --- rotativo qualificado & 7\,295{,}254 & 17\,362{,}394 & 0{,}420 \\
+\midrule
+Total & 50\,012{,}456 & 68\,811{,}398 & 0{,}727 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+O RWA dos modelos internos corresponde a $72{,}680\%$ do padronizado --- a apenas $0{,}180$ ponto percentual do piso. O piso, de $49\,888{,}263$, não é vinculante, mas a folga é mínima: uma redução de $0{,}248\%$ no RWA IRB o tornaria vinculante. A decomposição explica a proximidade. O modelo interno poupa capital no varejo pulverizado (razão de $0{,}598$ no demais varejo e $0{,}420$ no rotativo, onde a correlação regulatória de 4\% contrasta com os fatores de 45\% a 75\%), e a economia é parcialmente devolvida no imobiliário residencial, onde o IRB exige mais que o dobro do padronizado: a correlação de 15\% com LGD média de 45\% pesa mais que os fatores de 20\% a 70\% por LTV. Em carteiras reais, a LGD de financiamentos residenciais é tipicamente bem menor, e a razão se inverteria; o resultado ilustra por que a comparação por categoria é a leitura relevante para o validador --- é nela que aparecem os parâmetros que sustentam, ou ameaçam, o benefício dos modelos internos.
+
 \subsection{Setores}
 
 A decomposição setorial (Figura~\ref{fig:g-setores}) mostra razões risco/exposição entre $0{,}712$ (Petroquímica) e $1{,}105$ (Varejo): nesta base de demonstração, com composição de rating parecida entre setores, a cauda distribui-se quase proporcionalmente à exposição --- Varejo lidera por concentrar a maior massa de contratos nos graus especulativos. Numa carteira real, é exatamente esta decomposição que revelaria assimetrias setoriais relevantes, computáveis --- com a camada de agregação --- sobre milhões de contratos.
@@ -808,7 +876,7 @@ Quatro recomendações operacionais fecham o fluxo. \emph{Grupos homogêneos}: s
 
 \section{Limitações e extensões}
 
-No capital regulatório, o CreditLens calcula a parcela IRB por modelos internos ($\sum K\cdot\mathrm{EAD}/F$), mas não o piso de $72{,}5\%$ do RWA da abordagem padronizada previsto no art.~34 da Resolução BCB~303, que exigiria o cálculo do RWA$_{\mathrm{CPAD}}$ da Resolução BCB~229; não aplica os pisos de LGD da abordagem avançada (art.~74), já que a LGD é insumo do usuário; e não trata exposições em descumprimento ($\mathrm{PD}=100\%$, com $K=\max(0,\mathrm{LGD}-\mathrm{EL})$), pois o padrão de carteira exige PD em $(0,1)$.
+No capital regulatório, o CreditLens calcula a parcela IRB por modelos internos ($\sum K\cdot\mathrm{EAD}/F$), o RWA$_{\mathrm{CPAD}}$ da Resolução BCB~229 e o piso de $72{,}5\%$ do art.~34 da Resolução BCB~303 (a partir da versão 0.11); não aplica os pisos de LGD da abordagem avançada (art.~74), já que a LGD é insumo do usuário; e não trata exposições em descumprimento ($\mathrm{PD}=100\%$, com $K=\max(0,\mathrm{LGD}-\mathrm{EL})$), pois o padrão de carteira exige PD em $(0,1)$.
 
 Na modelagem econômica, o CreditLens carrega quatro premissas simplificadoras, cada qual com extensão natural já mapeada na própria biblioteca de Bolder.
 

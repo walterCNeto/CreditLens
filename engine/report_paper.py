@@ -375,6 +375,31 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
         rows.append(["IRB: PDs elevadas ao piso",
                      f"{irb.get('n_pd_piso', 0)} linha(s)",
                      "piso 0,050% (0,100% rotativo)", "OK"])
+
+    # 6b. padronizado (Res. BCB 229) e piso de saída (Res. BCB 303, art. 34)
+    cp = results.get("padronizado") or {}
+    if cp:
+        if pooled and rel_agg and rel_agg.get("cpad"):
+            ra = rel_agg["cpad"]["rwa_total"]
+            dif = abs(cp["rwa_total"] / ra - 1) if ra else 0.0
+            rows.append(["Padronizado: RWA agregado = contrato a contrato",
+                         f"diferença {br(dif, 3, pct=True)}",
+                         "identidade (FPR linear na exposição)",
+                         "OK" if dif < 1e-9 else "Atenção"])
+        av = cp.get("avisos") or {}
+        falt = [f"{av[k]} {r}" for k, r in [
+            ("residencial_sem_ltv", "residencial sem LTV"),
+            ("pj_sem_receita", "PJ sem receita"),
+            ("if_categoria_padrao_A", "IF sem categoria")] if av.get(k)]
+        rows.append(["Padronizado: dados para os fatores",
+                     "; ".join(falt) if falt else "completos",
+                     "LTV, receita e categoria de IF informados",
+                     "Esperado" if falt else "OK"])
+        ps_ = cp["piso"]
+        rows.append(["Piso de saída (art. 34, Res. BCB 303)",
+                     f"IRB/padronizado {br(ps_['razao_irb_cpad'], 3)}",
+                     "RWA = max(IRB; 72,5% × padronizado)",
+                     "Esperado" if ps_["vinculante"] else "OK"])
     ga = irb.get("ajuste_granularidade")
     if ga is not None:
         rows.append(["Ajuste de granularidade",
@@ -503,6 +528,23 @@ def _interpretar(drows, M):
             leitura = ("há exposições SME sem receita bruta: aplicou-se a "
                        "correlação sem redução de porte (conservador).")
             acao = "informar a coluna receita_bruta_mi."
+        elif teste.startswith("Padronizado: RWA agregado"):
+            leitura = ("o RWA padronizado da carteira agregada difere da soma "
+                       "contrato a contrato.")
+            acao = "revisar a camada de agregação (deveria ser identidade)."
+        elif teste.startswith("Padronizado: dados"):
+            leitura = (f"faltam atributos para alguns fatores ({res}): "
+                       "aplicou-se o fator conservador — faixa de LTV acima "
+                       "de 100%, 100% para PJ sem receita, categoria A para "
+                       "IF sem classificação.")
+            acao = ("informar ltv, receita_bruta_mi e categoria_if para "
+                    "obter o fator exato de cada exposição.")
+        elif teste.startswith("Piso de saída"):
+            leitura = (f"o RWA dos modelos internos ficou abaixo de 72,5% do "
+                       f"padronizado ({res}): o piso é vinculante e o capital "
+                       "passa a ser determinado pela abordagem padronizada.")
+            acao = ("nenhuma no cálculo; para a gestão, o benefício dos "
+                    "modelos internos está limitado pelo piso.")
         elif teste.startswith("Ajuste de granularidade"):
             leitura = "o ajuste de granularidade resultou negativo."
             acao = "revisar a concentração da carteira e os parâmetros do GA."
@@ -809,7 +851,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                       r"\Phi^{-1}(\alpha)}{\sqrt{1-\rho}}\right)$",
                       secao="Metodologia")
         if irb:
-            secao("Capital regulatório IRB (Res. BCB 303/2023) e GA")
+            secao("Capital regulatório: IRB (modelos internos, Res. BCB 303/2023), GA e padronizado")
             seg = irb.get("por_segmento")
             cats = (", ".join(seg["descricao"]) if seg is not None
                     and len(seg) else "atacado — demais")
@@ -843,6 +885,20 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   "que a função IRB assume diversificado"
                   + (", com o termo c² substituído por C²/n_eff por pool"
                      if pooled else "") + ".")
+            if results.get("padronizado"):
+                D.par("Abordagem padronizada (Res. BCB 229/2022): RWA = soma "
+                      "de EAD × FPR, com o fator da categoria de cada "
+                      "exposição — varejo 75% (art. 46), rotativo sem uso em "
+                      "360 dias 45% (art. 47), pessoa natural fora do varejo "
+                      "100% (art. 48), PME 85% (art. 36), demais PJ 100% "
+                      "(art. 41), residencial por faixa de LTV de 20% a 70% "
+                      "(art. 50) e ativo problemático conforme a provisão "
+                      "(art. 66). O piso de saída da Res. BCB 303 (art. 34) "
+                      "limita o RWA dos modelos internos a, no mínimo, 72,5% "
+                      "do padronizado.")
+                D.formula(r"$\mathrm{RWA}=\max\{\mathrm{RWA}_{IRB};\;"
+                          r"0{,}725\cdot\sum_n \mathrm{EAD}_n\,"
+                          r"\mathrm{FPR}_n\}$", secao="Metodologia")
 
         if mig is not None:
             secao("Migração de ratings, ECL e capital multiperíodo")
@@ -1005,6 +1061,19 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                 ("R regulatório ponderado",
                  br(irb.get("rho_basel_ponderado"), 3, pct=True)),
             ], "Capital e concentração")
+            cp = results.get("padronizado")
+            if cp:
+                ps_ = cp["piso"]
+                D.y -= 0.010
+                D.kv([
+                    ("RWA IRB (modelos internos)", br(ps_["rwa_irb"])),
+                    ("RWA padronizado (Res. BCB 229)", br(ps_["rwa_cpad"])),
+                    ("IRB / padronizado", br(ps_["razao_irb_cpad"], 3)),
+                    ("Piso: 72,5% × padronizado", br(ps_["piso"])),
+                    ("RWA final (art. 34, Res. BCB 303)",
+                     br(ps_["rwa_final"]) + ("  — piso vinculante"
+                                             if ps_["vinculante"] else "")),
+                ], "Capital e concentração")
             seg = irb.get("por_segmento")
             if seg is not None and len(seg):
                 D.y -= 0.010

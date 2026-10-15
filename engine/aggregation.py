@@ -45,7 +45,7 @@ from .portfolio import Portfolio, load_portfolio, REQUIRED_COLS
 
 def aggregate_portfolio(df, corte_grandes: float | None = None,
                         max_grandes: int = 200,
-                        col_gh: str = "gh"):
+                        col_gh: str = "gh", escala_reais: float = 1.0):
     """Agrega a base analítica em grandes exposições + buckets GH x setor.
 
     Parâmetros: `corte_grandes` (contratos com exposicao >= corte passam
@@ -67,6 +67,19 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
 
     df["severidade"] = df["exposicao"] * df["lgd"]
     el_analitica = float((df["pd"] * df["severidade"]).sum())
+
+    # ---- capital padronizado (RWACPAD) contrato a contrato: o FPR depende
+    # de atributos de cada operação (LTV, atraso, limites de varejo por
+    # contraparte), mas o RWA é linear na exposição — a soma por grupo é
+    # exata e é carregada na carteira agregada ----
+    from .padronizado_bcb import fpr_por_exposicao, resumo as _resumo_cpad
+    _fpr, _art, _ead_cpad, _avisos = fpr_por_exposicao(df, escala_reais)
+    df["ead_cpad"] = _ead_cpad
+    df["rwa_cpad"] = _ead_cpad * _fpr
+    _pa, _ = _resumo_cpad(_fpr, _art, _ead_cpad)
+    cpad_rel = {"por_artigo": _pa, "avisos": _avisos,
+                "rwa_total": float(df["rwa_cpad"].sum()),
+                "escala_reais": escala_reais}
 
     # ---- corte de grandes exposições ----
     grandes_mask = pd.Series(False, index=df.index)
@@ -100,6 +113,8 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
         "n_contratos": g.size(),
         # soma dos quadrados das severidades: n efetivo = C_g^2 / soma(c_i^2)
         "sev2": g["severidade"].apply(lambda x: float(np.square(x).sum())),
+        "rwa_cpad": g["rwa_cpad"].sum(),
+        "ead_cpad": g["ead_cpad"].sum(),
         **({"receita_bruta_mi": g.apply(
             lambda x: (np.average(x["receita_bruta_mi"].fillna(300.0),
                                   weights=x["severidade"])),
@@ -129,7 +144,7 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
     if "rating_origem" in grandes.columns:
         cols.append("rating_origem")
         agg["rating_origem"] = agg["rating"]
-    for extra in ["segmento_irb", "receita_bruta_mi"]:
+    for extra in ["segmento_irb", "receita_bruta_mi", "rwa_cpad", "ead_cpad"]:
         if extra in grandes.columns and extra in agg.columns:
             cols.append(extra)
     out = pd.concat([grandes[cols], agg[cols]], ignore_index=True)
@@ -153,6 +168,7 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
         "pd_cv_max_bucket": float(agg["pd_cv"].max()) if len(agg) else 0.0,
         "pd_cv_medio_bucket": float(agg["pd_cv"].mean()) if len(agg) else 0.0,
         "buckets_cv_alto": int((agg["pd_cv"] > 0.5).sum()),
+        "cpad": cpad_rel,
     }
     return out, relatorio
 

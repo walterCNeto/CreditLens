@@ -155,7 +155,7 @@ REFS_TEX = [
     r"Bolder, D.~J. (2018). \emph{Credit-Risk Modelling: Theoretical Foundations, Diagnostic Tools, Practical Examples, and Numerical Recipes in Python}. Cham: Springer. [Referencial de implementação do aplicativo.]",
     r"IFRS Foundation (2014). \emph{IFRS 9 --- Financial Instruments}. Londres. Conselho Monetário Nacional (2021). \emph{Resolução nº 4.966, de 25 de novembro de 2021}. Brasília: BCB.",
     r"Banco Central do Brasil (2023). \emph{Resolução BCB nº 303, de 16 de março de 2023} (abordagem IRB para risco de crédito; revoga a Circular nº 3.648/2013). Brasília: BCB.",
-    r"Banco Central do Brasil (2022). \emph{Resolução BCB nº 229, de 12 de maio de 2022} (abordagem padronizada; arts.~36 e 46). Brasília: BCB.",
+    r"Banco Central do Brasil (2022). \emph{Resolução BCB nº 229, de 12 de maio de 2022} (RWA de risco de crédito pela abordagem padronizada --- RWA\textsubscript{CPAD}; texto consolidado). Brasília: BCB.",
     r"David, H.~A.; Nagaraja, H.~N. (2003). \emph{Order Statistics}. 3.\,ed. Hoboken: Wiley.",
     r"Glasserman, P. (2004). \emph{Monte Carlo Methods in Financial Engineering}. Nova York: Springer.",
 ]
@@ -446,8 +446,8 @@ em que $C=\sum_n c_n$ é a exposição líquida e $\alpha$ o nível de confianç
         seg = irb.get("por_segmento")
         cats = ", ".join(seg["descricao"]) if seg is not None and len(seg) else "atacado --- demais"
         T.append(rf"""
-\subsection{{Capital regulatório IRB (Resolução BCB 303/2023)}}
-O requerimento segue a abordagem IRB do Banco Central do Brasil (Resolução BCB 303/2023), derivada do modelo ASRF:
+\subsection{{Capital regulatório: abordagem IRB (modelos internos, Resolução BCB 303/2023)}}
+O requerimento pela abordagem IRB do Banco Central do Brasil (Resolução BCB 303/2023), derivada do modelo ASRF:
 \begin{{equation}}
 K_n=\left[\Phi\!\left(\frac{{\Phi^{{-1}}(p_n)+\sqrt{{R_n}}\,\Phi^{{-1}}(0{{,}}999)}}{{\sqrt{{1-R_n}}}}\right)-p_n\right]\mathrm{{MA}}_n,\qquad \mathrm{{Capital}}=\sum_n c_n K_n,
 \end{{equation}}
@@ -459,6 +459,22 @@ em que $M\in[1,5]$ é o prazo efetivo, aplica-se só ao atacado e às instituiç
                  + ("" if irb.get("segmentado") else r" A carteira não informa a coluna \texttt{segmento\_irb}: todas as exposições foram tratadas como atacado.")
                  + r""" O ajuste de granularidade segue Gordy e Lütkebohmert (2013), na formulação baseada no CreditRisk\textsuperscript{+} implementada por Bolder (2018)"""
                  + (r", com o termo $c^2$ substituído por $C_g^2/n_g^{\mathrm{eff}}$ em cada grupo." if pooled else ".") + "\n")
+    cp = results.get("padronizado")
+    if cp:
+        T.append(r"""
+\subsection{Capital regulatório: abordagem padronizada (Resolução BCB 229/2022) e piso de saída}
+Na abordagem padronizada, o ativo ponderado pelo risco é a soma das exposições ponderadas pelo fator de ponderação de risco (FPR) da sua categoria,
+\begin{equation}
+\mathrm{RWA}_{\mathrm{CPAD}}=\sum_n \mathrm{EAD}_n\,\mathrm{FPR}_n ,
+\end{equation}
+sem uso de PD ou LGD. Os fatores aplicados são os da Resolução BCB 229/2022: varejo, 75\% (art.~46: pessoa natural ou empresa de pequeno porte, com exposição agregada por contraparte de até R\$~5~milhões e inferior a 0{,}2\% do total de varejo), 45\% para o rotativo sem atraso, parcelamento ou saque em 360 dias (art.~47) e 100\% para a pessoa natural fora desses critérios (art.~48); pessoa jurídica, 65\% para a grande empresa de baixo risco (art.~35), 85\% para a PME com ativo inferior a R\$~240~milhões e receita inferior a R\$~300~milhões (art.~36) e 100\% nos demais casos (art.~41); imobiliário residencial por faixa de LTV, de 20\% a 70\% sem dependência do fluxo do imóvel (art.~50) e de 30\% a 105\% com dependência (art.~51); imóvel não residencial com dependência do fluxo, de 70\% a 110\% (art.~53), e demais exposições imobiliárias, 150\% (art.~54); instituições financeiras pela categoria A, B ou C e pelo prazo original (art.~33). O ativo problemático recebe 150\%, 100\% ou 50\% conforme a provisão seja inferior a 20\%, entre 20\% e 50\% ou superior a 50\% do saldo (art.~66), prevalecendo o maior entre esse fator e o específico (art.~22, II). """
+            + (r"Na base analítica, o fator é atribuído contrato a contrato, antes da agregação; como o RWA é linear na exposição, a soma por grupo é exata. " if pooled else "")
+            + r"""A Resolução BCB 303/2023 (art.~34) limita o benefício dos modelos internos pelo piso de saída:
+\begin{equation}
+\mathrm{RWA}=\max\bigl\{\mathrm{RWA}_{\mathrm{IRB}};\;0{,}725\cdot\mathrm{RWA}_{\mathrm{CPAD}}\bigr\},
+\end{equation}
+calculados sobre as mesmas exposições. O requerimento de capital é $F=8\%$ do RWA.
+""")
     if mig is not None:
         T.append(r"""
 \subsection{Migração de ratings, ECL e capital multiperíodo}
@@ -554,10 +570,43 @@ em que $L_{{(k)}}$ é a $k$-ésima menor perda simulada (David e Nagaraja, 2003)
                  ["Capital com GA", nb(irb.get("capital_com_ga"))],
                  ["RWA equivalente ($12{,}5\\times$)", nb(irb.get("rwa_equivalente"))],
                  ["$R$ regulatório ponderado", nb(irb.get("rho_basel_ponderado"), 3, pct=True)]]
+        cp = results.get("padronizado")
         T.append(r"""
 \section{Capital regulatório e concentração}
 """ + _tabela(["Indicador", "Valor"], lin_k, "lr",
-              "Capital regulatório IRB (Resolução BCB 303/2023).", "tab:irb", H=True))
+              "Capital regulatório pela abordagem IRB (modelos internos, Resolução BCB 303/2023).", "tab:irb", H=True))
+        if cp:
+            ps_ = cp["piso"]
+            lin_p = [["RWA IRB (modelos internos)", nb(ps_["rwa_irb"])],
+                     [r"RWA padronizado (RWA\textsubscript{CPAD})", nb(ps_["rwa_cpad"])],
+                     ["Razão IRB / padronizado", nb(ps_["razao_irb_cpad"])],
+                     [r"Piso: $0{,}725\times$RWA\textsubscript{CPAD}", nb(ps_["piso"])],
+                     ["RWA final (art.~34, Res. BCB 303)", nb(ps_["rwa_final"])],
+                     [r"Capital final ($8\%$ do RWA)", nb(ps_["capital_final"])],
+                     ["Piso vinculante", "sim" if ps_["vinculante"] else "não"]]
+            T.append(rf"""
+Pela abordagem padronizada, o RWA da carteira é {nb(ps_['rwa_cpad'])}, com FPR médio de {nb(cp['fpr_medio'], 3, pct=True)}. O RWA dos modelos internos corresponde a {nb(ps_['razao_irb_cpad'] * 100, 3)}\% do padronizado; """
+                     + (r"como a razão é inferior a 72{,}5\%, \textbf{o piso de saída é vinculante} e o capital passa a ser determinado pela abordagem padronizada." if ps_["vinculante"]
+                        else r"como a razão supera 72{,}5\%, o piso de saída não é vinculante e prevalece o RWA dos modelos internos.")
+                     + "\n" + _tabela(["Indicador", "Valor"], lin_p, "lr",
+                                      "Abordagem padronizada e piso de saída.", "tab:piso", H=True))
+            pa = cp.get("por_artigo")
+            if pa is not None and len(pa):
+                la = [[tx(r.descricao), nb(r.linhas, 0), nb(r.ead), nb(r.rwa),
+                       nb(r.fpr_medio, 3, pct=True)]
+                      for r in pa.itertuples(index=False)]
+                T.append(_tabela(["Fator (artigo)", "Linhas", "EAD", "RWA", "FPR médio"],
+                                 la, r">{\raggedright\arraybackslash}p{6.4cm}rrrr",
+                                 r"RWA\textsubscript{CPAD} por fator de ponderação da Resolução BCB 229/2022.",
+                                 "tab:cpad", H=True))
+            cmp_ = cp.get("comparacao")
+            if cmp_ is not None and len(cmp_) and "descricao" in cmp_.columns:
+                lc = [[tx(r.descricao), nb(r.rwa_irb), nb(r.rwa_cpad), nb(r.razao_irb_cpad)]
+                      for r in cmp_.itertuples(index=False)]
+                T.append(_tabela(["Categoria", "RWA IRB", "RWA padronizado", "IRB / padr."],
+                                 lc, "lrrr",
+                                 "Comparação entre as abordagens por categoria.",
+                                 "tab:irbcpad", H=True))
         seg = irb.get("por_segmento")
         if seg is not None and len(seg):
             ls = [[tx(r.descricao), nb(r.linhas, 0), nb(r.exposicao_liquida),
@@ -618,7 +667,7 @@ A Tabela~\ref{{tab:setores}} decompõe a cauda por setor pela alocação de Eule
 \item Nos grupos homogêneos, a PD é atribuída uniformemente; o coeficiente de variação de PD intra-grupo é o diagnóstico de adequação (desigualdade de Jensen).
 \item A matriz de transição é homogênea no tempo; horizontes acima de cinco anos devem ser lidos como cenário exploratório.
 \item O Monte Carlo é simples: o erro do quantil 99{,}9\% decai com $1/\sqrt{M}$, e o diagnóstico de intervalo de confiança indica quando $M$ é insuficiente.
-\item No IRB, não são calculados o piso de 72{,}5\% do RWA padronizado (art.~34 da Resolução BCB 303), os pisos de LGD da abordagem avançada e o tratamento de exposições em descumprimento.
+\item No IRB, não são calculados os pisos de LGD da abordagem avançada nem o tratamento de exposições em descumprimento. No padronizado, a coluna \texttt{exposicao} é tomada como a EAD final (fatores de conversão de exposições fora do balanço já aplicados), e não são tratados o descasamento cambial (art.~55), a mitigação de risco de crédito, os financiamentos especializados (arts.~37 a 40), participações e cotas de fundos; na ausência de LTV, receita ou categoria da instituição financeira, aplica-se o fator conservador indicado no aplicativo.
 \item Este documento é gerado automaticamente a partir dos parâmetros escolhidos e não substitui a validação independente exigida pela governança de modelos da instituição.
 \end{itemize}
 

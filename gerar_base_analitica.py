@@ -8,6 +8,10 @@ Composição:
   - 300 contratos corporate grandes: exposições log-normais com média
     duas ordens de grandeza acima — são os candidatos naturais ao corte
     de grandes exposições.
+
+Colunas do capital padronizado: `ltv` (imobiliário residencial) e
+`transactor` (rotativo sem atraso nem saque em 360 dias, art. 47 da
+Res. BCB 229), sorteadas com gerador próprio, sem alterar os demais campos.
 """
 import numpy as np
 import pandas as pd
@@ -65,6 +69,16 @@ def gerar(n_varejo=299_700, n_corp=300, path="data/base_analitica_demo.csv",
     df["segmento_irb"] = seg
     df["receita_bruta_mi"] = np.where(
         seg == "sme", np.round(rng_seg.uniform(15, 300, len(df)), 1), np.nan)
+    # atributos do capital padronizado (Res. BCB 229), com gerador próprio:
+    # LTV no imobiliário residencial (art. 50) e uso do rotativo nos
+    # últimos 360 dias (art. 47: "transactor" — sem atraso nem saque)
+    rng_cpad = np.random.default_rng(seed + 2)
+    res = seg == "varejo_residencial"
+    df["ltv"] = np.where(res, np.round(rng_cpad.uniform(0.30, 1.05, len(df)), 3),
+                         np.nan)
+    rot = seg == "varejo_rotativo"
+    df["transactor"] = np.where(rot, (rng_cpad.random(len(df)) < 0.35)
+                                .astype(int), 0)
     # normaliza o total para 100.000 (unidades monetárias)
     df["exposicao"] = (df["exposicao"] / df["exposicao"].sum()
                        * 100_000).round(6)
