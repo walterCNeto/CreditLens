@@ -633,7 +633,7 @@ def _parametros(results, prm, pooled, tem, mig, extra):
 
 
 def gerar_paper(destino, port, results, mig=None, nome_base="",
-                extra=None, rel_agg=None):
+                extra=None, rel_agg=None, descritiva=None):
     """Escreve o paper de validação em `destino` (caminho ou buffer)."""
     resumo = results["resumo"]
     prm = results.get("parametros", {})
@@ -1177,4 +1177,55 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
               color=CINZA)
         for r in REFS:
             D.par(r, size=7.8, width=118, secao="Referências")
+
+        # ================= apêndice: base de entrada =================
+        if descritiva:
+            ds, g, cc = descritiva, descritiva["geral"], descritiva["concentracao"]
+            sec_ap = "Apêndice A"
+            D.nova(sec_ap)
+            D.h1("Apêndice A — Análise descritiva da base de entrada")
+            D.par(f"Base original ({nome_base or 'informada pelo usuário'}), "
+                  "antes de qualquer agregação.", color=CINZA, secao=sec_ap)
+            D.kv([("Linhas", br(g["linhas"], 0)),
+                  ("Contrapartes distintas", br(g["contrapartes"], 0)),
+                  ("Exposição total", br(g["ead_total"])),
+                  ("Perda esperada", f"{br(g['el_total'])} "
+                   f"({br(g['el_pct'], 3, pct=True)} da severidade)"),
+                  ("PD média ponderada", br(g["pd_media_ponderada"], 3, pct=True)),
+                  ("LGD média ponderada", br(g["lgd_media_ponderada"], 3, pct=True)),
+                  ("HHI / nº efetivo", f"{br(cc['hhi'], 6)} / {br(cc['n_efetivo'])}"),
+                  ("10 maiores / 1% maior", f"{br(cc['top10'], 3, pct=True)} / "
+                   f"{br(cc['top1pct'], 3, pct=True)}"),
+                  ("Gini das exposições", br(cc["gini"]))], sec_ap)
+            q = ds["qualidade"]
+            D.y -= 0.01
+            D.tabela(["Coluna", "Tipo", "Preench.", "Faltantes", "Observação"],
+                     [[r.coluna, r.tipo, br(r.preenchimento, 3, pct=True),
+                       br(r.faltantes, 0), r.observacao]
+                      for r in q.itertuples(index=False)],
+                     [0.22, 0.14, 0.14, 0.14, 0.36],
+                     0.022 * (len(q) + 1), sec_ap, esquerda=(0, 1, 4))
+            nu = ds["numericas"]
+            if len(nu):
+                pc = lambda var: var in ("PD", "LGD", "LTV")
+                D.tabela(["Variável", "n", "Média", "Mín.", "Mediana", "p99", "Máx."],
+                         [[r.variavel, br(r.n, 0),
+                           br(r.media, 3, pct=pc(r.variavel)),
+                           br(r.min, 3, pct=pc(r.variavel)),
+                           br(r.mediana, 3, pct=pc(r.variavel)),
+                           br(r.p99, 3, pct=pc(r.variavel)),
+                           br(r.max, 3, pct=pc(r.variavel))]
+                          for r in nu.itertuples(index=False)],
+                         [0.22, 0.11, 0.13, 0.13, 0.13, 0.14, 0.14],
+                         0.022 * (len(nu) + 1), sec_ap)
+            for c, (rot, t) in ds["categoricas"].items():
+                D.h2(f"Composição por {rot.lower() if rot != 'Categoria IRB' else rot}",
+                     secao=sec_ap)
+                D.tabela([rot, "Linhas", "EAD", "% EAD", "PD média", "% EL"],
+                         [[str(getattr(r, c)), br(r.linhas, 0), br(r.ead),
+                           br(r.ead_pct, 3, pct=True), br(r.pd_media, 3, pct=True),
+                           br(r.el_pct, 3, pct=True)]
+                          for r in t.itertuples(index=False)],
+                         [0.26, 0.12, 0.17, 0.14, 0.15, 0.14],
+                         0.022 * (len(t) + 1), sec_ap)
         D.fecha()

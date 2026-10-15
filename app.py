@@ -195,6 +195,13 @@ def _preparar_carteira(tipo, nome, conteudo, max_grandes, escala_reais=1.0):
     return port, None, pooled
 
 
+@st.cache_data(show_spinner=False, max_entries=4)
+def _descrever_base(tipo, nome, conteudo):
+    """Análise descritiva da base de entrada original (apêndice do paper)."""
+    from engine.descritiva import descrever
+    return descrever(_ler_base(tipo, nome, conteudo))
+
+
 if fonte is None:
     st.info("Carregue um CSV (padrão ou base analítica) ou marque uma das "
             "opções de demonstração para começar.")
@@ -360,6 +367,9 @@ if st.button("▶ Executar", type="primary", disabled=_bloqueio):
         st.error(f"Base inválida: {e}")
         st.stop()
     tick("Carteira pronta")
+    with st.spinner("Descrevendo a base de entrada..."):
+        descritiva = _descrever_base(fonte["tipo"], fonte["nome"],
+                                     fonte["conteudo"])
 
     with st.spinner("Rodando modelos..."):
         if pooled_mode:
@@ -431,6 +441,7 @@ if st.button("▶ Executar", type="primary", disabled=_bloqueio):
                       "max_grandes": int(max_grandes), "horizonte": horizonte,
                       "taxa_desc": taxa_desc},
         "nome_base": fonte["nome"],
+        "descritiva": descritiva,
     })
 
 if "results" not in st.session_state:
@@ -480,6 +491,38 @@ c5.metric("HHI (N efetivo)", f"{s['hhi']:.4f}", f"{s['n_efetivo']:.0f} nomes",
           delta_color="off")
 with st.expander("Ver carteira executada"):
     st.dataframe(port.df, width='stretch', height=280)
+
+_desc = st.session_state.get("descritiva")
+if _desc:
+    with st.expander("Análise descritiva da base de entrada "
+                     "(apêndice do paper de validação)"):
+        _g, _cc = _desc["geral"], _desc["concentracao"]
+        d1, d2, d3, d4 = st.columns(4)
+        d1.metric("Linhas", f"{_g['linhas']:,}",
+                  f"{_g['contrapartes']:,} contrapartes", delta_color="off")
+        d2.metric("Exposição total", f"{_g['ead_total']:,.3f}")
+        d3.metric("10 maiores exposições", f"{_cc['top10']:.3%}",
+                  f"Gini {_cc['gini']:.3f}", delta_color="off")
+        d4.metric("Nº efetivo de exposições", f"{_cc['n_efetivo']:,.3f}")
+        if _desc.get("ausentes"):
+            st.caption("Colunas opcionais ausentes: "
+                       + ", ".join(f"`{a}`" for a in _desc["ausentes"]) + ".")
+        st.markdown("**Completude e domínio das colunas**")
+        st.dataframe(_desc["qualidade"].style.format(
+            {"preenchimento": "{:.3%}", "faltantes": "{:,}"}),
+            width='stretch', hide_index=True)
+        st.markdown("**Variáveis de risco**")
+        st.dataframe(_desc["numericas"].style.format(
+            {c: "{:,.3f}" for c in ["media", "desvio", "min", "p01", "p25",
+                                    "mediana", "p75", "p99", "max"]}
+            | {"n": "{:,}"}), width='stretch', hide_index=True)
+        for _c, (_rot, _t) in _desc["categoricas"].items():
+            st.markdown(f"**Composição por {_rot.lower() if _rot != 'Categoria IRB' else _rot}**")
+            st.dataframe(_t.style.format({
+                "linhas": "{:,}", "ead": "{:,.3f}", "el": "{:,.3f}",
+                "ead_pct": "{:.3%}", "pd_media": "{:.3%}",
+                "lgd_media": "{:.3%}", "el_pct": "{:.3%}"}),
+                width='stretch', hide_index=True)
 
 results = st.session_state["results"]
 total = results["resumo"]["exposicao_liquida_total"]
@@ -833,7 +876,8 @@ with tabs[7]:
         args = dict(mig=st.session_state.get("mig"),
                     nome_base=st.session_state.get("nome_base", ""),
                     extra=st.session_state.get("params_ui"),
-                    rel_agg=st.session_state.get("rel_agg"))
+                    rel_agg=st.session_state.get("rel_agg"),
+                    descritiva=st.session_state.get("descritiva"))
         pdf_bytes, tex_zip = None, None
         with st.spinner("Compondo o paper..."):
             if latex_disponivel():

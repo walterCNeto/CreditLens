@@ -231,8 +231,171 @@ def _fig_multiperiodo(sim, path):
 
 
 # ------------------------------------------------------------- documento
+
+# ======================================================================
+# Apêndice: análise descritiva da base de entrada
+# ======================================================================
+
+def _fig_desc_exposicao(desc, path):
+    e = np.asarray(desc["ead_amostra"], float)
+    e = e[e > 0]
+    fig, ax = plt.subplots(1, 2, figsize=(10.5, 3.6))
+    ax[0].hist(np.log10(e), bins=60, color="#1F4E79", alpha=0.85)
+    ax[0].set_xlabel("log$_{10}$ da exposição")
+    ax[0].set_ylabel("contratos" + (" (amostra)" if len(e) >= 100_000 else ""))
+    ax[0].set_title("Distribuição das exposições", fontsize=10)
+    x, y = desc["lorenz"]
+    ax[1].plot(x, y, color="#B02418", lw=1.8, label="carteira")
+    ax[1].plot([0, 1], [0, 1], color="#8A8F98", lw=0.9, ls="--",
+               label="igualdade")
+    ax[1].set_xlabel("fração acumulada dos contratos (menores primeiro)")
+    ax[1].set_ylabel("fração acumulada da exposição")
+    ax[1].set_title(f"Curva de Lorenz (Gini {br(desc['concentracao']['gini'], 3)})",
+                    fontsize=10)
+    ax[1].legend(fontsize=8, frameon=False)
+    for a in ax:
+        a.spines[["top", "right"]].set_visible(False)
+        a.grid(alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def _fig_desc_pd(desc, path):
+    dados = [(k, v[v > 0]) for k, v in desc["pd_por_rating"] if len(v)]
+    fig, ax = plt.subplots(figsize=(9, 3.6))
+    ax.boxplot([v for _, v in dados], showfliers=False, widths=0.55,
+               medianprops=dict(color="#B02418"),
+               boxprops=dict(color="#1F4E79"), whiskerprops=dict(color="#1F4E79"),
+               capprops=dict(color="#1F4E79"))
+    ax.set_xticks(range(1, len(dados) + 1))
+    ax.set_xticklabels([k for k, _ in dados], rotation=0 if len(dados) <= 12
+                       else 45, fontsize=8)
+    ax.set_yscale("log")
+    ax.set_ylabel("PD (escala logarítmica)")
+    ax.set_xlabel("rating")
+    ax.set_title("Dispersão da PD por rating (caixa: p25–p75; hastes: 1,5 × IQR)",
+                 fontsize=10)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.grid(axis="y", alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def _apendice_descritiva(desc, figdir, nome_base=""):
+    """Código LaTeX do apêndice e lista de figuras geradas."""
+    g, cc = desc["geral"], desc["concentracao"]
+    figs = []
+    T = [r"""
+\clearpage
+\appendix
+\section{Análise descritiva da base de entrada}
+\label{ap:descritiva}
+""" + rf"""Este apêndice descreve a base de entrada \emph{{original}}{(' (' + tx(nome_base) + ')') if nome_base else ''} --- {'contrato a contrato, antes da agregação' if g['linhas'] > 5_000 else 'como enviada'} ---, para que o validador avalie os dados que sustentam a execução. A base tem {nb(g['linhas'], 0)} linhas e {nb(g['contrapartes'], 0)} contrapartes distintas, exposição total de {nb(g['ead_total'])} e perda esperada de {nb(g['el_total'])}, isto é, {nb(g['el_pct'], 3, pct=True)} da severidade (PD média ponderada pela severidade de {nb(g['pd_media_ponderada'], 3, pct=True)} e LGD média ponderada pela exposição de {nb(g['lgd_media_ponderada'], 3, pct=True)}).
+"""]
+    # qualidade
+    q = desc["qualidade"]
+    lq = [[r"\texttt{" + tx(r.coluna) + "}", tx(r.tipo),
+           nb(r.preenchimento, 3, pct=True), nb(r.faltantes, 0), tx(r.observacao)]
+          for r in q.itertuples(index=False)]
+    aus = desc.get("ausentes") or []
+    T.append(r"""
+\subsection{Completude e domínio das colunas}
+A Tabela~\ref{tab:ap-qual} mostra o preenchimento de cada coluna presente e as verificações de domínio. """
+             + (r"Colunas opcionais ausentes, tratadas pelos valores padrão: "
+                + ", ".join(r"\texttt{" + tx(a) + "}" for a in aus) + "." if aus else
+                "Todas as colunas opcionais estão presentes.")
+             + _tabela_longa(["Coluna", "Tipo", "Preenchimento", "Faltantes",
+                              "Observação"], lq,
+                             r"llrr>{\raggedright\arraybackslash}p{4.6cm}",
+                             "Completude e domínio das colunas da base de entrada.",
+                             "tab:ap-qual"))
+    # numéricas
+    nu = desc["numericas"]
+    if len(nu):
+        def f(v, var):
+            pct = var in ("PD", "LGD", "LTV")
+            return nb(v, 3, pct=pct)
+        ln = [[tx(r.variavel), nb(r.n, 0), f(r.media, r.variavel),
+               f(r.desvio, r.variavel), f(r.min, r.variavel), f(r.p01, r.variavel),
+               f(r.mediana, r.variavel), f(r.p99, r.variavel), f(r.max, r.variavel)]
+              for r in nu.itertuples(index=False)]
+        T.append(r"""
+\subsection{Variáveis de risco}
+""" + r"{\footnotesize" + _tabela(["Variável", "$n$", "Média", "Desvio", "Mín.",
+                                   "p1", "Mediana", "p99", "Máx."], ln,
+                                  "lrrrrrrrr",
+                                  "Estatísticas das variáveis numéricas (PD, LGD e LTV em percentual).",
+                                  "tab:ap-num", small=False, H=True) + "}\n")
+    # concentração
+    lc = [["Índice de Herfindahl--Hirschman (HHI)", nb(cc["hhi"], 6)],
+          ["Número efetivo de exposições ($1/\\mathrm{HHI}$)", nb(cc["n_efetivo"])],
+          ["Participação das 10 maiores exposições", nb(cc["top10"], 3, pct=True)],
+          ["Participação das 100 maiores exposições", nb(cc["top100"], 3, pct=True)],
+          ["Participação do 1\\% maior das exposições", nb(cc["top1pct"], 3, pct=True)],
+          ["Coeficiente de Gini das exposições", nb(cc["gini"])]]
+    _fig_desc_exposicao(desc, os.path.join(figdir, "ap_exposicao.pdf"))
+    figs.append("ap_exposicao.pdf")
+    T.append(r"""
+\subsection{Concentração das exposições}
+""" + _tabela(["Indicador", "Valor"], lc, "lr",
+              "Concentração das exposições da base de entrada.", "tab:ap-conc", H=True)
+             + r"""
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{ap_exposicao.pdf}
+\caption{Distribuição das exposições (escala logarítmica) e curva de Lorenz.}
+\label{fig:ap-exp}
+\end{figure}
+""")
+    # categóricas
+    from .irb_bcb import SEGMENTOS as _SEG
+    _min = {"Rating": "rating", "Setor": "setor", "Categoria IRB": "categoria IRB"}
+    for c, (rot, t) in desc["categoricas"].items():
+        if c == "segmento_irb":
+            t = t.copy()
+            t[c] = t[c].map(lambda k: _SEG.get(k, (k,))[0])
+        lt = [[tx(getattr(r, c)), nb(r.linhas, 0), nb(r.ead),
+               nb(r.ead_pct, 3, pct=True), nb(r.pd_media, 3, pct=True),
+               nb(r.lgd_media, 3, pct=True), nb(r.el_pct, 3, pct=True)]
+              for r in t.itertuples(index=False)]
+        maior = t.sort_values("el", ascending=False).iloc[0]
+        T.append(rf"""
+\subsection{{Composição por {tx(_min.get(rot, rot))}}}
+O maior contribuinte para a perda esperada é {tx(str(maior[c]))}, com {nb(maior['el_pct'], 3, pct=True)} da EL e {nb(maior['ead_pct'], 3, pct=True)} da exposição.
+""" + _tabela_longa([tx(rot), "Linhas", "EAD", "\\% EAD", "PD média", "LGD média",
+                     "\\% EL"], lt, "lrrrrrr",
+                    f"Composição da base por {tx(_min.get(rot, rot))} (PD ponderada pela severidade; LGD pela exposição).",
+                    f"tab:ap-{c}"))
+    if desc.get("pd_por_rating"):
+        _fig_desc_pd(desc, os.path.join(figdir, "ap_pd_rating.pdf"))
+        figs.append("ap_pd_rating.pdf")
+        T.append(r"""
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{ap_pd_rating.pdf}
+\caption{Dispersão da PD dentro de cada rating. Sobreposição entre classes vizinhas indica discriminação limitada da escala; a dispersão dentro da classe é a fonte do viés de Jensen nos grupos homogêneos.}
+\label{fig:ap-pd}
+\end{figure}
+""")
+    cz = desc.get("setor_rating")
+    if cz is not None and cz.shape[1] <= 12:
+        lz = [[tx(s)] + [nb(v, 3, pct=True) for v in row] + [nb(row.sum(), 3, pct=True)]
+              for s, row in zip(cz.index, cz.to_numpy())]
+        lz.append([r"\textbf{Total}"] + [nb(v, 3, pct=True) for v in cz.sum(axis=0)]
+                  + [nb(cz.to_numpy().sum(), 3, pct=True)])
+        T.append(r"""
+\subsection{Setor $\times$ rating}
+""" + r"{\scriptsize" + _tabela(["Setor"] + [tx(k) for k in cz.columns] + ["Total"], lz,
+                                "l" + "r" * (cz.shape[1] + 1),
+                                "Distribuição da exposição por setor e rating (\\% da exposição total).",
+                                "tab:ap-cruz", small=False, H=True) + "}\n")
+    return "".join(T), figs
+
+
 def montar_tex(port, results, mig=None, nome_base="", extra=None,
-               rel_agg=None, figdir="."):
+               rel_agg=None, figdir=".", descritiva=None):
     """Devolve (código LaTeX, lista de figuras geradas em `figdir`)."""
     resumo = results["resumo"]
     prm = results.get("parametros", {})
@@ -676,18 +839,24 @@ A Tabela~\ref{{tab:setores}} decompõe a cauda por setor pela alocação de Eule
 \begin{itemize}\setlength\itemsep{1pt}
 """ + "\n".join(rf"\item[] [{i}] {r}" for i, r in enumerate(REFS_TEX, 1)) + r"""
 \end{itemize}
+""")
+    if descritiva:
+        _ta, _fa = _apendice_descritiva(descritiva, figdir, nome_base)
+        T.append(_ta)
+        figs += _fa
+    T.append(r"""
 \end{document}
 """)
     return "".join(T), figs
 
 
 def gerar_paper_latex(port, results, mig=None, nome_base="", extra=None,
-                      rel_agg=None, timeout=180):
+                      rel_agg=None, timeout=180, descritiva=None):
     """Compila o paper. Devolve (pdf_bytes, zip_fonte_bytes).
     Levanta RuntimeError se a compilação falhar."""
     with tempfile.TemporaryDirectory() as tmp:
         tex, figs = montar_tex(port, results, mig, nome_base, extra,
-                               rel_agg, figdir=tmp)
+                               rel_agg, figdir=tmp, descritiva=descritiva)
         with open(os.path.join(tmp, "paper.tex"), "w", encoding="utf-8") as f:
             f.write(tex)
         for _ in range(2):           # 2 passagens: sumário e referências
