@@ -497,7 +497,7 @@ A Tabela~\ref{tab:medidas} reporta as medidas de risco de cada modelo, nas unida
                        lin2, "lrrrr",
                        "Indicadores relativos no quantil 99{,}90\\%.", "tab:relativos")
              + r"""
-\begin{figure}[htb]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.85\textwidth]{hierarquia.pdf}
 \caption{VaR 99{,}90\% por modelo, em percentual da exposição líquida.}
@@ -509,7 +509,7 @@ A Tabela~\ref{tab:medidas} reporta as medidas de risco de cada modelo, nas unida
         _fig_distribuicoes(dists, total, os.path.join(figdir, "distribuicoes.pdf"))
         figs.append("distribuicoes.pdf")
         T.append(r"""
-\begin{figure}[htb]
+\begin{figure}[H]
 \centering
 \includegraphics[width=\textwidth]{distribuicoes.pdf}
 \caption{Distribuições de perda. Esquerda: corpo até o quantil 99{,}9\%, na escala dos modelos com dependência; a curva tracejada do modelo independente, quase degenerada em torno da EL, pode ultrapassar o topo do gráfico. Direita: cauda $\Pr(L>x)$ em escala logarítmica, com a linha pontilhada no nível $10^{-3}$.}
@@ -602,7 +602,7 @@ A Tabela~\ref{{tab:setores}} decompõe a cauda por setor pela alocação de Eule
             _fig_multiperiodo(sim_m, os.path.join(figdir, "multiperiodo.pdf"))
             figs.append("multiperiodo.pdf")
             T.append(r"""
-\begin{figure}[htb]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.85\textwidth]{multiperiodo.pdf}
 \caption{Distribuição das perdas descontadas acumuladas no horizonte multiperíodo, com o VaR 99{,}9\%.}
