@@ -119,13 +119,10 @@ _ORIG_ARQ, _ORIG_EX = "Enviar arquivo", "Usar exemplo"
 _TIPO_CP, _TIPO_CT = "Por contraparte", "Por contrato"
 with _cc, st.container(border=True):
     st.markdown("##### :material/account_balance: Carteira de crédito")
-    t1, t2 = st.columns(2)
-    with t1:
-        tipo_sel = _escolha("Granularidade da base", [_TIPO_CP, _TIPO_CT],
-                            "tipo_base", _TIPO_CP)
-    with t2:
-        orig_sel = _escolha("Origem", [_ORIG_ARQ, _ORIG_EX], "orig_base",
-                            _ORIG_ARQ)
+    tipo_sel = _escolha("Granularidade da base", [_TIPO_CP, _TIPO_CT],
+                        "tipo_base", _TIPO_CP)
+    orig_sel = _escolha("Origem", [_ORIG_ARQ, _ORIG_EX], "orig_base",
+                        _ORIG_ARQ)
     analitica = tipo_sel == _TIPO_CT
     if analitica:
         st.caption("Uma linha por contrato, até milhões de linhas. Ao "
@@ -173,20 +170,21 @@ with _cc, st.container(border=True):
                        "dl_mod_carteira")
 
 # --- cartão: matriz de transição ---
-_MTX_NAO = "Não usar"
 with _cm, st.container(border=True):
     st.markdown("##### :material/swap_vert: Migração e ECL *(opcional)*")
-    mtx_sel = _escolha("Matriz de transição anual",
-                       [_MTX_NAO, _ORIG_ARQ, _ORIG_EX], "orig_mtx", _MTX_NAO)
+    mtx_sel = st.segmented_control(
+        "Matriz de transição anual", [_ORIG_ARQ, _ORIG_EX], default=None,
+        key="orig_mtx", selection_mode="single",
+        help="Opcional. Clique de novo na opção escolhida para desmarcar.")
     mtx_up, usar_mtx_demo = None, False
     if mtx_sel == _ORIG_ARQ:
         mtx_up = st.file_uploader("CSV da matriz de transição", type=["csv"],
                                   key="mtx")
     elif mtx_sel == _ORIG_EX:
         usar_mtx_demo = True
-        st.info("**Matriz de exemplo** — 8 graus (AAA a C) e default.",
-                icon=":material/grid_on:")
-    if mtx_sel == _MTX_NAO:
+        st.caption(":material/grid_on: Matriz de exemplo com 8 graus "
+                   "(AAA a C) e o estado de default.")
+    if mtx_sel is None:
         st.caption("Com a matriz, o CreditLens calcula a estrutura a termo "
                    "de PD, o ECL de 12 meses e *lifetime* (Res. CMN 4.966) "
                    "e o capital multiperíodo. Exige a coluna `rating`.")
@@ -194,8 +192,8 @@ with _cm, st.container(border=True):
     else:
         h1, h2 = st.columns(2)
         horizonte = h1.slider("Horizonte (anos)", 1, 10, 5)
-        taxa_desc = h2.slider("Taxa de desconto (a.a.)", 0.0, 0.30, 0.10,
-                              0.01)
+        taxa_desc = h2.slider("Desconto (a.a.)", 0, 30, 10, 1,
+                              format="%d%%") / 100
         block_sz = st.select_slider(
             "Bloco de simulação (memória)",
             options=[2_000, 5_000, 10_000, 25_000], value=10_000,
