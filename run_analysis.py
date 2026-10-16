@@ -112,20 +112,35 @@ def main():
     ap.add_argument("--analitica", action="store_true",
                     help="trata o CSV como base analítica: agrega em grandes + GH×setor e roda o motor pooled")
     ap.add_argument("--max-grandes", type=int, default=200)
+    ap.add_argument("--prazo-baixa", type=float, default=24.0,
+                    help="exposições em default: meses até a baixa (ELBE = 100%%)")
+    ap.add_argument("--k-lgd", type=float, default=0.10,
+                    help="exposições em default: margem k de LGD_D = ELBE + k(1 - ELBE)")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
+    import io
+    import pandas as pd
+    from engine.inadimplidos import separar, avaliar, integrar
+    df_in = pd.read_csv(args.carteira)
+    df_in.columns = [c.strip().lower() for c in df_in.columns]
+    df_perf, df_def = separar(df_in)
+    if len(df_def):
+        print(f"[default] {len(df_def):,} exposição(ões) em default separadas "
+              "da carteira de modelagem")
     if args.analitica:
-        from engine.aggregation import load_analytic_and_aggregate
-        port, rel = load_analytic_and_aggregate(args.carteira,
-                                                max_grandes=args.max_grandes)
+        from engine.aggregation import aggregate_portfolio
+        agg, rel = aggregate_portfolio(df_perf, max_grandes=args.max_grandes)
+        _b = io.StringIO(); agg.to_csv(_b, index=False); _b.seek(0)
+        port = load_portfolio(_b)
         print(f"[agregação] {rel['linhas_analitica']:,} contratos -> "
               f"{rel['linhas_agregada']} linhas ({rel['n_grandes']} grandes + "
               f"{rel['n_buckets']} buckets) | EL dif. {rel['el_diferenca_pct']:.4%} | "
               f"CV PD máx. {rel['pd_cv_max_bucket']:.2f}")
         port.df.to_csv(os.path.join(args.out, "carteira_agregada.csv"), index=False)
     else:
-        port = load_portfolio(args.carteira)
+        _b = io.StringIO(); df_perf.to_csv(_b, index=False); _b.seek(0)
+        port = load_portfolio(_b)
     for w in port.warnings:
         print(f"[aviso] {w}")
 
@@ -149,6 +164,18 @@ def main():
         rho_inter=args.rho_inter,
         progress=lambda m: print(f"  -> {m}"),
     )
+
+    aval_def = None
+    if len(df_def):
+        aval_def = avaliar(df_def, prazo_baixa=args.prazo_baixa, k=args.k_lgd,
+                           horizonte=args.horizonte,
+                           taxa_desc=args.taxa_desconto)
+        results = integrar(results, aval_def)
+        r_ = aval_def["resumo"]
+        print(f"\n=== Exposições em default ({r_['contratos']:,}) ===")
+        print(f"EAD {r_['ead']:,.0f} | provisão ELBE {r_['provisao_elbe']:,.0f} "
+              f"| capital IRB {r_['capital_irb']:,.0f} | perda 12m "
+              f"{r_['perda_incremental_12m']:,.0f}")
 
     print("\n=== Medidas de risco por modelo ===")
     with np.printoptions(precision=1):

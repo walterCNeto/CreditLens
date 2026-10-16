@@ -42,6 +42,17 @@ CSV com separador vírgula, decimal ponto, UTF-8
 | `rating` | não* | funcional nos módulos de migração/ECL (mapeia à linha da matriz) |
 | `rating_origem` | não | rating na originação; habilita a classificação de estágios (≥2 notches → estágio 2) |
 | `nome` | não | descritiva |
+| `dias_atraso` | não | > 30 → estágio 2 do ECL; ≥ 90 → exposição em default |
+| `ativo_problematico` | não | 1 = exposição em default (e fator do art. 66 no padronizado) |
+| `meses_em_default` | não | tempo em default; posiciona o contrato na curva de LGD em default |
+| `provisao` | não | provisão constituída (R$); comparada à ELBE nas exposições em default |
+
+**Exposições em default (sem write-off).** Saem dos modelos de simulação e recebem
+tratamento determinístico: provisão = EAD × ELBE(t), pela curva de LGD em default
+(`templates/curva_lgd_default_modelo.csv` ou proxy linear da LGD até 100% no prazo
+de baixa); capital IRB = EAD × (LGD_D − ELBE), com LGD_D = ELBE + k(1 − ELBE);
+perda em 12 meses = EAD × [ELBE(t+12) − ELBE(t)], somada a todos os modelos;
+fator do art. 66 no padronizado e as duas partes no piso de saída.
 
 ## Como executar
 
@@ -82,6 +93,7 @@ carteira-credito/
 ├── templates/carteira_modelo.csv         # modelo preenchido: uma linha por contraparte (R$)
 ├── templates/base_analitica_modelo.csv  # modelo preenchido: uma linha por contrato (R$)
 ├── templates/matriz_migracao_modelo.csv # matriz de transição anual de exemplo
+├── templates/curva_lgd_default_modelo.csv # curva de LGD em default (ELBE) por categoria
 ├── data/carteira_teste.csv # 250 contrapartes, 8 graus de rating, EAD total R$ 10 bilhões (valores em reais)
 └── output/                 # resultados da rodada de teste
 ```

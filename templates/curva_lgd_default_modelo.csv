@@ -1,0 +1,14 @@
+segmento_irb,meses,lgd_elbe
+todos,0,0.55
+todos,6,0.65
+todos,12,0.78
+todos,18,0.90
+todos,24,1.00
+varejo_residencial,0,0.20
+varejo_residencial,12,0.30
+varejo_residencial,24,0.50
+varejo_residencial,36,0.75
+varejo_residencial,48,1.00
+varejo_rotativo,0,0.80
+varejo_rotativo,6,0.90
+varejo_rotativo,12,1.00

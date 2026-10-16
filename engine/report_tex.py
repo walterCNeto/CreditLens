@@ -226,6 +226,26 @@ def _fig_distribuicoes(dists, total, path, unidade="R$ milhões"):
     plt.close(fig)
 
 
+def _fig_default(ad, path):
+    cv = ad["curva_ilustrativa"]
+    fig, ax = plt.subplots(figsize=(6.0, 3.2))
+    ax.plot(cv["meses"], cv["elbe"] * 100, color="#1f4e79", lw=1.6,
+            label="ELBE (provisão)")
+    ax.plot(cv["meses"], cv["lgd_d"] * 100, color="#c0504d", lw=1.4, ls="--",
+            label="LGD$_D$")
+    ax.fill_between(cv["meses"], cv["elbe"] * 100, cv["lgd_d"] * 100,
+                    color="#c0504d", alpha=0.15, label="capital ($K$)")
+    ax.set_xlabel("Meses em default", fontsize=8)
+    ax.set_ylabel("% da EAD", fontsize=8)
+    ax.set_ylim(0, 105)
+    ax.tick_params(labelsize=7)
+    ax.grid(alpha=0.25)
+    ax.legend(fontsize=7, frameon=False)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
 def _fig_multiperiodo(sim, path, unidade="R$ milhões"):
     fig, ax = plt.subplots(figsize=(7.2, 3.2))
     ax.hist(sim["perdas"], bins=80, density=True, color="#12395B",
@@ -665,6 +685,28 @@ sem uso de PD ou LGD. Os fatores aplicados são os da Resolução BCB 229/2022: 
 \end{equation}
 calculados sobre as mesmas exposições. O requerimento de capital é $F=8\%$ do RWA.
 """)
+    ad = results.get("inadimplidos")
+    if ad:
+        r_ = ad["resumo"]
+        T.append(r"""
+\subsection{Exposições em default na carteira ativa (sem \emph{write-off})}
+Contratos com 90 dias ou mais de atraso, marcados como ativo problemático ou com tempo em \emph{default} informado saem dos modelos de simulação: o evento de \emph{default} já ocorreu, e o risco remanescente é o da recuperação. Seja $t$ o tempo em \emph{default}, em meses. A melhor estimativa da perda, $\mathrm{ELBE}(t)$, é a curva de LGD em \emph{default}, não decrescente em $t$ e igual a 100\% no prazo de baixa $T_b$; """
+                 + (r"nesta execução, usou-se a proxy linear a partir da LGD não \emph{default} do contrato, $\mathrm{LGD}_0$,"
+                    if r_["curva"] != "informada" else r"nesta execução, a curva foi informada por categoria IRB, com interpolação linear entre os pontos; para categorias sem curva, usou-se a proxy linear")
+                 + r"""
+\begin{equation}
+\mathrm{ELBE}(t)=\mathrm{LGD}_0+(1-\mathrm{LGD}_0)\min\{t/T_b,\,1\}.
+\end{equation}
+A provisão de estágio 3 é $\mathrm{EAD}\cdot\mathrm{ELBE}(t)$. O capital cobre a incerteza da recuperação: pela abordagem IRB para exposições inadimplidas, $K=\max\{0;\,\mathrm{LGD}_D-\mathrm{ELBE}\}$, em que a LGD em \emph{default} $\mathrm{LGD}_D$ incorpora uma margem sobre a ELBE. Adota-se a proxy
+\begin{equation}
+\mathrm{LGD}_D(t)=\mathrm{ELBE}(t)+k\,\bigl[1-\mathrm{ELBE}(t)\bigr]\;\Rightarrow\;K(t)=k\,\bigl[1-\mathrm{ELBE}(t)\bigr],
+\end{equation}
+com capital $\mathrm{EAD}\cdot K$ e RWA $=12{,}5\cdot\mathrm{EAD}\cdot K$: máximo logo após o \emph{default} e nulo na baixa. Com o tempo, a absorção migra do capital para a provisão. Em um ano, a perda é o incremento determinístico da provisão,
+\begin{equation}
+\Delta L=\sum_{n\in\mathcal{D}}\mathrm{EAD}_n\bigl[\mathrm{ELBE}_n(t_n+12)-\mathrm{ELBE}_n(t_n)\bigr],
+\end{equation}
+em que $\mathcal{D}$ é o conjunto das exposições em \emph{default}; por ser constante, $\Delta L$ soma-se ao EL, ao VaR e ao ES de qualquer modelo sem alterar a perda inesperada. No padronizado, essas exposições recebem o fator do ativo problemático (art.~66 da Resolução BCB 229/2022), e no piso de saída entram dos dois lados. Contratos em atraso abaixo de 90 dias seguem na carteira não \emph{default}, com a LGD não \emph{default}; acima de 30 dias, passam ao estágio 2 do ECL.
+""")
     if mig is not None:
         T.append(r"""
 \subsection{Migração de ratings, ECL e capital multiperíodo}
@@ -797,6 +839,45 @@ Pela abordagem padronizada, o RWA da carteira é R\$~{mi(ps_['rwa_cpad'])}~milh�
                                  lc, "lrrr",
                                  "Comparação entre as abordagens por categoria (RWA em R\\$ milhões).",
                                  "tab:irbcpad", H=True))
+        ad = results.get("inadimplidos")
+        if ad:
+            r_ = ad["resumo"]
+            _fig_default(ad, os.path.join(figdir, "default.pdf"))
+            figs.append("default.pdf")
+            ld = [["Exposições em \\emph{default}", nb(r_["contratos"], 0)],
+                  ["EAD (R\\$ milhões)", mi(r_["ead"])],
+                  ["Tempo médio em \\emph{default} (meses)", nb(r_["meses_medio"], 1)],
+                  ["ELBE média / LGD$_D$ média",
+                   f"{nb(r_['elbe_media'], 3, pct=True)} / {nb(r_['lgd_d_media'], 3, pct=True)}"],
+                  ["Provisão requerida, EAD$\\cdot$ELBE (R\\$ milhões)", mi(r_["provisao_elbe"])]]
+            if r_["provisao_informada"] == r_["provisao_informada"]:
+                ld += [["Provisão informada (R\\$ milhões)", mi(r_["provisao_informada"])],
+                       ["Insuficiência frente à ELBE (R\\$ milhões)", mi(r_["insuficiencia_provisao"])]]
+            ld += [["Capital IRB, EAD$\\cdot$(LGD$_D-$ELBE) (R\\$ milhões)", mi(r_["capital_irb"])],
+                   ["RWA IRB / RWA\\textsubscript{CPAD} (R\\$ milhões)",
+                    f"{mi(r_['rwa_irb'])} / {mi(r_['rwa_cpad'])}"],
+                   ["Perda incremental em 12 meses (R\\$ milhões)", mi(r_["perda_incremental_12m"])],
+                   ["Contratos além do prazo de baixa", nb(r_["ja_baixados"], 0)]]
+            pf = ad["por_faixa"]
+            lf = [[tx(str(r.meses)), nb(r.contratos, 0), mi(r.ead), nb(r.elbe, 3, pct=True),
+                   nb(r.K, 3, pct=True), mi(r.provisao_elbe), mi(r.capital_irb)]
+                  for r in pf.itertuples(index=False)]
+            T.append(rf"""
+\paragraph{{Exposições em \emph{{default}}.}} A Tabela~\ref{{tab:default}} resume o tratamento das exposições em \emph{{default}} e a Tabela~\ref{{tab:defaultfaixa}} mostra, por tempo em \emph{{default}}, a passagem do capital para a provisão; a Figura~\ref{{fig:default}} traz a curva usada. A perda incremental de R\$~{mi(r_['perda_incremental_12m'])}~milhões em 12 meses soma-se às medidas da Tabela~\ref{{tab:medidas}}, que se referem à carteira não \emph{{default}}.
+""" + _tabela(["Indicador", "Valor"], ld, "lr",
+              "Exposições em \\emph{default} (sem \\emph{write-off}).", "tab:default", H=True)
+              + _tabela(["Meses em \\emph{default}", "Contratos", "EAD", "ELBE", "$K$",
+                         "Provisão", "Capital"], lf, "lrrrrrr",
+                        "Exposições em \\emph{default} por tempo em \\emph{default} (valores em R\\$ milhões).",
+                        "tab:defaultfaixa", H=True)
+              + r"""
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.72\textwidth]{default.pdf}
+\caption{Curva de LGD em \emph{default}: ELBE (provisão), LGD$_D$ e, entre as duas, o coeficiente de capital $K$.}
+\label{fig:default}
+\end{figure}
+""")
         seg = irb.get("por_segmento")
         if seg is not None and len(seg):
             ls = [[tx(r.descricao), nb(r.linhas, 0), mi(r.exposicao_liquida),
@@ -857,7 +938,7 @@ A Tabela~\ref{{tab:setores}} decompõe a cauda por setor pela alocação de Eule
 \item Nos grupos homogêneos, a PD é atribuída uniformemente; o coeficiente de variação de PD intra-grupo é o diagnóstico de adequação (desigualdade de Jensen).
 \item A matriz de transição é homogênea no tempo; horizontes acima de cinco anos devem ser lidos como cenário exploratório.
 \item O Monte Carlo é simples: o erro do quantil 99{,}9\% decai com $1/\sqrt{M}$, e o diagnóstico de intervalo de confiança indica quando $M$ é insuficiente.
-\item No IRB, não são calculados os pisos de LGD da abordagem avançada nem o tratamento de exposições em descumprimento. No padronizado, a coluna \texttt{exposicao} é tomada como a EAD final (fatores de conversão de exposições fora do balanço já aplicados), e não são tratados o descasamento cambial (art.~55), a mitigação de risco de crédito, os financiamentos especializados (arts.~37 a 40), participações e cotas de fundos; na ausência de LTV, receita ou categoria da instituição financeira, aplica-se o fator conservador indicado no aplicativo.
+\item No IRB, não são calculados os pisos de LGD da abordagem avançada. As exposições em \emph{default} recebem tratamento determinístico: ELBE pela curva de LGD em \emph{default} e LGD$_D$ por proxy (margem $k$), sem simular a incerteza da recuperação. No padronizado, a coluna \texttt{exposicao} é tomada como a EAD final (fatores de conversão de exposições fora do balanço já aplicados), e não são tratados o descasamento cambial (art.~55), a mitigação de risco de crédito, os financiamentos especializados (arts.~37 a 40), participações e cotas de fundos; na ausência de LTV, receita ou categoria da instituição financeira, aplica-se o fator conservador indicado no aplicativo.
 \item Este documento é gerado automaticamente a partir dos parâmetros escolhidos e não substitui a validação independente exigida pela governança de modelos da instituição.
 \end{itemize}
 

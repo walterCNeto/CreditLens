@@ -31,7 +31,7 @@
 \large Análise Quantitativa de Carteiras de Crédito:\\
 Documentação Metodológica e Estudo de Caso}
 \author{Walter C.~Neto\\[1mm]\small Baseado em D.~J.~Bolder, \emph{Credit-Risk Modelling} (Springer, 2018)}
-\date{Outubro de 2026 --- versão 0.12}
+\date{Outubro de 2026 --- versão 0.13}
 
 \begin{document}
 \maketitle
@@ -50,7 +50,7 @@ A interface separa \emph{configuração} de \emph{execução}. O usuário escolh
 
 \subsection{Padrão de carteira}
 
-O aplicativo oferece, na seção de escolha da base, os \emph{layouts} dos três arquivos de entrada --- carteira por contraparte, base analítica por contrato e matriz de transição anual --- com o dicionário de colunas e arquivos-modelo preenchidos para \emph{download} (pasta \texttt{templates/} do repositório). Cada linha do arquivo CSV representa uma contraparte. As colunas obrigatórias são \texttt{id\_\allowbreak contraparte} (identificador único da contraparte), \texttt{exposicao} (o EAD, \emph{exposure at default} --- valor exposto no momento do default, estritamente positivo) e \texttt{pd} (probabilidade de default no horizonte de um ano, número em $(0,1)$). As colunas opcionais são \texttt{lgd} (\emph{loss given default} --- fração da exposição efetivamente perdida em caso de default, em $(0,1]$; valor-padrão $1{,}0$), \texttt{prazo\_anos} (prazo efetivo da operação, em anos, usado no ajuste de maturidade do IRB; valor-padrão $2{,}5$) e as colunas \texttt{rating} (funcional nos módulos de migração e ECL, em que mapeia a contraparte à linha da matriz de transição), \texttt{rating\_origem} (rating na originação, usado na classificação de estágios), \texttt{setor} (funcional no modelo multifatorial) e \texttt{nome} (descritiva). Seguindo a convenção de Bolder, toda a modelagem usa a \emph{severidade}
+O aplicativo oferece, na seção de escolha da base, os \emph{layouts} dos três arquivos de entrada --- carteira por contraparte, base analítica por contrato e matriz de transição anual --- com o dicionário de colunas e arquivos-modelo preenchidos para \emph{download} (pasta \texttt{templates/} do repositório). Cada linha do arquivo CSV representa uma contraparte. As colunas obrigatórias são \texttt{id\_\allowbreak contraparte} (identificador único da contraparte), \texttt{exposicao} (o EAD, \emph{exposure at default} --- valor exposto no momento do default, estritamente positivo) e \texttt{pd} (probabilidade de default no horizonte de um ano, número em $(0,1)$). As colunas opcionais são \texttt{lgd} (\emph{loss given default} --- fração da exposição efetivamente perdida em caso de default, em $(0,1]$; valor-padrão $1{,}0$), \texttt{prazo\_anos} (prazo efetivo da operação, em anos, usado no ajuste de maturidade do IRB; valor-padrão $2{,}5$) e as colunas \texttt{rating} (funcional nos módulos de migração e ECL, em que mapeia a contraparte à linha da matriz de transição), \texttt{rating\_origem} (rating na originação, usado na classificação de estágios), \texttt{setor} (funcional no modelo multifatorial) e \texttt{nome} (descritiva). A situação de atraso entra por \texttt{dias\_atraso}, \texttt{ativo\_problematico}, \texttt{meses\_em\_default} e \texttt{provisao}: exposições em \emph{default} saem dos modelos de simulação e recebem o tratamento da Seção~\ref{sec:default}. Seguindo a convenção de Bolder, toda a modelagem usa a \emph{severidade}
 \begin{equation}
 c_n = \mathrm{EAD}_n \times \mathrm{LGD}_n,
 \end{equation}
@@ -353,6 +353,29 @@ Contratos & Medida & Exato & Agregado (binomial) & Agregado (só frações)\\
 \caption{Teste de aceitação do multiperíodo agregado contra o motor exato (perda em unidades de severidade por contrato).}
 \label{tab:mig-aceite}
 \end{table} As grandes exposições ($n=1$) mantêm trajetória \emph{discreta}, compartilhando os mesmos fatores --- de modo que o cenário que rebaixa o pool também rebaixa o nome grande do mesmo setor. A perda esperada simulada reproduz a esperança analítica da matriz descontada (verificação de sanidade com desvio inferior a $0{,}1\%$ no estudo de caso).
+
+\subsection{Exposições em \emph{default} na carteira ativa}
+\label{sec:default}
+
+A carteira ativa de um banco reúne contratos em dia, em atraso e em \emph{default} ainda não baixados (\emph{write-off}). Os modelos das seções anteriores medem o risco de \emph{default} em um ano; para uma exposição que já está em \emph{default}, esse evento já ocorreu, e o risco remanescente é o da recuperação. A partir da versão 0.13, o CreditLens separa a carteira em duas partes antes de qualquer agregação ou simulação. É considerada em \emph{default} a exposição com $90$ dias ou mais de atraso, marcada como ativo problemático, com \texttt{meses\_em\_default} preenchido ou com $\mathrm{PD}=1$; as demais --- inclusive as em atraso abaixo de $90$ dias --- formam a carteira não \emph{default}, modelada com a PD e a LGD não \emph{default}. No ECL, atraso acima de $30$ dias leva ao estágio 2 (presunção relativa de aumento significativo do risco, Resolução CMN 4.966), e o \emph{default}, ao estágio 3.
+
+\paragraph{Provisão: a curva de LGD em \emph{default}.} Seja $t$ o tempo em \emph{default}, em meses (informado em \texttt{meses\_em\_default} ou estimado por $(\text{dias de atraso}-90)/30{,}4$). A melhor estimativa da perda, $\mathrm{ELBE}(t)$ (\emph{expected loss best estimate}), é a LGD condicional a que o contrato siga em \emph{default} após $t$ meses: cresce com $t$, porque quem não se curou nem recuperou tem cada vez menos chance de fazê-lo, e atinge $100\%$ no prazo de baixa $T_b$. O usuário pode informar a curva por categoria IRB (pontos $(t,\mathrm{ELBE})$ com interpolação linear); na falta dela, usa-se a proxy linear a partir da LGD não \emph{default} do contrato,
+\begin{equation}\label{eq:elbe}
+\mathrm{ELBE}(t)=\mathrm{LGD}_0+(1-\mathrm{LGD}_0)\,\min\{t/T_b,\,1\},
+\end{equation}
+que é contínua no \emph{default}: em $t=0$, a perda esperada é a mesma da carteira não \emph{default}. A provisão de estágio 3 requerida é $\mathrm{EAD}\cdot\mathrm{ELBE}(t)$, comparada à provisão informada.
+
+\paragraph{Capital: LGD em \emph{default}.} Na abordagem IRB, o requerimento de uma exposição inadimplida não usa a função de Vasicek: é $K=\max\{0;\,\mathrm{LGD}_D-\mathrm{ELBE}\}$, em que $\mathrm{LGD}_D$ é a LGD em \emph{default}, com margem para a incerteza da recuperação. Na ausência de uma curva própria de $\mathrm{LGD}_D$, adota-se a proxy
+\begin{equation}\label{eq:lgdd}
+\mathrm{LGD}_D(t)=\mathrm{ELBE}(t)+k\,\bigl[1-\mathrm{ELBE}(t)\bigr]\quad\Longrightarrow\quad K(t)=k\,\bigl[1-\mathrm{ELBE}(t)\bigr],
+\end{equation}
+com $k\in[0,1]$ escolhido pelo usuário ($0{,}10$ por padrão), capital $\mathrm{EAD}\cdot K$ e RWA $=12{,}5\cdot\mathrm{EAD}\cdot K$. A proxy tem as duas propriedades que importam: a margem é proporcional ao que ainda pode ser perdido e se anula na baixa. Ao longo do tempo em \emph{default}, a absorção migra do capital para a provisão --- $\mathrm{ELBE}$ sobe até $100\%$ e $K$ cai a zero ---, e $\mathrm{LGD}_D=k+(1-k)\,\mathrm{ELBE}$ é não decrescente.
+
+\paragraph{Perda e capital.} O estoque já provisionado é perda passada. Em um ano, a perda das exposições em \emph{default} é o incremento determinístico da provisão,
+\begin{equation}\label{eq:dl}
+\Delta L=\sum_{n\in\mathcal D}\mathrm{EAD}_n\bigl[\mathrm{ELBE}_n(t_n+12)-\mathrm{ELBE}_n(t_n)\bigr],
+\end{equation}
+em que $\mathcal D$ é o conjunto das exposições em \emph{default}. Por ser constante, $\Delta L$ soma-se ao EL, ao VaR e ao ES de qualquer modelo da carteira não \emph{default} sem alterar a perda inesperada; no multiperíodo, somam-se os incrementos anuais descontados até o horizonte. No padronizado, a exposição em \emph{default} recebe o fator do ativo problemático (art.~66 da Resolução BCB 229), e o piso de saída é calculado com as duas partes nos dois lados: $\mathrm{RWA}_{\mathrm{IRB}}$ da carteira não \emph{default} mais o das exposições em \emph{default}, contra $0{,}725$ vez o $\mathrm{RWA}_{\mathrm{CPAD}}$ de toda a carteira ativa. O tratamento é deliberadamente determinístico: a incerteza da recuperação entra apenas pela margem $k$, sem simulação.
 
 \subsection{Camada de agregação e o motor \emph{pooled}}
 \label{sec:agregacao}
@@ -703,7 +726,7 @@ Na simulação multiperíodo de $5$ anos ($M=100\,000$, blocos de $10\,000$, est
 
 O segundo estudo de caso reproduz, ponta a ponta, uma execução no aplicativo sobre a base analítica de demonstração de $300\,000$ contratos, com exposição total de R\$~5~bilhões (\emph{ticket} médio de cerca de R\$~15~mil no varejo e de R\$~1{,}8~milhão no \emph{corporate}) --- varejo pulverizado combinado a $300$ operações \emph{corporate} de porte duas ordens de grandeza maior, concentradas em poucos setores --- exercitando a camada de agregação (Seção~\ref{sec:agregacao}), o motor \emph{pooled} com o portfólio completo de modelos, o IRB segmentado por categoria (Seção~\ref{sec:irb}), o IRB segmentado por categoria (Seção~\ref{sec:irb}), o módulo de migração em modo agregado e a bateria de diagnósticos da Seção~\ref{sec:paper}. Parâmetros: $M=100\,000$, semente 42, alvos de correlação de default de $5\%$ (um fator), $8\%$ intra-setor e $3\%$ inter-setor, $\nu=10$, $(w,v)=(0{,}35;\,1{,}2)$ no CreditRisk\textsuperscript{+}, matriz de transição de exemplo e desconto de $10\%$~a.a.
 
-Nota de versão: a partir da versão 0.12, as bases de demonstração estão em reais --- R\$~5~bilhões nesta base e R\$~10~bilhões na de teste ---, e os valores deste caso são apresentados em R\$ milhões; percentuais e razões não mudam, porque todas as medidas são proporcionais à escala. A versão 0.11 acrescenta a abordagem padronizada e o piso de saída (Seção~\ref{sec:cpad}) e as colunas \texttt{ltv} e \texttt{transactor} à base de demonstração, sorteadas com gerador próprio, sem alterar os demais campos nem os números anteriores deste caso. A versão 0.10 acrescenta as cargas por setor (Seção~\ref{sec:mf}), sem alterar nenhum número deste caso com a calibração uniforme. Na versão 0.9, o multiperíodo agregado passou a sortear os \emph{defaults} de cada grupo fora do limite de granularidade infinita (equação~\eqref{eq:mig-binom}); apenas os números multiperíodo deste caso mudaram. Na versão 0.8, o motor \emph{pooled} passou a representar cada grupo pelo seu número efetivo de contratos e a aplicar o limite de granularidade infinita apenas pelo critério de razão de variâncias (Seção~\ref{sec:agregacao}); os números deste caso foram regenerados com o motor revisado. A partir da versão 0.7, o gerador da base de demonstração usa um gerador aleatório local com semente fixa, de modo que cada geração reproduz exatamente a mesma base --- e esta coincide com o arquivo de teste distribuído. Na versão 0.6, o gerador era global e avançava a cada chamada, e a base descrita neste caso não era reprodutível; todos os números abaixo foram regenerados sobre a base determinística, que passa a trazer também a categoria IRB de cada contrato: o varejo pulverizado repartido entre demais varejo ($55\%$), rotativo qualificado ($30\%$) e residencial ($15\%$), e as operações \emph{corporate} entre atacado ($70\%$) e SME ($30\%$, com receita bruta entre R\$~15 e 300 milhões). A categoria é sorteada com gerador próprio, sem alterar nenhum outro campo da base.
+Nota de versão: a versão 0.13 acrescenta à base de demonstração do aplicativo a situação de atraso da carteira ativa --- contratos em atraso e em \emph{default} sem baixa, sorteados com gerador próprio ---, cujo efeito é analisado na Seção~\ref{sec:caso2-default}; os demais números deste caso usam a base sem essa camada (\texttt{gerar(inadimplencia=False)}) e não mudam. A partir da versão 0.12, as bases de demonstração estão em reais --- R\$~5~bilhões nesta base e R\$~10~bilhões na de teste ---, e os valores deste caso são apresentados em R\$ milhões; percentuais e razões não mudam, porque todas as medidas são proporcionais à escala. A versão 0.11 acrescenta a abordagem padronizada e o piso de saída (Seção~\ref{sec:cpad}) e as colunas \texttt{ltv} e \texttt{transactor} à base de demonstração, sorteadas com gerador próprio, sem alterar os demais campos nem os números anteriores deste caso. A versão 0.10 acrescenta as cargas por setor (Seção~\ref{sec:mf}), sem alterar nenhum número deste caso com a calibração uniforme. Na versão 0.9, o multiperíodo agregado passou a sortear os \emph{defaults} de cada grupo fora do limite de granularidade infinita (equação~\eqref{eq:mig-binom}); apenas os números multiperíodo deste caso mudaram. Na versão 0.8, o motor \emph{pooled} passou a representar cada grupo pelo seu número efetivo de contratos e a aplicar o limite de granularidade infinita apenas pelo critério de razão de variâncias (Seção~\ref{sec:agregacao}); os números deste caso foram regenerados com o motor revisado. A partir da versão 0.7, o gerador da base de demonstração usa um gerador aleatório local com semente fixa, de modo que cada geração reproduz exatamente a mesma base --- e esta coincide com o arquivo de teste distribuído. Na versão 0.6, o gerador era global e avançava a cada chamada, e a base descrita neste caso não era reprodutível; todos os números abaixo foram regenerados sobre a base determinística, que passa a trazer também a categoria IRB de cada contrato: o varejo pulverizado repartido entre demais varejo ($55\%$), rotativo qualificado ($30\%$) e residencial ($15\%$), e as operações \emph{corporate} entre atacado ($70\%$) e SME ($30\%$, com receita bruta entre R\$~15 e 300 milhões). A categoria é sorteada com gerador próprio, sem alterar nenhum outro campo da base.
 
 \subsection{Fluxo de uso}
 
@@ -836,6 +859,36 @@ No capital multiperíodo --- cinco anos, estrutura multifatorial setorial, matri
 \label{fig:g-mig}
 \end{figure}
 
+\subsection{Carteira ativa: exposições em \emph{default}}
+\label{sec:caso2-default}
+
+A base de demonstração do aplicativo traz a situação de atraso da carteira ativa: $14\,510$ contratos de varejo em atraso abaixo de $90$ dias ($9\,567$ deles acima de $30$ dias, no estágio 2 do ECL), que seguem na carteira não \emph{default}, e $11\,809$ contratos em \emph{default} sem baixa --- EAD de R\$~$187{,}17$~milhões ($3{,}743\%$ da carteira), com tempo médio em \emph{default} de $13{,}7$ meses e provisão constituída entre $85\%$ e $100\%$ da ELBE. Os números abaixo usam a proxy linear \eqref{eq:elbe} com $T_b=24$ meses e $k=0{,}10$. A Tabela~\ref{tab:caso2-default} mostra a passagem do capital para a provisão com o tempo em \emph{default}.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{lrrrrrr}
+\toprule
+Meses em \emph{default} & Contratos & EAD & ELBE & $K$ & Provisão & Capital\\
+\midrule
+0--3 & 1\,295 & 17{,}93 & $48{,}2\%$ & $5{,}2\%$ & 8{,}63 & 0{,}93\\
+3--6 & 1\,309 & 19{,}98 & $54{,}8\%$ & $4{,}5\%$ & 10{,}94 & 0{,}90\\
+6--12 & 2\,587 & 36{,}56 & $65{,}1\%$ & $3{,}5\%$ & 23{,}81 & 1{,}27\\
+12--18 & 2\,684 & 53{,}24 & $78{,}5\%$ & $2{,}1\%$ & 41{,}82 & 1{,}14\\
+18--24 & 2\,604 & 39{,}34 & $92{,}9\%$ & $0{,}7\%$ & 36{,}55 & 0{,}28\\
+24--36 & 1\,330 & 20{,}13 & $100{,}0\%$ & $0{,}0\%$ & 20{,}13 & 0{,}00\\
+\midrule
+Total & 11\,809 & 187{,}17 & $75{,}8\%$ & --- & 141{,}88 & 4{,}53\\
+\bottomrule
+\end{tabular}
+\caption{Exposições em \emph{default} da base de demonstração por tempo em \emph{default} (R\$ milhões; ELBE e $K$ médios ponderados pela EAD).}
+\label{tab:caso2-default}
+\end{table}
+
+A provisão requerida pela ELBE é de R\$~$141{,}88$~milhões, ante R\$~$131{,}07$~milhões informados: insuficiência de R\$~$10{,}81$~milhões, que o diagnóstico de cobertura ($92{,}4\%$) aponta. O capital IRB das exposições em \emph{default} é pequeno --- R\$~$4{,}53$~milhões, RWA de R\$~$56{,}62$~milhões ---, porque a maior parte da perda já está provisionada; ele se concentra nos primeiros meses, quando a recuperação ainda é incerta, e se anula nos $1\,330$ contratos que já passaram do prazo de baixa, que o diagnóstico sinaliza como candidatos a \emph{write-off}. A perda incremental em 12 meses, \eqref{eq:dl}, é de R\$~$34{,}81$~milhões: a provisão adicional que as exposições já em \emph{default} vão exigir no ano, somada ao EL e ao VaR de qualquer modelo; em cinco anos, descontada a $10\%$, chega a R\$~$40{,}31$~milhões, porque todos os contratos atingem a baixa até o segundo ano.
+
+O efeito mais relevante está no piso de saída. Os $11\,809$ contratos em \emph{default} saem da carteira de modelagem, que fica com $288\,191$ contratos, EAD de R\$~$4\,812{,}83$~milhões e EL de R\$~$50{,}67$~milhões; o RWA IRB da carteira não \emph{default} é de R\$~$2\,335{,}77$~milhões, e o da carteira ativa, somadas as exposições em \emph{default}, R\$~$2\,392{,}39$~milhões --- ante R\$~$2\,500{,}62$~milhões quando os mesmos contratos eram tratados como adimplentes. Na abordagem padronizada, a provisão é deduzida da exposição e o RWA\textsubscript{CPAD} cai de R\$~$3\,440{,}57$ para R\$~$3\,359{,}62$~milhões. A razão IRB/padronizado passa de $0{,}727$ para $0{,}712$, abaixo de $72{,}5\%$: \textbf{o piso de saída torna-se vinculante}, e o RWA final é R\$~$2\,435{,}72$~milhões. A leitura é estrutural: o modelo interno trata a perda já provisionada como fora do capital, enquanto o padronizado ainda pondera o saldo líquido de provisão; carteiras com estoque relevante de \emph{default} tendem a aproximar-se do piso.
+
 \subsection{Diagnósticos de validação}
 
 A bateria da Seção~\ref{sec:paper}, aplicada a esta execução, resulta em \textbf{26 testes OK em 27} (Tabela~\ref{tab:diag}). A meia-amplitude do intervalo de confiança do VaR 99{,}9\% fica entre $1{,}859\%$ e $5{,}128\%$. O único ponto de atenção é o intervalo do Threshold t-Student MF, de $5{,}128\%$, ligeiramente acima do critério de $5\%$: o modelo de cauda mais pesada, agora sobre 440 linhas de modelagem, pede mais trajetórias que as $100\,000$ desta execução --- o teste cumprindo seu papel de orientar a escolha de $M$.
@@ -876,7 +929,7 @@ Quatro recomendações operacionais fecham o fluxo. \emph{Grupos homogêneos}: s
 
 \section{Limitações e extensões}
 
-No capital regulatório, o CreditLens calcula a parcela IRB por modelos internos ($\sum K\cdot\mathrm{EAD}/F$), o RWA$_{\mathrm{CPAD}}$ da Resolução BCB~229 e o piso de $72{,}5\%$ do art.~34 da Resolução BCB~303 (a partir da versão 0.11); não aplica os pisos de LGD da abordagem avançada (art.~74), já que a LGD é insumo do usuário; e não trata exposições em descumprimento ($\mathrm{PD}=100\%$, com $K=\max(0,\mathrm{LGD}-\mathrm{EL})$), pois o padrão de carteira exige PD em $(0,1)$.
+No capital regulatório, o CreditLens calcula a parcela IRB por modelos internos ($\sum K\cdot\mathrm{EAD}/F$), o RWA$_{\mathrm{CPAD}}$ da Resolução BCB~229 e o piso de $72{,}5\%$ do art.~34 da Resolução BCB~303 (a partir da versão 0.11); e não aplica os pisos de LGD da abordagem avançada (art.~74), já que a LGD é insumo do usuário. As exposições em \emph{default} (Seção~\ref{sec:default}) recebem tratamento determinístico: a ELBE vem da curva de LGD em \emph{default} e a $\mathrm{LGD}_D$, de uma proxy com margem $k$; a extensão natural é a LGD em \emph{default} estocástica, com recuperação correlacionada ao fator sistemático, que levaria a incerteza da recuperação à perda inesperada dos modelos de simulação.
 
 Na modelagem econômica, o CreditLens carrega quatro premissas simplificadoras, cada qual com extensão natural já mapeada na própria biblioteca de Bolder.
 

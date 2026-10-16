@@ -295,6 +295,18 @@ def results_to_excel(results: dict, port, path: str):
                           for k, v in cp["piso"].items()]).to_excel(
                 xw, sheet_name="Piso de saída", index=False)
 
+        # exposições em default (engine/inadimplidos.py)
+        ad = results.get("inadimplidos")
+        if ad:
+            ad["tabela"].sort_values("exposicao", ascending=False).to_excel(
+                xw, sheet_name="Default (exposições)", index=False)
+            ad["por_faixa"].to_excel(xw, sheet_name="Default por tempo",
+                                     index=False)
+            pd.DataFrame([{"item": k, "valor": v} for k, v in
+                          ad["resumo"].items() if not isinstance(v, np.ndarray)]
+                         ).to_excel(xw, sheet_name="Default resumo",
+                                    index=False)
+
         # contribuições
         if "contribuicoes" in results:
             cc = results["contribuicoes"]

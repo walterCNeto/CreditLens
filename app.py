@@ -152,7 +152,8 @@ with _cc, st.container(border=True, key="cartao_carteira"):
     else:
         if analitica:
             st.info("**Base demo** — 300 mil contratos simulados (R$ 5 bi em 8 setores; "
-                    "varejo, PME e grandes empresas), gerada ao executar.",
+                    "varejo, PME e grandes empresas, com contratos em atraso e em "
+                    "default), gerada ao executar.",
                     icon=":material/dataset:")
             fonte = {"tipo": "analitica",
                      "nome": "base analítica demo (300 mil contratos)",
@@ -210,17 +211,55 @@ with _cm, st.container(border=True, key="cartao_matriz"):
     _baixar_modelo("matriz_migracao_modelo.csv",
                    "Baixar modelo de matriz", "dl_mod_matriz")
 
+# --- cartão: exposições em default ---
+_CURVA_PROXY, _CURVA_ARQ = "Proxy linear", "Enviar curva"
+with st.container(border=True, key="cartao_default"):
+    st.markdown("##### :material/report: Exposições em default "
+                "*(sem write-off)*")
+    st.caption("Contratos com 90 dias ou mais de atraso, `ativo_problematico` "
+               "= 1, `meses_em_default` preenchido ou PD = 1 saem dos modelos "
+               "de simulação e recebem tratamento próprio: provisão pela "
+               "curva de LGD em default (ELBE), capital IRB = LGD_D − ELBE e "
+               "perda incremental determinística. Contratos em atraso abaixo "
+               "de 90 dias seguem na carteira não default.")
+    g1, g2, g3 = st.columns([1.2, 1, 1], gap="medium")
+    with g1:
+        curva_sel = _escolha("Curva de LGD em default (ELBE)",
+                             [_CURVA_PROXY, _CURVA_ARQ], "orig_curva",
+                             _CURVA_PROXY)
+        curva_up = None
+        if curva_sel == _CURVA_ARQ:
+            curva_up = st.file_uploader("CSV da curva de LGD", type=["csv"],
+                                        key="curva_lgd")
+        _baixar_modelo("curva_lgd_default_modelo.csv",
+                       "Baixar modelo de curva", "dl_mod_curva")
+    with g2:
+        prazo_baixa = st.slider(
+            "Prazo até a baixa (meses)", 6, 60, 24, 1,
+            help="Tempo em default em que a perda chega a 100% (write-off). "
+                 "Na proxy linear, a ELBE vai da LGD não default do contrato "
+                 "até 100% nesse prazo. Com curva informada, vale só para "
+                 "segmentos sem curva.")
+    with g3:
+        k_lgd_d = st.slider(
+            "Margem da LGD em default (k)", 0.0, 0.50, 0.10, 0.01,
+            help="Proxy LGD_D = ELBE + k·(1 − ELBE). O capital da exposição "
+                 "em default é EAD·(LGD_D − ELBE) = EAD·k·(1 − ELBE): maior "
+                 "logo após o default e nulo na baixa.")
+
 with st.expander("Layouts dos arquivos de entrada — dicionário de "
                  "colunas e exemplos preenchidos", icon=":material/description:"):
-    from engine.layouts import dicionario, dicionario_analitica, CARTEIRA, MATRIZ
+    from engine.layouts import (dicionario, dicionario_analitica, CARTEIRA,
+                                MATRIZ, CURVA)
     st.caption("Convenções: CSV separado por vírgula, decimal com ponto, "
                "UTF-8. Valores monetários **em reais (R$)**, sem escala — "
                "exceto colunas terminadas em `_mi` (R$ milhões). Taxas e "
                "frações em decimal (5% = 0.05). Os resultados são "
                "apresentados em R$ milhões.")
-    _lt1, _lt2, _lt3 = st.tabs(["Carteira (por contraparte)",
-                                "Base analítica (por contrato)",
-                                "Matriz de transição anual"])
+    _lt1, _lt2, _lt3, _lt4 = st.tabs(["Carteira (por contraparte)",
+                                      "Base analítica (por contrato)",
+                                      "Matriz de transição anual",
+                                      "Curva de LGD em default"])
     with _lt1:
         st.markdown("Uma linha por **contraparte**. Para carteiras de até "
                     "alguns milhares de nomes; os modelos rodam nome a nome. "
@@ -271,6 +310,23 @@ with st.expander("Layouts dos arquivos de entrada — dicionário de "
                    "grau.")
         st.markdown("**Regras do layout**")
         st.dataframe(dicionario(MATRIZ), hide_index=True, width='stretch')
+    with _lt4:
+        st.markdown(
+            "ELBE — melhor estimativa da perda — em função do **tempo em "
+            "default**, por categoria IRB. A curva sobe até 100% no prazo de "
+            "baixa (write-off). Sem curva, o CreditLens usa a proxy linear: "
+            "da LGD não default do contrato até 100% no prazo escolhido.")
+        _f = os.path.join(_TDIR, "curva_lgd_default_modelo.csv")
+        st.download_button("⬇ Baixar modelo de curva de LGD",
+                           open(_f, "rb").read(),
+                           file_name="curva_lgd_default_modelo.csv",
+                           mime="text/csv")
+        _cv = pd.read_csv(_f)
+        st.dataframe(_cv.pivot(index="meses", columns="segmento_irb",
+                               values="lgd_elbe").style.format(
+            "{:.0%}", na_rep="—"), width='stretch')
+        st.markdown("**Regras do layout**")
+        st.dataframe(dicionario(CURVA), hide_index=True, width='stretch')
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -303,20 +359,28 @@ def _resumo_setores(tipo, nome, conteudo):
 
 @st.cache_data(show_spinner=False, max_entries=4)
 def _preparar_carteira(tipo, nome, conteudo, max_grandes, escala_reais=1.0):
-    """Carga, validação e (base analítica) agregação — feitas ao executar."""
+    """Carga, validação e (base analítica) agregação — feitas ao executar.
+    As exposições em default saem da carteira de modelagem e são tratadas
+    à parte (engine/inadimplidos.py)."""
+    from engine.inadimplidos import separar
+    df = _ler_base(tipo, nome, conteudo).copy()
+    df.columns = [c.strip().lower() for c in df.columns]
+    df_perf, df_def = separar(df)
+    if len(df_perf) == 0:
+        raise ValueError("Todas as exposições estão em default: não há "
+                         "carteira não default para os modelos.")
     if tipo == "analitica":
-        df = _ler_base(tipo, nome, conteudo)
         from engine.aggregation import aggregate_portfolio
-        df_agg, rel = aggregate_portfolio(df, corte_grandes=None,
+        df_agg, rel = aggregate_portfolio(df_perf, corte_grandes=None,
                                           max_grandes=int(max_grandes),
                                           escala_reais=escala_reais)
         buf = io.StringIO(); df_agg.to_csv(buf, index=False); buf.seek(0)
-        return load_portfolio(buf), rel, True
-    port = load_portfolio(io.BytesIO(conteudo) if conteudo is not None
-                          else _DEMO250)
+        return load_portfolio(buf), rel, True, df_def
+    buf = io.StringIO(); df_perf.to_csv(buf, index=False); buf.seek(0)
+    port = load_portfolio(buf)
     pooled = "n_contratos" in port.df.columns and \
         bool((port.df["n_contratos"] > 1).any())
-    return port, None, pooled
+    return port, None, pooled, df_def
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -469,6 +533,9 @@ def _config_atual():
                 hashlib.md5(mtx_up.getvalue()).hexdigest() if mtx_up else None,
                 usar_mtx_demo, horizonte, taxa_desc, block_sz),
         "contrib": (run_contrib, contrib_S, contrib_alpha), "seed": int(seed),
+        "default": (curva_sel,
+                    hashlib.md5(curva_up.getvalue()).hexdigest()
+                    if curva_up else None, prazo_baixa, k_lgd_d),
         "escala_reais": escala_reais,
     }
 
@@ -488,7 +555,7 @@ if st.button("▶ Executar", type="primary", disabled=_bloqueio):
 
     try:
         with st.spinner("Carregando e preparando a carteira..."):
-            port, rel_agg, pooled_mode = _preparar_carteira(
+            port, rel_agg, pooled_mode, df_def = _preparar_carteira(
                 fonte["tipo"], fonte["nome"], fonte["conteudo"],
                 int(max_grandes), escala_reais)
     except ValueError as e:
@@ -521,6 +588,23 @@ if st.button("▶ Executar", type="primary", disabled=_bloqueio):
                 rho_intra=rho_intra, rho_inter=rho_inter,
                 rho_setor=rho_setor, escala_reais=escala_reais,
             )
+    # --- exposições em default (determinístico) ---
+    aval_def = None
+    if len(df_def):
+        from engine.inadimplidos import avaliar, integrar, ler_curva
+        try:
+            curva = None
+            if curva_up is not None:
+                curva_up.seek(0)
+                curva = ler_curva(curva_up)
+            aval_def = avaliar(df_def, curva=curva, prazo_baixa=prazo_baixa,
+                               k=k_lgd_d, escala_reais=escala_reais,
+                               horizonte=horizonte, taxa_desc=taxa_desc)
+            results = integrar(results, aval_def)
+        except ValueError as e:
+            st.error(f"Exposições em default: {e}")
+    tick("Exposições em default avaliadas")
+
     # --- migração & ECL ---
     mtx_src = mtx_up if mtx_up is not None else (
         os.path.join(os.path.dirname(__file__), "templates",
@@ -556,6 +640,15 @@ if st.button("▶ Executar", type="primary", disabled=_bloqueio):
                     port, P_m, ratings_m, M=M, T=horizonte,
                     discount_rate=taxa_desc, block_size=block_sz,
                     seed=int(seed), progress=tick, **kw)
+            if aval_def is not None:
+                from engine.inadimplidos import (ecl_estagio3,
+                                                 ajustar_multiperiodo)
+                if "estagio" not in ecl_df.columns:
+                    ecl_df["estagio"] = 1
+                    ecl_df["provisao"] = ecl_df["ECL_12m"]
+                ecl_df = pd.concat([ecl_df, ecl_estagio3(aval_def)],
+                                   ignore_index=True)
+                sim_m = ajustar_multiperiodo(sim_m, aval_def, taxa_desc)
             st.session_state["mig"] = {"ecl": ecl_df, "cum": cum_m,
                                        "ratings": ratings_m, "sim": sim_m}
         except ValueError as e:
@@ -619,6 +712,15 @@ c3.metric("Perda esperada (R$ mi)", _mi(s['perda_esperada']),
 c4.metric("PD média ponderada", f"{s['pd_media_ponderada']:.2%}")
 c5.metric("HHI (N efetivo)", f"{s['hhi']:.4f}", f"{s['n_efetivo']:.0f} nomes",
           delta_color="off")
+_ad = st.session_state["results"].get("inadimplidos")
+if _ad:
+    _r = _ad["resumo"]
+    st.info(f"**{_r['contratos']:,} exposição(ões) em default** (EAD de "
+            f"R\\$ {_mi(_r['ead'])} mi) foram separadas da carteira de "
+            "modelagem: os números acima e os modelos de simulação referem-se "
+            "à carteira não default. O tratamento das exposições em default "
+            "está na aba **Capital regulatório**.",
+            icon=":material/report:")
 with st.expander("Ver carteira executada"):
     st.dataframe(port.df, width='stretch', height=280)
 
@@ -663,6 +765,72 @@ if _desc:
                 "lgd_media": "{:.3%}", "el_pct": "{:.3%}"}),
                 width='stretch', hide_index=True)
 
+def _mostrar_default(ad):
+    if not ad:
+        return
+    r = ad["resumo"]
+    st.markdown("##### Exposições em default (sem write-off)")
+    e1, e2, e3, e4 = st.columns(4)
+    e1.metric("EAD em default (R$ mi)", _mi(r["ead"]),
+              f"{r['contratos']:,} contratos", delta_color="off",
+              help=f"Tempo médio em default: {r['meses_medio']:.1f} meses.")
+    e2.metric("Provisão requerida — ELBE (R$ mi)", _mi(r["provisao_elbe"]),
+              f"ELBE média {r['elbe_media']:.1%}", delta_color="off")
+    e3.metric("Capital IRB do default (R$ mi)", _mi(r["capital_irb"]),
+              f"LGD_D média {r['lgd_d_media']:.1%}", delta_color="off")
+    e4.metric("Perda incremental em 12 meses (R$ mi)",
+              _mi(r["perda_incremental_12m"]))
+    _txt = (f"Curva: **{r['curva']}**; prazo até a baixa {r['prazo_baixa']:.0f}"
+            f" meses; k = {r['k']:.2f}. RWA IRB R\\$ {_mi(r['rwa_irb'])} mi "
+            f"e RWACPAD (art. 66) R\\$ {_mi(r['rwa_cpad'])} mi.")
+    if r["provisao_informada"] == r["provisao_informada"]:
+        _txt += (f" Provisão informada R\\$ {_mi(r['provisao_informada'])} mi;"
+                 f" insuficiência frente à ELBE R\\$ "
+                 f"{_mi(r['insuficiencia_provisao'])} mi.")
+    if r["ja_baixados"]:
+        _txt += (f" {r['ja_baixados']} contrato(s) já passaram do prazo de "
+                 "baixa (ELBE = 100%): candidatos a write-off.")
+    st.caption(_txt)
+    cA, cB = st.columns([1, 1.15], gap="medium")
+    with cA:
+        cv = ad["curva_ilustrativa"]
+        fig, ax = plt.subplots(figsize=(5.2, 3.3))
+        ax.plot(cv["meses"], cv["elbe"] * 100, color="#1f4e79",
+                label="ELBE (provisão)")
+        ax.plot(cv["meses"], cv["lgd_d"] * 100, color="#c0504d", ls="--",
+                label="LGD_D")
+        ax.fill_between(cv["meses"], cv["elbe"] * 100, cv["lgd_d"] * 100,
+                        color="#c0504d", alpha=0.15, label="Capital (K)")
+        ax.set_xlabel("Meses em default"); ax.set_ylabel("% da EAD")
+        ax.set_ylim(0, 105); ax.grid(alpha=0.25); ax.legend(fontsize=7)
+        ax.set_title("Curva de LGD em default (ilustrativa)", fontsize=9)
+        st.pyplot(fig)
+    with cB:
+        st.markdown("**Por tempo em default** (R$ milhões)")
+        st.dataframe(ad["por_faixa"].rename(columns={
+            "meses": "Meses", "contratos": "Contratos", "ead": "EAD",
+            "provisao_elbe": "Provisão", "capital_irb": "Capital",
+            "elbe": "ELBE"}).style.format({
+            "Contratos": "{:,}", "EAD": _FM, "Provisão": _FM,
+            "Capital": _FM, "ELBE": "{:.1%}", "K": "{:.2%}"}),
+            hide_index=True, width='stretch')
+        st.markdown("**Por categoria** (R$ milhões)")
+        st.dataframe(ad["por_segmento"].rename(columns={
+            "segmento_irb": "Categoria", "contratos": "Contratos",
+            "ead": "EAD", "provisao_elbe": "Provisão",
+            "perda_incremental_12m": "Perda 12m", "capital_irb": "Capital",
+            "rwa_irb": "RWA IRB", "rwa_cpad": "RWACPAD",
+            "elbe_media": "ELBE"}).style.format({
+            "Contratos": "{:,}", "EAD": _FM, "Provisão": _FM,
+            "Perda 12m": _FM, "Capital": _FM, "RWA IRB": _FM,
+            "RWACPAD": _FM, "ELBE": "{:.1%}"}),
+            hide_index=True, width='stretch')
+    st.caption("Leitura: com o tempo em default, a absorção migra do capital "
+               "para a provisão — a ELBE sobe até 100% na baixa e o capital "
+               "(LGD_D − ELBE) cai a zero.")
+    st.divider()
+
+
 results = st.session_state["results"]
 total = results["resumo"]["exposicao_liquida_total"]
 
@@ -675,6 +843,14 @@ tabs = st.tabs(["Medidas de risco", "Distribuições", "Capital regulatório",
 with tabs[0]:
     med = results["medidas"].copy()
     st.caption("Valores em R$ milhões (base de entrada em reais).")
+    if results.get("inadimplidos"):
+        _r = results["inadimplidos"]["resumo"]
+        st.caption(
+            "Carteira não default. As exposições em default acrescentam uma "
+            f"perda incremental determinística de R\\$ "
+            f"{_mi(_r['perda_incremental_12m'])} mi em 12 meses, que se soma "
+            "ao EL, ao VaR e ao ES de qualquer modelo (é constante: não "
+            "altera a perda inesperada).")
     fmt = {c: _FM for c in med.columns if c not in ("modelo", "tempo_s")}
     fmt["tempo_s"] = "{:.2f}"
     st.dataframe(med.style.format(fmt, na_rep="—"), width='stretch')
@@ -772,7 +948,14 @@ with tabs[2]:
                    "sobre as mesmas exposições da carteira ativa. Quando o "
                    "piso é vinculante, o capital é determinado pela "
                    "abordagem padronizada, não pelos modelos internos.")
+        if "rwa_irb_default" in ps_:
+            st.caption(
+                f"Inclui as exposições em default: RWA IRB = "
+                f"R\\$ {_mi(ps_['rwa_irb_nao_default'])} mi (não default) + "
+                f"R\\$ {_mi(ps_['rwa_irb_default'])} mi (default); o "
+                "RWACPAD também soma as duas partes.")
         st.divider()
+        _mostrar_default(results.get("inadimplidos"))
     st.markdown("##### Abordagem IRB (modelos internos) — Res. BCB 303/2023")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Capital IRB (99,90%; R$ mi)", _mi(irb_res['capital_total_999']),
@@ -948,9 +1131,9 @@ with tabs[4]:
 # --- Migração & ECL ---
 with tabs[5]:
     if "mig" not in st.session_state:
-        st.info("Carregue a matriz de transição na barra lateral (ou marque a "
-                "matriz de exemplo) e execute a análise. A carteira precisa "
-                "da coluna 'rating'.")
+        st.info("Escolha a matriz de transição no passo 1 (cartão "
+                "**Migração e ECL**) e execute a análise. A carteira precisa "
+                "da coluna `rating`.")
     else:
         mig = st.session_state["mig"]
         ecl_df, sim_m = mig["ecl"], mig["sim"]
@@ -964,12 +1147,17 @@ with tabs[5]:
                   f"{ecl_df['ECL_lifetime'].sum()/ecl_df['ECL_12m'].sum():.2f}x o 12m",
                   delta_color="off")
         if "provisao" in ecl_df:
-            c3.metric("Estágio 2", f"{int((ecl_df['estagio']==2).sum())} nomes")
+            c3.metric("Estágios 2 / 3",
+                      f"{int((ecl_df['estagio']==2).sum())} / "
+                      f"{int((ecl_df['estagio']==3).sum())}")
             c4.metric("Provisão por estágio (R$ mi)", _mi(ecl_df['provisao'].sum()))
         st.caption(f"Multiperíodo ({sim_m['T']} anos, M={sim_m['M']:,}, blocos de "
                    f"{sim_m['block_size']:,}), em R$ milhões: EL {_mi(sim_m['EL'])} | "
                    f"VaR 99,9% {_mi(sim_m['VaR']['99.90%'])} | "
-                   f"ES 99,9% {_mi(sim_m['ES']['99.90%'])}")
+                   f"ES 99,9% {_mi(sim_m['ES']['99.90%'])}"
+                   + (f" — inclui R\\$ {_mi(sim_m['incremento_default'])} mi de "
+                      "perda determinística das exposições já em default"
+                      if sim_m.get("incremento_default") else ""))
         colA, colB = st.columns(2)
         with colA:
             fig, ax = plt.subplots(figsize=(5.5, 3.6))
@@ -981,8 +1169,9 @@ with tabs[5]:
             st.pyplot(fig)
         with colB:
             fig, ax = plt.subplots(figsize=(5.5, 3.6))
-            ax.hist(sim_m["perdas"], bins=80, density=True, color="#1f4e79")
-            ax.set_xlabel("Perda descontada acumulada")
+            ax.hist(np.asarray(sim_m["perdas"]) / 1e6, bins=80,
+                    density=True, color="#1f4e79")
+            ax.set_xlabel("Perda descontada acumulada (R$ milhões)")
             ax.set_title(f"Distribuição multiperíodo ({sim_m['T']} anos)")
             st.pyplot(fig)
         st.dataframe(ecl_df.sort_values("ECL_lifetime", ascending=False)

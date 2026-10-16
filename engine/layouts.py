@@ -51,11 +51,19 @@ CARTEIRA = [
      "Rotativo sem atraso, parcelamento ou saque em 360 dias (art. 47: "
      "FPR 45%)."),
     ("ativo_problematico", "não", "0/1",
-     "Ativo problemático (art. 66); alternativa: dias_atraso >= 90."),
-    ("dias_atraso", "não", "dias", "Dias de atraso."),
+     "Ativo problemático (art. 66); alternativa: dias_atraso >= 90. "
+     "Marca a exposição como em default."),
+    ("dias_atraso", "não", "dias",
+     "Dias de atraso. Acima de 30: estágio 2 do ECL; a partir de 90: "
+     "exposição em default (tratamento próprio, fora dos modelos de "
+     "simulação)."),
+    ("meses_em_default", "não", "meses, >= 0",
+     "Tempo desde o default; preenchido = exposição em default. Posiciona "
+     "o contrato na curva de LGD em default. Ausente: estimado por "
+     "(dias_atraso − 90) / 30,4."),
     ("provisao", "não", "R$",
      "Provisão da exposição: deduzida da EAD do padronizado e usada nas "
-     "faixas do art. 66."),
+     "faixas do art. 66; nas exposições em default, comparada à ELBE."),
     ("categoria_if", "não", "A, B ou C — padrão A",
      "Categoria de risco da instituição financeira (arts. 29 a 33)."),
     ("prazo_original_dias", "não", "dias",
@@ -93,6 +101,19 @@ MATRIZ = [
     ("ratings", "regra", "mesmos rótulos da carteira",
      "Todo rating da coluna `rating` da carteira precisa existir na "
      "matriz."),
+]
+
+
+CURVA = [
+    ("segmento_irb", "não", "categoria IRB ou 'todos'",
+     "Segmento a que a curva se aplica; 'todos' (ou vazio) vale para os "
+     "segmentos sem curva própria."),
+    ("meses", "sim", "meses em default, >= 0",
+     "Pontos da curva; entre pontos, interpolação linear; após o último, "
+     "vale o último valor."),
+    ("lgd_elbe", "sim", "fração em [0, 1], não decrescente",
+     "ELBE: melhor estimativa da perda dado o tempo em default; o último "
+     "ponto (100%) marca o prazo de baixa (write-off)."),
 ]
 
 

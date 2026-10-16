@@ -14,6 +14,12 @@ Composição:
 Colunas do capital padronizado: `ltv` (imobiliário residencial) e
 `transactor` (rotativo sem atraso nem saque em 360 dias, art. 47 da
 Res. BCB 229), sorteadas com gerador próprio, sem alterar os demais campos.
+
+Carteira ativa sem write-off: ~5% do varejo em atraso abaixo de 90 dias e
+uma fração em default (proporcional à PD), com `meses_em_default`,
+`dias_atraso`, `ativo_problematico` e `provisao` — também com gerador
+próprio. Com `inadimplencia=False`, gera a base só com contratos não
+default (a do estudo de caso 2 da documentação).
 """
 import numpy as np
 import pandas as pd
@@ -29,7 +35,7 @@ SETORES = ["Agro", "Energia", "Indústria", "Varejo", "Construção",
 
 
 def gerar(n_varejo=299_700, n_corp=300, path="data/base_analitica_demo.csv",
-          seed=SEED):
+          seed=SEED, inadimplencia=True):
     # gerador local: cada chamada reproduz exatamente a mesma base (um
     # gerador global avançaria o estado e mudaria a base a cada clique)
     RNG = np.random.default_rng(seed)
@@ -86,6 +92,27 @@ def gerar(n_varejo=299_700, n_corp=300, path="data/base_analitica_demo.csv",
     # de ~R$ 15 mil no varejo e ~R$ 1,8 milhão no corporate
     df["exposicao"] = (df["exposicao"] / df["exposicao"].sum()
                        * TOTAL_REAIS).round(2)
+    # situação de atraso na carteira ativa (sem write-off), com gerador
+    # próprio: parte do varejo em atraso abaixo de 90 dias (continua não
+    # default) e uma fração em default, com tempo em default, atraso e
+    # provisão constituída; no corporate, poucos nomes em default
+    if inadimplencia:
+        rng_def = np.random.default_rng(seed + 3)
+        u = rng_def.random(len(df))
+        p_def = np.where(vj, np.clip(1.5 * df["pd"].to_numpy(), 0, 0.5), 0.01)
+        em_def = u < p_def
+        em_atraso = ~em_def & vj & (rng_def.random(len(df)) < 0.05)
+        meses = np.round(rng_def.uniform(0, 27, len(df)), 1)
+        df["meses_em_default"] = np.where(em_def, meses, np.nan)
+        df["dias_atraso"] = np.where(
+            em_def, np.round(90 + meses * 30.4375),
+            np.where(em_atraso, rng_def.integers(1, 90, len(df)), 0)).astype(int)
+        df["ativo_problematico"] = em_def.astype(int)
+        lgd0 = df["lgd"].to_numpy()
+        elbe_ref = np.minimum(lgd0 + (1 - lgd0) * meses / 24.0, 1.0)
+        df["provisao"] = np.where(
+            em_def, (df["exposicao"] * elbe_ref
+                     * rng_def.uniform(0.85, 1.0, len(df))).round(2), np.nan)
     if path:
         df.to_csv(path, index=False)
         print(f"Base analítica: {path} ({len(df):,} linhas, "

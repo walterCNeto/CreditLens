@@ -1,11 +1,11 @@
-id_contraparte,nome,rating,setor,segmento_irb,exposicao,pd,lgd,prazo_anos,receita_bruta_mi,ativo_total_mi,grande_baixo_risco,ltv,imovel_dependente_fluxo,transactor,ativo_problematico,provisao,categoria_if,prazo_original_dias
-CP0001,Indústria Alfa S.A.,A,Indústria,corporate,85000000.00,0.0020,0.45,3.0,1250.0,980.0,1,,,,0,,,
-CP0002,Energia Beta S.A.,BBB,Energia,corporate,42000000.00,0.0050,0.40,4.5,620.0,410.0,0,,,,0,,,
-CP0003,Comércio Gama Ltda.,BB,Varejo,sme,6500000.00,0.0150,0.50,2.0,48.5,35.0,0,,,,0,,,
-CP0004,Construtora Delta Ltda.,B,Construção,sme,3200000.00,0.0450,0.55,2.5,22.0,18.0,0,,,,0,,,
-CP0005,Agro Épsilon Ltda.,BB,Agro,sme,1800000.00,0.0150,0.45,1.5,9.8,7.5,0,,,,0,,,
-CP0006,Banco Zeta S.A.,AA,Serviços,if_s1s2,30000000.00,0.0008,0.45,1.0,,,,,,,0,,A,60
-CP0007,Pessoa Física 7,BBB,Varejo,varejo_residencial,450000.00,0.0050,0.20,5.0,,,,0.65,0,,0,,,
-CP0008,Pessoa Física 8,BB,Varejo,varejo_rotativo,12000.00,0.0150,0.80,1.0,,,,,,1,0,,,
-CP0009,Pessoa Física 9,B,Varejo,varejo_demais,25000.00,0.0450,0.75,2.0,,,,,,,0,,,
-CP0010,Logística Eta Ltda.,C,Logística,corporate,2500000.00,0.2500,0.60,1.0,410.0,260.0,0,,,,1,750000.00,,
+id_contraparte,nome,rating,setor,segmento_irb,exposicao,pd,lgd,prazo_anos,receita_bruta_mi,ativo_total_mi,grande_baixo_risco,ltv,imovel_dependente_fluxo,transactor,ativo_problematico,provisao,categoria_if,prazo_original_dias,meses_em_default
+CP0001,Indústria Alfa S.A.,A,Indústria,corporate,85000000.00,0.0020,0.45,3.0,1250.0,980.0,1,,,,0,,,,
+CP0002,Energia Beta S.A.,BBB,Energia,corporate,42000000.00,0.0050,0.40,4.5,620.0,410.0,0,,,,0,,,,
+CP0003,Comércio Gama Ltda.,BB,Varejo,sme,6500000.00,0.0150,0.50,2.0,48.5,35.0,0,,,,0,,,,
+CP0004,Construtora Delta Ltda.,B,Construção,sme,3200000.00,0.0450,0.55,2.5,22.0,18.0,0,,,,0,,,,
+CP0005,Agro Épsilon Ltda.,BB,Agro,sme,1800000.00,0.0150,0.45,1.5,9.8,7.5,0,,,,0,,,,
+CP0006,Banco Zeta S.A.,AA,Serviços,if_s1s2,30000000.00,0.0008,0.45,1.0,,,,,,,0,,A,60,
+CP0007,Pessoa Física 7,BBB,Varejo,varejo_residencial,450000.00,0.0050,0.20,5.0,,,,0.65,0,,0,,,,
+CP0008,Pessoa Física 8,BB,Varejo,varejo_rotativo,12000.00,0.0150,0.80,1.0,,,,,,1,0,,,,
+CP0009,Pessoa Física 9,B,Varejo,varejo_demais,25000.00,0.0450,0.75,2.0,,,,,,,0,,,,
+CP0010,Logística Eta Ltda.,C,Logística,corporate,2500000.00,0.2500,0.60,1.0,410.0,260.0,0,,,,1,750000.00,,,4.0

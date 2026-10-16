@@ -408,6 +408,20 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
                      f"IRB/padronizado {br(ps_['razao_irb_cpad'], 3)}",
                      "RWA = max(IRB; 72,5% × padronizado)",
                      "Esperado" if ps_["vinculante"] else "OK"])
+    ad = results.get("inadimplidos")
+    if ad:
+        r_ = ad["resumo"]
+        if r_["provisao_informada"] == r_["provisao_informada"]:
+            cob = r_["provisao_informada"] / r_["provisao_elbe"] \
+                if r_["provisao_elbe"] else np.nan
+            rows.append(["Default: provisão informada × ELBE",
+                         f"cobertura {br(cob, 3, pct=True)}",
+                         "provisão ≥ ELBE (estágio 3)",
+                         "OK" if cob >= 1 - 1e-9 else "Atenção"])
+        rows.append(["Default: contratos além do prazo de baixa",
+                     f"{r_['ja_baixados']} contrato(s)",
+                     "0 (ELBE = 100%: candidatos a write-off)",
+                     "OK" if r_["ja_baixados"] == 0 else "Atenção"])
     ga = irb.get("ajuste_granularidade")
     if ga is not None:
         rows.append(["Ajuste de granularidade",
@@ -631,6 +645,16 @@ def _parametros(results, prm, pooled, tem, mig, extra):
               (str(len(seg_)) if seg_ is not None else "1")
               + (" informadas" if irb_.get("segmentado") else " (padrão)"),
               "R e ajuste de maturidade por classe", "[15, 16]"])
+    ad = results.get("inadimplidos")
+    if ad:
+        r_ = ad["resumo"]
+        R.append(["Default: curva de LGD (ELBE)", r_["curva"],
+                  "provisão pelo tempo em default", "[15]"])
+        R.append(["Default: prazo até a baixa",
+                  f"{br(r_['prazo_baixa'], 0)} meses",
+                  "ELBE = 100% no write-off", "[15]"])
+        R.append(["Default: margem k da LGD_D", br(r_["k"], 3),
+                  "LGD_D = ELBE + k(1 − ELBE); K = LGD_D − ELBE", "[3, 15]"])
     if mig is not None:
         R.append(["Horizonte multiperíodo",
                   f"{ex.get('horizonte', '—')} ano(s)",
@@ -1092,6 +1116,29 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                      mi(ps_["rwa_final"]) + ("  — piso vinculante"
                                              if ps_["vinculante"] else "")),
                 ], "Capital e concentração")
+            ad = results.get("inadimplidos")
+            if ad:
+                r_ = ad["resumo"]
+                D.y -= 0.010
+                D.h2("Exposições em default (sem write-off)",
+                     "Capital e concentração")
+                D.par(f"{r_['contratos']:,} exposições em default ".replace(",", ".")
+                      + f"(EAD R$ {mi(r_['ead'])} mi) foram separadas dos "
+                      "modelos de simulação. Provisão pela ELBE(t), curva de "
+                      f"LGD por tempo em default ({r_['curva']}, baixa em "
+                      f"{br(r_['prazo_baixa'], 0)} meses); capital "
+                      "K = LGD_D − ELBE, com LGD_D = ELBE + k(1 − ELBE), "
+                      f"k = {br(r_['k'], 3)}; perda em 12 meses = EAD × "
+                      "[ELBE(t+12) − ELBE(t)].")
+                D.kv([
+                    ("Provisão requerida — ELBE (R$ mi)",
+                     mi(r_["provisao_elbe"])),
+                    ("Capital IRB do default (R$ mi)", mi(r_["capital_irb"])),
+                    ("RWA IRB / RWACPAD do default (R$ mi)",
+                     f"{mi(r_['rwa_irb'])} / {mi(r_['rwa_cpad'])}"),
+                    ("Perda incremental em 12 meses (R$ mi)",
+                     mi(r_["perda_incremental_12m"])),
+                ], "Capital e concentração")
             seg = irb.get("por_segmento")
             if seg is not None and len(seg):
                 D.y -= 0.010
@@ -1182,6 +1229,9 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             "diagnóstico de adequação (desigualdade de Jensen).",
             "Matriz de transição homogênea no tempo; horizontes acima de "
             "5 anos devem ser lidos como cenário exploratório.",
+            "Exposições em default: tratamento determinístico — ELBE pela "
+            "curva de LGD em default e LGD_D por proxy (margem k); a "
+            "incerteza da recuperação não é simulada.",
             "Monte Carlo simples: erro de simulação no quantil 99,9% da "
             "ordem de 1-2% com M = 100.000; use a mesma semente para "
             "reprodutibilidade.",

@@ -111,8 +111,10 @@ def compute_ecl(port, P, ratings, discount_rate: float = 0.0,
     Convenções: perdas ao fim de cada ano, descontadas a `discount_rate`;
     horizonte lifetime = ceil(prazo_anos), limitado a `horizon_cap`.
     Estágio 2 quando o rating atual está `stage_notches` ou mais degraus
-    abaixo do de origem (deterioração significativa); provisão = ECL 12m
-    no estágio 1 e ECL lifetime no estágio 2.
+    abaixo do de origem ou quando há mais de 30 dias de atraso (aumento
+    significativo do risco, Res. CMN 4.966); provisão = ECL 12m no estágio
+    1 e ECL lifetime no estágio 2. Exposições em default (estágio 3) são
+    tratadas em engine/inadimplidos.py.
     """
     r_idx = map_portfolio_ratings(port.df, ratings)
     T = int(min(horizon_cap, np.ceil(port.tenor.max())))
@@ -133,11 +135,20 @@ def compute_ecl(port, P, ratings, discount_rate: float = 0.0,
     out["ECL_lifetime"] = ecl_life
     out["razao_lifetime_12m"] = np.where(ecl_12m > 0, ecl_life / ecl_12m, np.nan)
 
-    if "rating_origem" in port.df.columns:
-        lut = {r: i for i, r in enumerate(ratings)}
-        orig = port.df["rating_origem"].astype(str).str.strip().map(lut)
-        downg = r_idx - orig.to_numpy()
-        out["estagio"] = np.where(downg >= stage_notches, 2, 1)
+    tem_origem = "rating_origem" in port.df.columns
+    tem_atraso = "dias_atraso" in port.df.columns
+    if tem_origem or tem_atraso:
+        est2 = np.zeros(len(out), dtype=bool)
+        if tem_origem:
+            lut = {r: i for i, r in enumerate(ratings)}
+            orig = port.df["rating_origem"].astype(str).str.strip().map(lut)
+            downg = r_idx - orig.to_numpy()
+            est2 |= np.nan_to_num(downg, nan=0) >= stage_notches
+        if tem_atraso:      # Res. CMN 4.966: atraso > 30 dias (presunção)
+            atraso = pd.to_numeric(port.df["dias_atraso"],
+                                   errors="coerce").fillna(0).to_numpy()
+            est2 |= atraso > 30
+        out["estagio"] = np.where(est2, 2, 1)
         out["provisao"] = np.where(out["estagio"] == 2, ecl_life, ecl_12m)
     return out, cum, T
 
