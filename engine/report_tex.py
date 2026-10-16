@@ -21,6 +21,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+# fontes TrueType embutidas (tipo 42): leitores de PDF renderizam o texto
+# das figuras de forma consistente (o tipo 3 padrão falha em alguns)
+matplotlib.rcParams["pdf.fonttype"] = 42
+matplotlib.rcParams["font.family"] = "DejaVu Sans"
+
 from .report_paper import (LEGENDA_STATUS, PALETA, _diagnosticos,
                            _interpretar, _parametros, _rotulo, br)
 
@@ -246,17 +251,45 @@ def _fig_default(ad, path):
     plt.close(fig)
 
 
+def _fig_perdas_horizonte(ax, perdas, var, el=None, unidade="R$ milhões",
+                          cor="#12395B", verm="#B02418", fs=8):
+    """Histograma da perda acumulada com eixos explícitos: faixa de x até
+    além do VaR (sem cauda invisível), y a partir de zero e rótulos dentro
+    da área do gráfico."""
+    p = np.sort(np.asarray(perdas, float))
+    lo = float(p[0])
+    hi = float(max(np.quantile(p, 0.9999), var if var == var else p[-1]))
+    span = hi - lo if hi > lo else 1.0
+    x0, x1 = max(0.0, lo - 0.03 * span), hi + 0.08 * span
+    ax.hist(p[p <= x1], bins=np.linspace(x0, x1, 81), density=True,
+            color=cor, alpha=0.9, linewidth=0)
+    ax.set_xlim(x0, x1)
+    ax.set_ylim(bottom=0)
+    ax.margins(y=0.08)
+    ax.set_ylim(bottom=0)
+    trans = ax.get_xaxis_transform()
+    if el is not None and el == el:
+        ax.axvline(el, color="#555555", ls=":", lw=1.0)
+        ax.text(el, 0.97, " EL", transform=trans, fontsize=fs - 1,
+                color="#555555", va="top", ha="left")
+    if var == var:
+        ax.axvline(var, color=verm, ls="--", lw=1.2)
+        direita = (var - x0) / (x1 - x0) > 0.75
+        vtx = f"{var:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        ax.text(var, 0.97, (f"VaR 99,9% = {vtx}  " if direita
+                            else f"  VaR 99,9% = {vtx}"),
+                transform=trans, fontsize=fs - 1, color=verm, va="top",
+                ha="right" if direita else "left")
+    ax.set_xlabel(f"Perda descontada acumulada ({unidade})", fontsize=fs)
+    ax.set_ylabel("Densidade", fontsize=fs)
+    ax.tick_params(labelsize=fs - 1)
+    ax.spines[["top", "right"]].set_visible(False)
+
+
 def _fig_multiperiodo(sim, path, unidade="R$ milhões"):
     fig, ax = plt.subplots(figsize=(7.2, 3.2))
-    ax.hist(sim["perdas"], bins=80, density=True, color="#12395B",
-            alpha=0.85)
-    v9 = sim["VaR"].get("99.90%")
-    if v9 == v9:
-        ax.axvline(v9, color="#B02418", ls="--", lw=1.2)
-        ax.text(v9, ax.get_ylim()[1] * 0.9, " VaR 99,9%", fontsize=8,
-                color="#B02418")
-    ax.set_xlabel(f"Perda descontada acumulada ({unidade})")
-    ax.spines[["top", "right"]].set_visible(False)
+    _fig_perdas_horizonte(ax, sim["perdas"], sim["VaR"].get("99.90%"),
+                          sim.get("EL"), unidade)
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)

@@ -13,6 +13,8 @@ import textwrap
 
 import matplotlib
 matplotlib.use("Agg")
+matplotlib.rcParams["pdf.fonttype"] = 42
+matplotlib.rcParams["font.family"] = "DejaVu Sans"
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
@@ -1187,7 +1189,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                       "12 meses)")]
             if "provisao" in ecl_df.columns:
                 pares.append(("Provisão por estágios",
-                              br(float(ecl_df["provisao"].sum()))))
+                              f"R$ {mi(float(ecl_df['provisao'].sum()))} mi"))
             if sim_m and sim_m.get("T"):
                 pares += [(f"VaR 99,90% em {int(sim_m['T'])} anos",
                            mi(sim_m["VaR"].get("99.90%"))),
@@ -1198,16 +1200,12 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             if sim_m and sim_m.get("T") and len(np.atleast_1d(
                     sim_m.get("perdas", []))) > 10:
                 ax = D.eixo(0.24, "Migração e ECL")
-                ax.hist(np.asarray(sim_m["perdas"]) / 1e6, bins=80,
-                        density=True, color=AZUL, alpha=0.85)
-                ax.set_xlabel("Perda descontada acumulada (R$ milhões)",
-                              fontsize=8)
+                from .report_tex import _fig_perdas_horizonte
                 v9 = sim_m["VaR"].get("99.90%")
-                v9 = v9 / 1e6 if v9 == v9 else v9
-                if v9 == v9:
-                    ax.axvline(v9, color=VERM, ls="--", lw=1.2)
-                    ax.text(v9, ax.get_ylim()[1] * 0.9, " VaR 99,9%",
-                            fontsize=7, color=VERM)
+                _fig_perdas_horizonte(
+                    ax, np.asarray(sim_m["perdas"]) / 1e6,
+                    v9 / 1e6 if v9 == v9 else v9, sim_m["EL"] / 1e6,
+                    cor=AZUL, verm=VERM)
                 ax.set_title(f"Perdas descontadas acumuladas em "
                              f"{int(sim_m['T'])} anos", fontsize=9.5,
                              color=AZUL, loc="left")

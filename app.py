@@ -1168,11 +1168,15 @@ with tabs[5]:
             ax.legend(fontsize=6, ncol=2); ax.grid(alpha=0.25, which="both")
             st.pyplot(fig)
         with colB:
+            from engine.report_tex import _fig_perdas_horizonte
             fig, ax = plt.subplots(figsize=(5.5, 3.6))
-            ax.hist(np.asarray(sim_m["perdas"]) / 1e6, bins=80,
-                    density=True, color="#1f4e79")
-            ax.set_xlabel("Perda descontada acumulada (R$ milhões)")
-            ax.set_title(f"Distribuição multiperíodo ({sim_m['T']} anos)")
+            _v9 = sim_m["VaR"]["99.90%"]
+            _fig_perdas_horizonte(ax, np.asarray(sim_m["perdas"]) / 1e6,
+                                  _v9 / 1e6 if _v9 == _v9 else _v9,
+                                  sim_m["EL"] / 1e6, cor="#1f4e79", fs=9)
+            ax.set_title(f"Distribuição multiperíodo ({sim_m['T']} anos)",
+                         fontsize=10)
+            fig.tight_layout()
             st.pyplot(fig)
         st.dataframe(ecl_df.sort_values("ECL_lifetime", ascending=False)
             .head(50).style.format({"exposicao": _FM, "pd": "{:.4%}",
