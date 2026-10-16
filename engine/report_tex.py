@@ -297,7 +297,7 @@ def _apendice_descritiva(desc, figdir, nome_base=""):
     # qualidade
     q = desc["qualidade"]
     lq = [[r"\texttt{" + tx(r.coluna) + "}", tx(r.tipo),
-           nb(r.preenchimento, 3, pct=True), nb(r.faltantes, 0), tx(r.observacao)]
+           nb(r.preenchimento, 3, pct=True), nb(r.nao_preenchidos, 0), tx(r.observacao)]
           for r in q.itertuples(index=False)]
     aus = desc.get("ausentes") or []
     T.append(r"""
@@ -306,7 +306,7 @@ A Tabela~\ref{tab:ap-qual} mostra o preenchimento de cada coluna presente e as v
              + (r"Colunas opcionais ausentes, tratadas pelos valores padrão: "
                 + ", ".join(r"\texttt{" + tx(a) + "}" for a in aus) + "." if aus else
                 "Todas as colunas opcionais estão presentes.")
-             + _tabela_longa(["Coluna", "Tipo", "Preenchimento", "Faltantes",
+             + _tabela_longa(["Coluna", "Tipo", "Preenchimento", "Não preenchidos",
                               "Observação"], lq,
                              r"llrr>{\raggedright\arraybackslash}p{4.6cm}",
                              "Completude e domínio das colunas da base de entrada.",
@@ -600,7 +600,7 @@ O par de setores mais ligado é {tx(a1)}--{tx(b1)}, com correlação de default 
     if tem("ASRF"):
         T.append(r"""
 \subsection{ASRF: carteira assintoticamente granular}
-O limite analítico de Vasicek (2002), com infinitos créditos e um fator,
+O limite analítico de Vasicek (2002), para uma carteira de granularidade infinita --- número de exposições tendendo ao infinito, cada uma com peso desprezível --- e um único fator sistemático,
 \begin{equation}
 \VaR_\alpha=C\,\Phi\!\left(\frac{\Phi^{-1}(\bar p)+\sqrt{\rho}\,\Phi^{-1}(\alpha)}{\sqrt{1-\rho}}\right),
 \end{equation}

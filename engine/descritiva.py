@@ -85,7 +85,7 @@ def descrever(df_in):
         qual.append({"coluna": c,
                      "tipo": "obrigatória" if c in OBRIGATORIAS else "opcional",
                      "preenchimento": 1.0 - falt / n if n else np.nan,
-                     "faltantes": falt, "observacao": obs})
+                     "nao_preenchidos": falt, "observacao": obs})
     ausentes = [c for c in OPCIONAIS if c not in df.columns]
 
     # ---- variáveis numéricas ----

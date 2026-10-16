@@ -512,8 +512,12 @@ if _desc:
             st.caption("Colunas opcionais ausentes: "
                        + ", ".join(f"`{a}`" for a in _desc["ausentes"]) + ".")
         st.markdown("**Completude e domínio das colunas**")
-        st.dataframe(_desc["qualidade"].style.format(
-            {"preenchimento": "{:.3%}", "faltantes": "{:,}"}),
+        st.dataframe(_desc["qualidade"].rename(columns={
+            "coluna": "Coluna", "tipo": "Tipo",
+            "preenchimento": "Preenchimento",
+            "nao_preenchidos": "Não preenchidos",
+            "observacao": "Observação"}).style.format(
+            {"Preenchimento": "{:.3%}", "Não preenchidos": "{:,}"}),
             width='stretch', hide_index=True)
         st.markdown("**Variáveis de risco**")
         st.dataframe(_desc["numericas"].style.format(

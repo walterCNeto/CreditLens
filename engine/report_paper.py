@@ -843,8 +843,10 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                           secao="Metodologia")
         if tem("ASRF"):
             secao("ASRF (carteira assintoticamente granular)")
-            D.par("Limite analítico de Vasicek [1] — infinitos créditos, um "
-                  "fator — que fundamenta o IRB [2]. Serve de referência "
+            D.par("Limite analítico de Vasicek [1] para uma carteira de "
+                  "granularidade infinita — número de exposições tendendo ao "
+                  "infinito, cada uma com peso desprezível — e um único "
+                  "fator sistemático, que fundamenta o IRB [2]. Serve de referência "
                   "superior de diversificação idiossincrática perfeita.")
             D.formula(r"$\mathrm{VaR}_\alpha = C\cdot\Phi\!\left("
                       r"\frac{\Phi^{-1}(\bar p)+\sqrt{\rho}\,"
@@ -1199,9 +1201,9 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   ("Gini das exposições", br(cc["gini"]))], sec_ap)
             q = ds["qualidade"]
             D.y -= 0.01
-            D.tabela(["Coluna", "Tipo", "Preench.", "Faltantes", "Observação"],
+            D.tabela(["Coluna", "Tipo", "Preench.", "Não preench.", "Observação"],
                      [[r.coluna, r.tipo, br(r.preenchimento, 3, pct=True),
-                       br(r.faltantes, 0), r.observacao]
+                       br(r.nao_preenchidos, 0), r.observacao]
                       for r in q.itertuples(index=False)],
                      [0.22, 0.14, 0.14, 0.14, 0.36],
                      0.022 * (len(q) + 1), sec_ap, esquerda=(0, 1, 4))
