@@ -33,7 +33,7 @@ def latex_disponivel() -> bool:
 _ESC = {"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$",
         "#": r"\#", "_": r"\_", "{": r"\{", "}": r"\}",
         "~": r"\textasciitilde{}", "^": r"\textasciicircum{}"}
-_UNI = {"≤": r"$\le$", "≥": r"$\ge$", "±": r"$\pm$", "×": r"$\times$",
+_UNI = {"10⁻⁹": r"$10^{-9}$", "≤": r"$\le$", "≥": r"$\ge$", "±": r"$\pm$", "×": r"$\times$",
         "√": r"$\surd$", "σ": r"$\sigma$", "ρ": r"$\rho$", "ν": r"$\nu$",
         "−": "--", "→": r"$\to$", "∝": r"$\propto$", "·": r"$\cdot$",
         "α": r"$\alpha$", "β": r"$\beta$", "γ": r"$\gamma$",
@@ -488,12 +488,14 @@ Cada linha da carteira de modelagem tem severidade $c_n=\mathrm{EAD}_n\times\mat
         txt_rel = ""
         if rel_agg:
             dif_el = rel_agg["el_diferenca_pct"]
-            dif_txt = "nula" if dif_el == 0 else tx(f"{dif_el:.3e}")
+            dif_txt = (r"diferença relativa abaixo de $10^{-9}$, apenas arredondamento numérico"
+                       if abs(dif_el) <= 1e-9 else
+                       "diferença relativa de " + nb(dif_el, 4, pct=True))
             rg = results.get("regimes_pooled") or {}
             txt_rel = (rf"""
 
-\paragraph{{Nesta execução.}} {nb(rel_agg['linhas_analitica'], 0)} contratos foram reduzidos a {nb(rel_agg['linhas_agregada'], 0)} linhas ({nb(rel_agg['n_grandes'], 0)} grandes exposições e {nb(rel_agg['n_buckets'], 0)} grupos), com diferença de EL {dif_txt} e CV de PD intra-grupo máximo de {nb(rel_agg['pd_cv_max_bucket'])}. O número efetivo mediano dos grupos é {nb(rel_agg.get('n_efetivo_mediano', 0))}, {nb(rel_agg.get('razao_n_efetivo_mediana', 1))} vez o número de contratos."""
-                       + (rf""" Na simulação, {rg.get('nomes', 0)} linhas seguiram o regime de Bernoulli, {rg.get('binomial', 0)} o binomial e {rg.get('granularidade_infinita', 0)} o de granularidade infinita (limiar $n^{{\mathrm{{eff}}}}>{nm(rg.get('limiar_n_eff', 0), 0)}$ para $\rho_D={nm(prm.get('rho_alvo'), 3, pct=True)}$)."""
+\paragraph{{Nesta execução.}} {nb(rel_agg['linhas_analitica'], 0)} contratos foram reduzidos a {nb(rel_agg['linhas_agregada'], 0)} linhas: {nb(rel_agg['n_grandes'], 0)} grandes exposições e {nb(rel_agg['n_buckets'], 0)} grupos. A perda esperada foi preservada ({dif_txt}), e o maior coeficiente de variação da PD dentro de um grupo foi {nb(rel_agg['pd_cv_max_bucket'], 2)}. Na mediana, o número efetivo de um grupo é {nb(rel_agg.get('n_efetivo_mediano', 0), 1)}, ou {nb(rel_agg.get('razao_n_efetivo_mediana', 1), 1, pct=True)} do seu número de contratos."""
+                       + (rf""" Na simulação, {rg.get('nomes', 0)} linhas seguiram o regime de Bernoulli, {rg.get('binomial', 0)} o binomial e {rg.get('granularidade_infinita', 0)} o de granularidade infinita. Este último vale quando $n^{{\mathrm{{eff}}}}>{nm(rg.get('limiar_n_eff', 0), 0)}$, dado $\rho_D={nm(prm.get('rho_alvo'), 1, pct=True)}$."""
                           if rg else ""))
         T.append(r"""
 \subsection{Tratamento dos dados: agregação e motor de grupos}

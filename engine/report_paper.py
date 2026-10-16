@@ -346,9 +346,10 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
     # 5. agregação
     if pooled and rel_agg:
         rows.append(["Agregação: preservação da EL",
-                     ("diferença nula" if rel_agg["el_diferenca_pct"] == 0
-                      else f"diferença {rel_agg['el_diferenca_pct']:.3e}"),
-                     "≤ 1e-9 (identidade algébrica)",
+                     ("< 10⁻⁹ (arredondamento)"
+                      if abs(rel_agg["el_diferenca_pct"]) <= 1e-9
+                      else br(rel_agg["el_diferenca_pct"], 4, pct=True)),
+                     "≤ 10⁻⁹ (identidade algébrica)",
                      "OK" if rel_agg["el_diferenca_pct"] <= 1e-9
                      else "Atenção"])
         rows.append(["Agregação: homogeneidade (CV de PD)",
