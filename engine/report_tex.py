@@ -165,6 +165,7 @@ REFS_TEX = [
     r"Merton, R.~C. (1974). On the pricing of corporate debt: the risk structure of interest rates. \emph{Journal of Finance}, 29(2), 449--470.",
     r"Bolder, D.~J. (2018). \emph{Credit-Risk Modelling: Theoretical Foundations, Diagnostic Tools, Practical Examples, and Numerical Recipes in Python}. Cham: Springer. [Referencial de implementação do aplicativo.]",
     r"IFRS Foundation (2014). \emph{IFRS 9 --- Financial Instruments}. Londres. Conselho Monetário Nacional (2021). \emph{Resolução nº 4.966, de 25 de novembro de 2021}. Brasília: BCB.",
+    r"Conselho Monetário Nacional (2017). \emph{Resolução nº 4.557, de 23 de fevereiro de 2017} (estrutura de gerenciamento de riscos e de capital). Brasília: BCB.",
     r"Banco Central do Brasil (2023). \emph{Resolução BCB nº 303, de 16 de março de 2023} (abordagem IRB para risco de crédito; revoga a Circular nº 3.648/2013). Brasília: BCB.",
     r"Banco Central do Brasil (2022). \emph{Resolução BCB nº 229, de 12 de maio de 2022} (RWA de risco de crédito pela abordagem padronizada --- RWA\textsubscript{CPAD}; texto consolidado). Brasília: BCB.",
     r"David, H.~A.; Nagaraja, H.~N. (2003). \emph{Order Statistics}. 3.\,ed. Hoboken: Wiley.",
@@ -449,14 +450,15 @@ def montar_tex(port, results, mig=None, nome_base="", extra=None,
 
     T = [PREAMBULO]
     T.append(rf"""
-\title{{\textbf{{Paper de Validação de Modelos}}\\[2mm]
-\large Risco de Carteira de Crédito --- {tx(nome_base) or 'carteira analisada'}}}
-\author{{Gerado automaticamente pelo CreditLens}}
-\date{{{agora}}}
+\title{{\textbf{{Validação de Modelos}}\\[3mm]
+\Large Modelos de VaR para Risco de Crédito em Bancos Brasileiros\\[4mm]
+\normalsize De acordo com as Resoluções CMN nº~4.557/2017 (gerenciamento de riscos e de capital) e nº~4.966/2021 (perda esperada) e as Resoluções BCB nº~229/2022 (abordagem padronizada) e nº~303/2023 (abordagem IRB)}}
+\author{{}}
+\date{{}}
 \begin{{document}}
 \maketitle
 \begin{{abstract}}
-\noindent Este documento reporta uma execução do CreditLens sobre a base \emph{{{tx(nome_base) or 'informada pelo usuário'}}}: {nb(resumo['n_contrapartes'], 0)} linhas de modelagem, exposição líquida de R\$~{mi(total)}~milhões e perda esperada de R\$~{mi(resumo['perda_esperada'])}~milhões ({nb(resumo['perda_esperada'] / total, 3, pct=True)} da exposição). Apresenta a fundamentação teórica de cada modelo efetivamente executado com os parâmetros escolhidos, os resultados obtidos, uma bateria de diagnósticos automáticos de consistência e as referências bibliográficas que suportam as técnicas, para verificação independente."""
+\noindent Este documento reporta uma execução do CreditLens (base de entrada: \emph{{{tx(nome_base) or 'informada pelo usuário'}}}): {nb(resumo['n_contrapartes'], 0)} linhas de modelagem, exposição líquida de R\$~{mi(total)}~milhões e perda esperada de R\$~{mi(resumo['perda_esperada'])}~milhões ({nb(resumo['perda_esperada'] / total, 3, pct=True)} da exposição). Apresenta a fundamentação teórica de cada modelo efetivamente executado com os parâmetros escolhidos, os resultados obtidos, uma bateria de diagnósticos automáticos de consistência e as referências bibliográficas que suportam as técnicas, para verificação independente."""
              + (rf""" No modelo de referência ({tx(ref_g[0])}), o VaR 99{{,}}90\% é de R\$~{mi(ref_g[1])}~milhões ({nb(ref_g[1] / total, 3, pct=True)} da exposição líquida).""" if ref_g else "")
              + rf""" A execução é reprodutível pela semente {tx(prm.get('seed', '---'))} e pelos parâmetros da Seção~\ref{{sec:param}}.
 \end{{abstract}}

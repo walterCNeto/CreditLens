@@ -112,7 +112,7 @@ class _Doc:
         fig.patches.append(plt.Rectangle(
             (0, 0.962), 1, 0.038, transform=fig.transFigure,
             facecolor=AZUL, edgecolor="none"))
-        fig.text(0.06, 0.974, "CreditLens — Paper de Validação de Modelos",
+        fig.text(0.06, 0.974, "CreditLens — Validação de Modelos",
                  fontsize=8.5, color="white", va="center", fontweight="bold")
         fig.text(0.94, 0.974, secao, fontsize=8.5, color="#B9C7D4",
                  va="center", ha="right")
@@ -667,7 +667,13 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
 
         # ================= 1. capa / resumo =================
         D.nova("Identificação")
-        D.h1("Paper de Validação — Risco de Carteira de Crédito")
+        D.h1("Validação de Modelos")
+        D.h2("Modelos de VaR para Risco de Crédito em Bancos Brasileiros")
+        D.par("De acordo com as Resoluções CMN nº 4.557/2017 (gerenciamento "
+              "de riscos e de capital) e nº 4.966/2021 (perda esperada) e as "
+              "Resoluções BCB nº 229/2022 (abordagem padronizada) e nº "
+              "303/2023 (abordagem IRB).")
+        D.y -= 0.006
         D.par("Documento gerado automaticamente pelo CreditLens a partir da "
               "base de entrada e dos parâmetros escolhidos nesta execução. "
               "Apresenta a fundamentação teórica de cada modelo executado, "
@@ -702,7 +708,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
         D.h2("2. A carteira")
         D.kv([
             ("Exposição total (EAD, R$ mi)", mi(resumo["ead_total"])),
-            ("Exposição líquida (EAD × LGD)",
+            ("Exposição líquida (EAD × LGD, R$ mi)",
              mi(resumo["exposicao_liquida_total"])),
             ("PD média ponderada por severidade", br(pbar, 3, pct=True)),
             ("LGD média", br(resumo["lgd_media"], 3)),
