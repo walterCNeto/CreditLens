@@ -114,10 +114,9 @@ st.caption("Escolha a carteira e, se quiser, a matriz de transição. Nada é "
 
 # cartões de mesma largura e mesma altura (o menor estica até o maior)
 st.markdown("""<style>
-div[data-testid="stLayoutWrapper"]:has(> .st-key-cartao_carteira),
-div[data-testid="stLayoutWrapper"]:has(> .st-key-cartao_matriz) {
+div[data-testid="stLayoutWrapper"]:has(> [class*="st-key-cartao_"]) {
     flex: 1 1 auto; display: flex; flex-direction: column; }
-.st-key-cartao_carteira, .st-key-cartao_matriz { flex: 1 1 auto; }
+[class*="st-key-cartao_"] { flex: 1 1 auto; }
 </style>""", unsafe_allow_html=True)
 _cc, _cm = st.columns(2, gap="medium")
 
@@ -667,7 +666,8 @@ total = results["resumo"]["exposicao_liquida_total"]
 
 tabs = st.tabs(["Medidas de risco", "Distribuições", "Capital regulatório",
                 "Contribuições", "Setores", "Migração & ECL",
-                "Calibração", "Download"])
+                "Calibração", "Download"],
+            key="aba_resultados", on_change="rerun")   # mantém a aba ativa
 
 # --- Medidas ---
 with tabs[0]:
@@ -1001,44 +1001,81 @@ with tabs[6]:
 
 # --- Download ---
 with tabs[7]:
-    buf = io.BytesIO()
-    results_to_excel(results, port, buf)
-    st.download_button("⬇ Baixar resultados (Excel)", buf.getvalue(),
-                       file_name="resultados_analise.xlsx",
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    _exec = st.session_state.get("executado_em", "")
+    if st.session_state.get("_dl_exec") != _exec:      # nova execução: refaz
+        st.session_state.pop("_paper", None)
+        st.session_state.pop("_excel", None)
+        st.session_state["_dl_exec"] = _exec
 
-    st.markdown("---")
-    st.markdown("**Paper de validação (PDF)** — resultados por modelo com a "
-                "fundamentação teórica, os parâmetros desta execução e as "
-                "referências bibliográficas auditáveis.")
-    if st.button("Gerar paper de validação"):
+    def _gerar_paper():
         from engine.report_tex import latex_disponivel, gerar_paper_latex
         args = dict(mig=st.session_state.get("mig"),
                     nome_base=st.session_state.get("nome_base", ""),
                     extra=st.session_state.get("params_ui"),
                     rel_agg=st.session_state.get("rel_agg"),
                     descritiva=st.session_state.get("descritiva"))
-        pdf_bytes, tex_zip = None, None
-        with st.spinner("Compondo o paper..."):
-            if latex_disponivel():
-                try:
-                    pdf_bytes, tex_zip = gerar_paper_latex(port, results,
-                                                           **args)
-                except Exception as e:
-                    st.warning("A compilação LaTeX falhou; gerando a versão "
-                               f"simplificada. Detalhe: {str(e)[:300]}")
-            if pdf_bytes is None:
-                from engine.report_paper import gerar_paper
-                buf_pdf = io.BytesIO()
-                gerar_paper(buf_pdf, port, results, **args)
-                pdf_bytes = buf_pdf.getvalue()
-                if not latex_disponivel():
-                    st.info("LaTeX indisponível neste ambiente: paper gerado "
-                            "na versão simplificada (matplotlib).")
-        st.download_button("⬇ Baixar paper de validação (PDF)", pdf_bytes,
-                           file_name="paper_validacao.pdf",
-                           mime="application/pdf")
-        if tex_zip is not None:
-            st.download_button("⬇ Fonte LaTeX do paper (.zip)", tex_zip,
-                               file_name="paper_validacao_latex.zip",
-                               mime="application/zip")
+        pdf_bytes, tex_zip, aviso = None, None, None
+        if latex_disponivel():
+            try:
+                pdf_bytes, tex_zip = gerar_paper_latex(port, results, **args)
+            except Exception as e:
+                aviso = ("A compilação LaTeX falhou; gerada a versão "
+                         f"simplificada. Detalhe: {str(e)[:300]}")
+        else:
+            aviso = ("LaTeX indisponível neste ambiente: paper gerado na "
+                     "versão simplificada (matplotlib).")
+        if pdf_bytes is None:
+            from engine.report_paper import gerar_paper
+            buf_pdf = io.BytesIO()
+            gerar_paper(buf_pdf, port, results, **args)
+            pdf_bytes = buf_pdf.getvalue()
+        return {"pdf": pdf_bytes, "zip": tex_zip, "aviso": aviso}
+
+    st.caption(f"Arquivos da execução de {_exec}. Valores do Excel em reais "
+               "(para auditoria); paper em R$ milhões.")
+    d1, d2 = st.columns(2, gap="medium")
+    with d1, st.container(border=True, key="cartao_excel"):
+        st.markdown("##### :material/table_view: Resultados em Excel")
+        st.caption("Todas as tabelas da execução: medidas por modelo, "
+                   "capital IRB e padronizado, contribuições, setores, "
+                   "migração e calibração.")
+        if "_excel" not in st.session_state:
+            _bx = io.BytesIO()
+            results_to_excel(results, port, _bx)
+            st.session_state["_excel"] = _bx.getvalue()
+        st.download_button(
+            "Baixar Excel", st.session_state["_excel"],
+            file_name="resultados_analise.xlsx", on_click="ignore",
+            mime="application/vnd.openxmlformats-officedocument."
+                 "spreadsheetml.sheet",
+            type="primary", icon=":material/download:", key="dl_excel")
+    with d2, st.container(border=True, key="cartao_paper"):
+        st.markdown("##### :material/description: Paper de validação (PDF)")
+        st.caption("Resultados por modelo com a fundamentação teórica, os "
+                   "parâmetros desta execução, as referências e o apêndice "
+                   "descritivo da base. Leva alguns segundos para compor.")
+        _pp = st.session_state.get("_paper")
+        if _pp is None:
+            if st.button("Gerar paper", icon=":material/play_arrow:",
+                         key="gerar_paper"):
+                with st.spinner("Compondo o paper (LaTeX)..."):
+                    st.session_state["_paper"] = _gerar_paper()
+                st.rerun()
+        else:
+            if _pp["aviso"]:
+                st.info(_pp["aviso"])
+            b1, b2 = st.columns(2)
+            with b1:
+                st.download_button(
+                    "Baixar PDF", _pp["pdf"], file_name="paper_validacao.pdf",
+                    mime="application/pdf", on_click="ignore", type="primary",
+                    icon=":material/download:", key="dl_paper")
+            if _pp["zip"] is not None:
+                with b2:
+                    st.download_button(
+                        "Fonte LaTeX (.zip)", _pp["zip"],
+                        file_name="paper_validacao_latex.zip",
+                        mime="application/zip", on_click="ignore",
+                        icon=":material/folder_zip:", key="dl_tex")
+            st.caption(":material/check_circle: Paper pronto. Uma nova "
+                       "execução descarta este paper e pede um novo.")
