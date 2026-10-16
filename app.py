@@ -103,7 +103,7 @@ def _baixar_modelo(arquivo, rotulo, key):
 def _escolha(rotulo, opcoes, key, default):
     """Seletor segmentado que nunca fica vazio."""
     v = st.segmented_control(rotulo, opcoes, default=default, key=key,
-                             selection_mode="single")
+                             selection_mode="single", width="stretch")
     return v if v is not None else default
 
 
@@ -117,6 +117,8 @@ st.markdown("""<style>
 div[data-testid="stLayoutWrapper"]:has(> [class*="st-key-cartao_"]) {
     flex: 1 1 auto; display: flex; flex-direction: column; }
 [class*="st-key-cartao_"] { flex: 1 1 auto; }
+[class*="st-key-cartao_"] [data-testid="stButtonGroup"] button {
+    flex: 1 1 0; min-width: 0; }   /* segmentos de mesma largura */
 </style>""", unsafe_allow_html=True)
 _cc, _cm = st.columns(2, gap="medium")
 
@@ -180,7 +182,7 @@ with _cm, st.container(border=True, key="cartao_matriz"):
     st.markdown("##### :material/swap_vert: Migração e ECL *(opcional)*")
     mtx_sel = st.segmented_control(
         "Matriz de transição anual", [_ORIG_ARQ, _ORIG_EX], default=None,
-        key="orig_mtx", selection_mode="single",
+        key="orig_mtx", selection_mode="single", width="stretch",
         help="Opcional. Clique de novo na opção escolhida para desmarcar.")
     mtx_up, usar_mtx_demo = None, False
     if mtx_sel == _ORIG_ARQ:
