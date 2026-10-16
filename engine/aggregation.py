@@ -101,29 +101,35 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
         resto = df[~grandes_mask]
         grandes = df[grandes_mask].copy()
     chave = [gh_col, "setor"] + (["segmento_irb"] if tem_seg else [])
-    g = resto.groupby(chave, observed=True)
-    agg = pd.DataFrame({
-        "exposicao": g["exposicao"].sum(),
-        "severidade": g["severidade"].sum(),
-        "pd": g.apply(lambda x: np.average(x["pd"], weights=x["severidade"]),
-                      include_groups=False),
-        "prazo_anos": g.apply(lambda x: np.average(x["prazo_anos"],
-                                                   weights=x["severidade"]),
-                              include_groups=False),
-        "n_contratos": g.size(),
-        # soma dos quadrados das severidades: n efetivo = C_g^2 / soma(c_i^2)
-        "sev2": g["severidade"].apply(lambda x: float(np.square(x).sum())),
-        "rwa_cpad": g["rwa_cpad"].sum(),
-        "ead_cpad": g["ead_cpad"].sum(),
-        **({"receita_bruta_mi": g.apply(
-            lambda x: (np.average(x["receita_bruta_mi"].fillna(300.0),
-                                  weights=x["severidade"])),
-            include_groups=False)} if "receita_bruta_mi" in df.columns
-           else {}),
-        "pd_cv": g.apply(lambda x: (np.std(x["pd"]) / np.mean(x["pd"])
-                                    if np.mean(x["pd"]) > 0 else 0.0),
-                         include_groups=False),
-    }).reset_index()
+    if len(resto):
+        g = resto.groupby(chave, observed=True)
+        agg = pd.DataFrame({
+            "exposicao": g["exposicao"].sum(),
+            "severidade": g["severidade"].sum(),
+            "pd": g.apply(lambda x: np.average(x["pd"], weights=x["severidade"]),
+                          include_groups=False),
+            "prazo_anos": g.apply(lambda x: np.average(x["prazo_anos"],
+                                                       weights=x["severidade"]),
+                                  include_groups=False),
+            "n_contratos": g.size(),
+            # soma dos quadrados das severidades: n efetivo = C_g^2 / soma(c_i^2)
+            "sev2": g["severidade"].apply(lambda x: float(np.square(x).sum())),
+            "rwa_cpad": g["rwa_cpad"].sum(),
+            "ead_cpad": g["ead_cpad"].sum(),
+            **({"receita_bruta_mi": g.apply(
+                lambda x: (np.average(x["receita_bruta_mi"].fillna(300.0),
+                                      weights=x["severidade"])),
+                include_groups=False)} if "receita_bruta_mi" in df.columns
+               else {}),
+            "pd_cv": g.apply(lambda x: (np.std(x["pd"]) / np.mean(x["pd"])
+                                        if np.mean(x["pd"]) > 0 else 0.0),
+                             include_groups=False),
+        }).reset_index()
+    else:                       # base pequena: tudo virou grande exposição
+        agg = pd.DataFrame(columns=chave + [
+            "exposicao", "severidade", "pd", "prazo_anos", "n_contratos",
+            "sev2", "rwa_cpad", "ead_cpad", "pd_cv"]
+            + (["receita_bruta_mi"] if "receita_bruta_mi" in df.columns else []))
     agg["lgd"] = agg["severidade"] / agg["exposicao"]
     agg["n_efetivo"] = np.square(agg["severidade"]) / agg["sev2"]
     agg["rating"] = agg[gh_col].astype(str)
@@ -134,6 +140,14 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
     agg["nome"] = ("Pool " + agg[gh_col].astype(str) + " / "
                    + agg["setor"].astype(str))
 
+    # contrapartes com mais de um contrato entre as grandes exposições:
+    # cada contrato vira uma linha com identificador próprio
+    dup = grandes["id_contraparte"].astype(str).duplicated(keep=False)
+    if dup.any():
+        suf = (grandes["id_contrato"].astype(str) if "id_contrato" in grandes.columns
+               else grandes.groupby("id_contraparte").cumcount().add(1).astype(str))
+        grandes.loc[dup, "id_contraparte"] = (
+            grandes.loc[dup, "id_contraparte"].astype(str) + "_" + suf[dup])
     grandes["n_contratos"] = 1
     grandes["n_efetivo"] = 1.0
     grandes["pd_cv"] = 0.0

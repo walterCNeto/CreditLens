@@ -29,7 +29,7 @@ caudas entre famílias de modelos.
 ## Padrão de carteira (upload)
 
 CSV com separador vírgula, decimal ponto, UTF-8
-(modelo em `templates/carteira_modelo.csv`):
+(modelos preenchidos em `templates/` e para download no app, em "Layouts e modelos de arquivo"; valores monetários em reais):
 
 | Coluna | Obrigatória | Descrição |
 |---|---|---|
@@ -79,7 +79,9 @@ carteira-credito/
 │   ├── portfolio.py        # padrão de carteira + validação
 │   ├── analytics.py        # orquestração dos modelos do Bolder
 │   └── bolder/             # bibliotecas originais do livro (patcheadas*)
-├── templates/carteira_modelo.csv
+├── templates/carteira_modelo.csv         # modelo preenchido: uma linha por contraparte (R$)
+├── templates/base_analitica_modelo.csv  # modelo preenchido: uma linha por contrato (R$)
+├── templates/matriz_migracao_modelo.csv # matriz de transição anual de exemplo
 ├── data/carteira_teste.csv # 250 contrapartes, 8 graus de rating, EAD total R$ 10 bilhões (valores em reais)
 └── output/                 # resultados da rodada de teste
 ```

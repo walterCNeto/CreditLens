@@ -81,7 +81,11 @@ with st.sidebar:
         st.error("O ρ inter-setor não pode exceder o intra-setor.")
     st.subheader("Migração e ECL (multiperíodo)")
     mtx_up = st.file_uploader("Matriz de transição anual (CSV)", type=["csv"],
-                              key="mtx")
+                              key="mtx",
+                              help="Linhas: rating de origem; colunas: rating "
+                                   "de destino; último estado = default. "
+                                   "Layout e exemplo em 'Layouts e modelos de "
+                                   "arquivo', na seção 1.")
     usar_mtx_demo = st.checkbox("Usar matriz de exemplo", value=False)
     horizonte = st.slider("Horizonte multiperíodo (anos)", 1, 10, 5)
     taxa_desc = st.slider("Taxa de desconto (a.a.)", 0.0, 0.30, 0.10, 0.01)
@@ -101,38 +105,75 @@ st.caption("Configure a base, os parâmetros da barra lateral e, se quiser, as "
            "correlações por setor. Nada é calculado até você clicar em "
            "**▶ Executar** — então o pipeline inteiro roda com a configuração "
            "escolhida.")
+# ---- layouts e arquivos-modelo ----
+with st.expander("📄 Layouts e modelos de arquivo (baixe um exemplo preenchido)"):
+    from engine.layouts import dicionario, dicionario_analitica, CARTEIRA, MATRIZ
+    _tdir = os.path.join(os.path.dirname(__file__), "templates")
+    st.caption("Convenções: CSV separado por vírgula, decimal com ponto, "
+               "UTF-8. Valores monetários **em reais (R$)**, sem escala — "
+               "exceto colunas terminadas em `_mi` (R$ milhões). Taxas e "
+               "frações em decimal (5% = 0.05). Os resultados são "
+               "apresentados em R$ milhões.")
+    _lt1, _lt2, _lt3 = st.tabs(["Carteira (por contraparte)",
+                                "Base analítica (por contrato)",
+                                "Matriz de transição anual"])
+    with _lt1:
+        st.markdown("Uma linha por **contraparte**. Para carteiras de até "
+                    "alguns milhares de nomes; os modelos rodam nome a nome. "
+                    "O exemplo cobre atacado, PME, instituição financeira, "
+                    "varejo (imobiliário, rotativo e demais) e um ativo "
+                    "problemático.")
+        _f = os.path.join(_tdir, "carteira_modelo.csv")
+        st.download_button("⬇ Baixar modelo de carteira", open(_f, "rb").read(),
+                           file_name="carteira_modelo.csv", mime="text/csv")
+        st.dataframe(pd.read_csv(_f), hide_index=True, width='stretch')
+        st.markdown("**Dicionário de colunas**")
+        st.dataframe(dicionario(CARTEIRA), hide_index=True, width='stretch')
+    with _lt2:
+        st.markdown("Uma linha por **contrato**, para bases grandes (até "
+                    "milhões de linhas). Ao executar, as maiores exposições "
+                    "passam individualmente e o restante é agregado em grupos "
+                    "homogêneos (GH × setor × categoria IRB), preservando a "
+                    "perda esperada. O mesmo cliente pode ter vários "
+                    "contratos — repita o `id_contraparte`. O modelo traz dois "
+                    "clientes com mais de um contrato.")
+        _f = os.path.join(_tdir, "base_analitica_modelo.csv")
+        st.download_button("⬇ Baixar modelo de base analítica",
+                           open(_f, "rb").read(),
+                           file_name="base_analitica_modelo.csv", mime="text/csv")
+        st.dataframe(pd.read_csv(_f), hide_index=True, width='stretch')
+        st.markdown("**Dicionário de colunas** (as demais colunas seguem o "
+                    "layout da carteira)")
+        st.dataframe(dicionario_analitica(), hide_index=True, width='stretch')
+    with _lt3:
+        st.markdown(
+            "Probabilidades de migração **em um ano**: a linha é o rating de "
+            "origem, a coluna o rating de destino. Ordene do melhor ao pior "
+            "rating e termine com o estado de **default**, que é absorvente. "
+            "Os rótulos precisam ser os mesmos da coluna `rating` da carteira. "
+            "Usada para a estrutura a termo de PD (PDs acumuladas por "
+            "potências da matriz), o ECL de 12 meses e *lifetime* e o "
+            "capital multiperíodo.")
+        _f = os.path.join(_tdir, "matriz_migracao_modelo.csv")
+        st.download_button("⬇ Baixar modelo de matriz de transição",
+                           open(_f, "rb").read(),
+                           file_name="matriz_migracao_modelo.csv", mime="text/csv")
+        _mx = pd.read_csv(_f, index_col=0)
+        st.dataframe(_mx.style.format("{:.4f}").background_gradient(
+            cmap="Blues", axis=None), width='stretch')
+        st.caption("Leitura: um cliente BBB hoje tem 88,5% de chance de "
+                   "continuar BBB em um ano, 5,0% de cair para BB e 0,5% de "
+                   "entrar em default. A última coluna é a PD de 12 meses do "
+                   "grau.")
+        st.markdown("**Regras do layout**")
+        st.dataframe(dicionario(MATRIZ), hide_index=True, width='stretch')
+
 col1, col2 = st.columns([2, 1])
 with col1:
-    up = st.file_uploader("CSV no padrão CreditLens", type=["csv"])
+    up = st.file_uploader("Carteira (CSV, uma linha por contraparte)",
+                          type=["csv"])
 with col2:
-    template_path = os.path.join(os.path.dirname(__file__), "templates", "carteira_modelo.csv")
-    if os.path.exists(template_path):
-        st.download_button("⬇ Baixar modelo de carteira",
-                           open(template_path, "rb").read(),
-                           file_name="carteira_modelo.csv", mime="text/csv")
     demo = st.checkbox("Usar carteira de teste (250 contrapartes)")
-
-with st.expander("Padrão do arquivo"):
-    st.markdown(
-        "- **Obrigatórias:** `id_contraparte`, `exposicao` (EAD > 0), `pd` ∈ (0,1)\n"
-        "- **Opcionais:** `lgd` ∈ (0,1] *(default 1,0)*, `prazo_anos` *(default 2,5; "
-        "truncado a [1,5] para o IRB)*, `rating`, `setor`, `nome`\n"
-        "- **Categoria IRB (Res. BCB 303/2023):** `segmento_irb` ∈ {`corporate`, "
-        "`sme`, `hvcre`, `if`, `if_s1s2`, `varejo_residencial`, `varejo_rotativo`, "
-        "`varejo_demais`} *(default `corporate`)*; para `sme`, informe "
-        "`receita_bruta_mi` (receita bruta anual em R$ milhões; teto SME de R$ 300 mi)\n"
-        "- **Capital padronizado (Res. BCB 229/2022), opcionais:** `ltv` "
-        "(imobiliário, fração), `imovel_dependente_fluxo` (0/1), `transactor` "
-        "(0/1, rotativo sem atraso nem saque em 360 dias — art. 47), "
-        "`ativo_problematico` (0/1) ou `dias_atraso`, `provisao`, "
-        "`categoria_if` (A/B/C), `prazo_original_dias`, `grande_baixo_risco` "
-        "(0/1 — art. 35), `ativo_total_mi`, `fpr` (fator informado, "
-        "prevalece)\n"
-        "- **Valores monetários em reais (R$)**, sem escala: `exposicao`, "
-        "`provisao` (e `receita_bruta_mi` e `ativo_total_mi` em R$ milhões, "
-        "como o nome indica). Os resultados são apresentados em R$ milhões.\n"
-        "- Separador vírgula, decimal ponto, UTF-8. Severidade Bolder: c = EAD × LGD."
-    )
 
 st.markdown("**Ou parta de uma base analítica** (contrato a contrato; será "
             "agregada em grandes exposições + grupos homogêneos × setor ao executar):")
