@@ -328,6 +328,11 @@ def _descrever_base(tipo, nome, conteudo):
 if fonte is None:
     st.info("Envie o CSV da carteira ou escolha **Usar exemplo** para "
             "começar.", icon=":material/upload_file:")
+    st.subheader("3. Execute")
+    st.caption("O botão é habilitado quando a carteira estiver escolhida "
+               "no passo 1.")
+    st.button("▶ Executar", type="primary", disabled=True,
+              key="executar_inativo")
     st.stop()
 
 try:
