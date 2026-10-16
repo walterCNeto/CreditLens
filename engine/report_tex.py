@@ -51,6 +51,17 @@ def tx(s) -> str:
              .replace(r"$\sigma$\_MC", r"$\sigma_{MC}$"))
 
 
+MI = 1e6                       # saída monetária: R$ milhões
+UNID = r"R\$ milhões"
+
+
+def mi(v, dec=2):
+    """Valor monetário (entrada em reais) apresentado em R$ milhões."""
+    if v is None:
+        return "---"
+    return nb(float(v) / MI, dec)
+
+
 def nb(v, dec=3, pct=False):
     """Número no padrão brasileiro, pronto para texto LaTeX."""
     return tx(br(v, dec, pct=pct))
@@ -181,7 +192,7 @@ def _fig_hierarquia(med, total, col999, path):
     plt.close(fig)
 
 
-def _fig_distribuicoes(dists, total, path, unidade="unidades monetárias"):
+def _fig_distribuicoes(dists, total, path, unidade="R$ milhões"):
     xmax = max(np.quantile(d, 0.999) for d in dists.values())
     bins = np.linspace(0, xmax, 90)
     picos = {k: float(np.histogram(d, bins=bins, density=True)[0].max())
@@ -214,7 +225,7 @@ def _fig_distribuicoes(dists, total, path, unidade="unidades monetárias"):
     plt.close(fig)
 
 
-def _fig_multiperiodo(sim, path, unidade="unidades monetárias"):
+def _fig_multiperiodo(sim, path, unidade="R$ milhões"):
     fig, ax = plt.subplots(figsize=(7.2, 3.2))
     ax.hist(sim["perdas"], bins=80, density=True, color="#12395B",
             alpha=0.85)
@@ -292,7 +303,7 @@ def _apendice_descritiva(desc, figdir, nome_base=""):
 \appendix
 \section{Análise descritiva da base de entrada}
 \label{ap:descritiva}
-""" + rf"""Este apêndice descreve a base de entrada \emph{{original}}{(' (' + tx(nome_base) + ')') if nome_base else ''} --- {'contrato a contrato, antes da agregação' if g['linhas'] > 5_000 else 'como enviada'} ---, para que o validador avalie os dados que sustentam a execução. A base tem {nb(g['linhas'], 0)} linhas e {nb(g['contrapartes'], 0)} contrapartes distintas, exposição total de {nb(g['ead_total'])} e perda esperada de {nb(g['el_total'])}, isto é, {nb(g['el_pct'], 3, pct=True)} da severidade (PD média ponderada pela severidade de {nb(g['pd_media_ponderada'], 3, pct=True)} e LGD média ponderada pela exposição de {nb(g['lgd_media_ponderada'], 3, pct=True)}).
+""" + rf"""Este apêndice descreve a base de entrada \emph{{original}}{(' (' + tx(nome_base) + ')') if nome_base else ''} --- {'contrato a contrato, antes da agregação' if g['linhas'] > 5_000 else 'como enviada'} ---, para que o validador avalie os dados que sustentam a execução. A base tem {nb(g['linhas'], 0)} linhas e {nb(g['contrapartes'], 0)} contrapartes distintas, exposição total de R\$~{mi(g['ead_total'])}~milhões e perda esperada de R\$~{mi(g['el_total'])}~milhões, isto é, {nb(g['el_pct'], 3, pct=True)} da severidade (PD média ponderada pela severidade de {nb(g['pd_media_ponderada'], 3, pct=True)} e LGD média ponderada pela exposição de {nb(g['lgd_media_ponderada'], 3, pct=True)}).
 """]
     # qualidade
     q = desc["qualidade"]
@@ -315,9 +326,11 @@ A Tabela~\ref{tab:ap-qual} mostra o preenchimento de cada coluna presente e as v
     nu = desc["numericas"]
     if len(nu):
         def f(v, var):
+            if var.startswith("Exposição"):
+                return nb(v / 1e3, 2)          # por contrato: R$ mil
             pct = var in ("PD", "LGD", "LTV")
             return nb(v, 3, pct=pct)
-        ln = [[tx(r.variavel), nb(r.n, 0), f(r.media, r.variavel),
+        ln = [[tx(r.variavel.replace("Exposição (EAD)", "Exposição (EAD, R$ mil)")), nb(r.n, 0), f(r.media, r.variavel),
                f(r.desvio, r.variavel), f(r.min, r.variavel), f(r.p01, r.variavel),
                f(r.mediana, r.variavel), f(r.p99, r.variavel), f(r.max, r.variavel)]
               for r in nu.itertuples(index=False)]
@@ -326,7 +339,7 @@ A Tabela~\ref{tab:ap-qual} mostra o preenchimento de cada coluna presente e as v
 """ + r"{\footnotesize" + _tabela(["Variável", "$n$", "Média", "Desvio", "Mín.",
                                    "p1", "Mediana", "p99", "Máx."], ln,
                                   "lrrrrrrrr",
-                                  "Estatísticas das variáveis numéricas (PD, LGD e LTV em percentual).",
+                                  "Estatísticas das variáveis numéricas por contrato (PD, LGD e LTV em percentual; exposição em R\\$ mil, para que os contratos de varejo não se reduzam a zero na escala de milhões).",
                                   "tab:ap-num", small=False, H=True) + "}\n")
     # concentração
     lc = [["Índice de Herfindahl--Hirschman (HHI)", nb(cc["hhi"], 6)],
@@ -356,7 +369,7 @@ A Tabela~\ref{tab:ap-qual} mostra o preenchimento de cada coluna presente e as v
         if c == "segmento_irb":
             t = t.copy()
             t[c] = t[c].map(lambda k: _SEG.get(k, (k,))[0])
-        lt = [[tx(getattr(r, c)), nb(r.linhas, 0), nb(r.ead),
+        lt = [[tx(getattr(r, c)), nb(r.linhas, 0), mi(r.ead),
                nb(r.ead_pct, 3, pct=True), nb(r.pd_media, 3, pct=True),
                nb(r.lgd_media, 3, pct=True), nb(r.el_pct, 3, pct=True)]
               for r in t.itertuples(index=False)]
@@ -364,7 +377,7 @@ A Tabela~\ref{tab:ap-qual} mostra o preenchimento de cada coluna presente e as v
         T.append(rf"""
 \subsection{{Composição por {tx(_min.get(rot, rot))}}}
 O maior contribuinte para a perda esperada é {tx(str(maior[c]))}, com {nb(maior['el_pct'], 3, pct=True)} da EL e {nb(maior['ead_pct'], 3, pct=True)} da exposição.
-""" + _tabela_longa([tx(rot), "Linhas", "EAD", "\\% EAD", "PD média", "LGD média",
+""" + _tabela_longa([tx(rot), "Linhas", "EAD (R\\$ mi)", "\\% EAD", "PD média", "LGD média",
                      "\\% EL"], lt, "lrrrrrr",
                     f"Composição da base por {tx(_min.get(rot, rot))} (PD ponderada pela severidade; LGD pela exposição).",
                     f"tab:ap-{c}"))
@@ -401,7 +414,7 @@ def montar_tex(port, results, mig=None, nome_base="", extra=None,
     prm = results.get("parametros", {})
     med = results["medidas"]
     total = resumo["exposicao_liquida_total"]
-    unid = (extra or {}).get("unidade") or "unidades monetárias da base"
+    unid = "R$ milhões"
     pooled = bool(results.get("pooled", False)) or any(
         "(pooled)" in m for m in med["modelo"])
     cal = results.get("calibracao_gaussiana", {})
@@ -434,8 +447,8 @@ def montar_tex(port, results, mig=None, nome_base="", extra=None,
 \begin{{document}}
 \maketitle
 \begin{{abstract}}
-\noindent Este documento reporta uma execução do CreditLens sobre a base \emph{{{tx(nome_base) or 'informada pelo usuário'}}}: {nb(resumo['n_contrapartes'], 0)} linhas de modelagem, exposição líquida de {nb(total)} e perda esperada de {nb(resumo['perda_esperada'])} ({nb(resumo['perda_esperada'] / total, 3, pct=True)} da exposição). Apresenta a fundamentação teórica de cada modelo efetivamente executado com os parâmetros escolhidos, os resultados obtidos, uma bateria de diagnósticos automáticos de consistência e as referências bibliográficas que suportam as técnicas, para verificação independente."""
-             + (rf""" No modelo de referência ({tx(ref_g[0])}), o VaR 99{{,}}90\% é de {nb(ref_g[1])} ({nb(ref_g[1] / total, 3, pct=True)} da exposição líquida).""" if ref_g else "")
+\noindent Este documento reporta uma execução do CreditLens sobre a base \emph{{{tx(nome_base) or 'informada pelo usuário'}}}: {nb(resumo['n_contrapartes'], 0)} linhas de modelagem, exposição líquida de R\$~{mi(total)}~milhões e perda esperada de R\$~{mi(resumo['perda_esperada'])}~milhões ({nb(resumo['perda_esperada'] / total, 3, pct=True)} da exposição). Apresenta a fundamentação teórica de cada modelo efetivamente executado com os parâmetros escolhidos, os resultados obtidos, uma bateria de diagnósticos automáticos de consistência e as referências bibliográficas que suportam as técnicas, para verificação independente."""
+             + (rf""" No modelo de referência ({tx(ref_g[0])}), o VaR 99{{,}}90\% é de R\$~{mi(ref_g[1])}~milhões ({nb(ref_g[1] / total, 3, pct=True)} da exposição líquida).""" if ref_g else "")
              + rf""" A execução é reprodutível pela semente {tx(prm.get('seed', '---'))} e pelos parâmetros da Seção~\ref{{sec:param}}.
 \end{{abstract}}
 \tableofcontents
@@ -446,11 +459,11 @@ def montar_tex(port, results, mig=None, nome_base="", extra=None,
         ["Base de entrada", tx(nome_base) or "---"],
         ["Linhas de modelagem", nb(resumo["n_contrapartes"], 0)],
         ["Representação", "agregada (grandes exposições + grupos homogêneos)" if pooled else "granular (nível contraparte)"],
-        ["Exposição total (EAD)", nb(resumo["ead_total"])],
-        ["Exposição líquida ($\\sum c_n$)", nb(total)],
+        ["Exposição total (EAD, R\\$ milhões)", mi(resumo["ead_total"])],
+        ["Exposição líquida ($\\sum c_n$, R\\$ milhões)", mi(total)],
         ["PD média ponderada ($\\bar p$)", nb(pbar, 3, pct=True)],
         ["LGD média", nb(resumo["lgd_media"])],
-        ["Perda esperada", nb(resumo["perda_esperada"])],
+        ["Perda esperada (R\\$ milhões)", mi(resumo["perda_esperada"])],
         ["HHI de nomes / nº efetivo", f"{nb(resumo['hhi'], 5)} / {nb(resumo['n_efetivo'])}"],
         ["Maior exposição / top 10", f"{nb(resumo['maior_exposicao_pct'], 3, pct=True)} / {nb(resumo['top10_exposicao_pct'], 3, pct=True)}"],
     ]
@@ -649,9 +662,9 @@ A matriz de transição anual $P$ fornece a estrutura a termo de PD pelas potên
     # ---------------- 4. resultados ----------------
     cols = [c for c in ["modelo", "EL", "UL", "VaR 99.00%", "ES 99.00%",
                         "VaR 99.90%", "ES 99.90%"] if c in med.columns]
-    lin = [[tx(_rotulo(r[0]))] + [nb(v) for v in r[1:]]
+    lin = [[tx(_rotulo(r[0]))] + [mi(v) if v == v else "---" for v in r[1:]]
            for r in med[cols].itertuples(index=False)]
-    cab = ["Modelo", "EL", "UL", r"VaR$_{99\%}$", r"ES$_{99\%}$",
+    cab = ["Modelo (R\\$ milhões)", "EL", "UL", r"VaR$_{99\%}$", r"ES$_{99\%}$",
            r"VaR$_{99,9\%}$", r"ES$_{99,9\%}$"][:len(cols)]
     base_g = med[med["modelo"].str.startswith("Threshold Gaussiano 1F")]
     vg = float(base_g.iloc[0][col999]) if len(base_g) else None
@@ -670,9 +683,9 @@ A matriz de transição anual $P$ fornece a estrutura a termo de PD pelas potên
     figs.append("hierarquia.pdf")
     T.append(r"""
 \section{Resultados por modelo}
-A Tabela~\ref{tab:medidas} reporta as medidas de risco de cada modelo, em """ + tx(unid) + r""" (unidade da coluna \texttt{exposicao} informada no aplicativo); a Tabela~\ref{tab:relativos} normaliza as caudas, e a Figura~\ref{fig:hier} ordena os modelos pelo VaR 99{,}90\%. A hierarquia reflete a estrutura de dependência de cada modelo sob a calibração comum.
+A Tabela~\ref{tab:medidas} reporta as medidas de risco de cada modelo, em R\$ milhões, com duas casas decimais (a base de entrada está em reais); a Tabela~\ref{tab:relativos} normaliza as caudas, e a Figura~\ref{fig:hier} ordena os modelos pelo VaR 99{,}90\%. A hierarquia reflete a estrutura de dependência de cada modelo sob a calibração comum.
 """ + _tabela(cab, lin, "l" + "r" * (len(cols) - 1),
-              "Medidas de risco por modelo (" + tx(unid) + ").", "tab:medidas")
+              "Medidas de risco por modelo (R\\$ milhões).", "tab:medidas")
              + _tabela(["Modelo", r"VaR/expos.", r"VaR/EL", r"ES/VaR", r"$\times$ Gauss 1F"],
                        lin2, "lrrrr",
                        "Indicadores relativos no quantil 99{,}90\\%.", "tab:relativos")
@@ -686,7 +699,7 @@ A Tabela~\ref{tab:medidas} reporta as medidas de risco de cada modelo, em """ + 
 """)
     dists = results.get("distribuicoes") or {}
     if dists:
-        _fig_distribuicoes(dists, total, os.path.join(figdir, "distribuicoes.pdf"), unid)
+        _fig_distribuicoes({k: v / MI for k, v in dists.items()}, total / MI, os.path.join(figdir, "distribuicoes.pdf"))
         figs.append("distribuicoes.pdf")
         T.append(r"""
 \begin{figure}[H]
@@ -729,56 +742,56 @@ em que $L_{{(k)}}$ é a $k$-ésima menor perda simulada (David e Nagaraja, 2003)
 
     # ---------------- 6. capital ----------------
     if irb:
-        lin_k = [["Capital IRB ($K^*$, 99{,}9\\%)", f"{nb(irb.get('capital_total_999'))} ({nb(irb.get('capital_pct_exposicao'), 3, pct=True)} da exposição líquida)"],
-                 ["Ajuste de granularidade (GA)", nb(irb.get("ajuste_granularidade"))],
-                 ["Capital com GA", nb(irb.get("capital_com_ga"))],
-                 ["RWA equivalente ($12{,}5\\times$)", nb(irb.get("rwa_equivalente"))],
+        lin_k = [["Capital IRB ($K^*$, 99{,}9\\%)", f"{mi(irb.get('capital_total_999'))} ({nb(irb.get('capital_pct_exposicao'), 3, pct=True)} da exposição líquida)"],
+                 ["Ajuste de granularidade (GA)", mi(irb.get("ajuste_granularidade"))],
+                 ["Capital com GA", mi(irb.get("capital_com_ga"))],
+                 ["RWA equivalente ($12{,}5\\times$)", mi(irb.get("rwa_equivalente"))],
                  ["$R$ regulatório ponderado", nb(irb.get("rho_basel_ponderado"), 3, pct=True)]]
         cp = results.get("padronizado")
         T.append(r"""
 \section{Capital regulatório e concentração}
 """ + _tabela(["Indicador", "Valor"], lin_k, "lr",
-              "Capital regulatório pela abordagem IRB (modelos internos, Resolução BCB 303/2023).", "tab:irb", H=True))
+              "Capital regulatório pela abordagem IRB (modelos internos, Resolução BCB 303/2023); valores em R\\$ milhões.", "tab:irb", H=True))
         if cp:
             ps_ = cp["piso"]
-            lin_p = [["RWA IRB (modelos internos)", nb(ps_["rwa_irb"])],
-                     [r"RWA padronizado (RWA\textsubscript{CPAD})", nb(ps_["rwa_cpad"])],
+            lin_p = [["RWA IRB (modelos internos)", mi(ps_["rwa_irb"])],
+                     [r"RWA padronizado (RWA\textsubscript{CPAD})", mi(ps_["rwa_cpad"])],
                      ["Razão IRB / padronizado", nb(ps_["razao_irb_cpad"])],
-                     [r"Piso: $0{,}725\times$RWA\textsubscript{CPAD}", nb(ps_["piso"])],
-                     ["RWA final (art.~34, Res. BCB 303)", nb(ps_["rwa_final"])],
-                     [r"Capital final ($8\%$ do RWA)", nb(ps_["capital_final"])],
+                     [r"Piso: $0{,}725\times$RWA\textsubscript{CPAD}", mi(ps_["piso"])],
+                     ["RWA final (art.~34, Res. BCB 303)", mi(ps_["rwa_final"])],
+                     [r"Capital final ($8\%$ do RWA)", mi(ps_["capital_final"])],
                      ["Piso vinculante", "sim" if ps_["vinculante"] else "não"]]
             T.append(rf"""
-Pela abordagem padronizada, o RWA da carteira é {nb(ps_['rwa_cpad'])}, com FPR médio de {nb(cp['fpr_medio'], 3, pct=True)}. O RWA dos modelos internos corresponde a {nb(ps_['razao_irb_cpad'] * 100, 3)}\% do padronizado; """
+Pela abordagem padronizada, o RWA da carteira é R\$~{mi(ps_['rwa_cpad'])}~milhões, com FPR médio de {nb(cp['fpr_medio'], 3, pct=True)}. O RWA dos modelos internos corresponde a {nb(ps_['razao_irb_cpad'] * 100, 3)}\% do padronizado; """
                      + (r"como a razão é inferior a 72{,}5\%, \textbf{o piso de saída é vinculante} e o capital passa a ser determinado pela abordagem padronizada." if ps_["vinculante"]
                         else r"como a razão supera 72{,}5\%, o piso de saída não é vinculante e prevalece o RWA dos modelos internos.")
                      + "\n" + _tabela(["Indicador", "Valor"], lin_p, "lr",
-                                      "Abordagem padronizada e piso de saída.", "tab:piso", H=True))
+                                      "Abordagem padronizada e piso de saída (R\\$ milhões).", "tab:piso", H=True))
             pa = cp.get("por_artigo")
             if pa is not None and len(pa):
-                la = [[tx(r.descricao), nb(r.linhas, 0), nb(r.ead), nb(r.rwa),
+                la = [[tx(r.descricao), nb(r.linhas, 0), mi(r.ead), mi(r.rwa),
                        nb(r.fpr_medio, 3, pct=True)]
                       for r in pa.itertuples(index=False)]
-                T.append(_tabela(["Fator (artigo)", "Linhas", "EAD", "RWA", "FPR médio"],
+                T.append(_tabela(["Fator (artigo)", "Linhas", "EAD (R\\$ mi)", "RWA (R\\$ mi)", "FPR médio"],
                                  la, r">{\raggedright\arraybackslash}p{6.4cm}rrrr",
-                                 r"RWA\textsubscript{CPAD} por fator de ponderação da Resolução BCB 229/2022.",
+                                 r"RWA\textsubscript{CPAD} por fator de ponderação da Resolução BCB 229/2022 (R\$ milhões).",
                                  "tab:cpad", H=True))
             cmp_ = cp.get("comparacao")
             if cmp_ is not None and len(cmp_) and "descricao" in cmp_.columns:
-                lc = [[tx(r.descricao), nb(r.rwa_irb), nb(r.rwa_cpad), nb(r.razao_irb_cpad)]
+                lc = [[tx(r.descricao), mi(r.rwa_irb), mi(r.rwa_cpad), nb(r.razao_irb_cpad)]
                       for r in cmp_.itertuples(index=False)]
                 T.append(_tabela(["Categoria", "RWA IRB", "RWA padronizado", "IRB / padr."],
                                  lc, "lrrr",
-                                 "Comparação entre as abordagens por categoria.",
+                                 "Comparação entre as abordagens por categoria (RWA em R\\$ milhões).",
                                  "tab:irbcpad", H=True))
         seg = irb.get("por_segmento")
         if seg is not None and len(seg):
-            ls = [[tx(r.descricao), nb(r.linhas, 0), nb(r.exposicao_liquida),
-                   nb(r.R_ponderado, 3, pct=True), nb(r.capital),
+            ls = [[tx(r.descricao), nb(r.linhas, 0), mi(r.exposicao_liquida),
+                   nb(r.R_ponderado, 3, pct=True), mi(r.capital),
                    nb(r.capital_pct, 3, pct=True)]
                   for r in seg.itertuples(index=False)]
-            T.append(_tabela(["Categoria", "Linhas", "Expos. líquida", "$R$",
-                              "Capital", "Capital/expos."], ls, "lrrrrr",
+            T.append(_tabela(["Categoria", "Linhas", "Expos. líquida (R\\$ mi)", "$R$",
+                              "Capital (R\\$ mi)", "Capital/expos."], ls, "lrrrrr",
                              "Capital IRB por categoria da Resolução BCB 303/2023; $R$ é a correlação média ponderada pela severidade.",
                              "tab:irbseg"))
         if mf and mf.get("contrib_por_setor") is not None:
@@ -798,21 +811,21 @@ A Tabela~\ref{{tab:setores}} decompõe a cauda por setor pela alocação de Eule
         ecl_df, sim_m = mig.get("ecl"), mig.get("sim")
         e12 = float(ecl_df["ECL_12m"].sum())
         eli = float(ecl_df["ECL_lifetime"].sum())
-        lm = [["ECL 12 meses", f"{nb(e12)} ({nb(e12 / total, 3, pct=True)} da exposição líquida)"],
-              ["ECL \\emph{lifetime}", f"{nb(eli)} ({nb(eli / e12 if e12 else 0)}$\\times$ o de 12 meses)"]]
+        lm = [["ECL 12 meses (R\\$ milhões)", f"{mi(e12)} ({nb(e12 / total, 3, pct=True)} da exposição líquida)"],
+              ["ECL \\emph{lifetime} (R\\$ milhões)", f"{mi(eli)} ({nb(eli / e12 if e12 else 0)}$\\times$ o de 12 meses)"]]
         if "provisao" in ecl_df.columns:
-            lm.append(["Provisão por estágios", nb(float(ecl_df["provisao"].sum()))])
+            lm.append(["Provisão por estágios (R\\$ milhões)", mi(float(ecl_df["provisao"].sum()))])
         if sim_m and sim_m.get("T"):
             Tn = int(sim_m["T"])
-            lm += [[f"VaR 99{{,}}90\\% em {Tn} anos", nb(sim_m["VaR"].get("99.90%"))],
-                   [f"ES 99{{,}}90\\% em {Tn} anos", nb(sim_m["ES"].get("99.90%"))],
-                   ["EL multiperíodo descontada", nb(sim_m["EL"])]]
+            lm += [[f"VaR 99{{,}}90\\% em {Tn} anos", mi(sim_m["VaR"].get("99.90%"))],
+                   [f"ES 99{{,}}90\\% em {Tn} anos", mi(sim_m["ES"].get("99.90%"))],
+                   ["EL multiperíodo descontada (R\\$ milhões)", mi(sim_m["EL"])]]
         T.append(r"""
 \section{Migração, ECL e horizonte multiperíodo}
 """ + _tabela(["Indicador", "Valor"], lm, "lr",
               "Perda esperada de crédito e capital multiperíodo.", "tab:mig", H=True))
         if sim_m and len(np.atleast_1d(sim_m.get("perdas", []))) > 10:
-            _fig_multiperiodo(sim_m, os.path.join(figdir, "multiperiodo.pdf"), unid)
+            _fig_multiperiodo({**sim_m, "perdas": sim_m["perdas"] / MI, "VaR": {k: v / MI for k, v in sim_m["VaR"].items()}, "ES": {k: v / MI for k, v in sim_m["ES"].items()}, "EL": sim_m["EL"] / MI}, os.path.join(figdir, "multiperiodo.pdf"))
             figs.append("multiperiodo.pdf")
             T.append(r"""
 \begin{figure}[H]

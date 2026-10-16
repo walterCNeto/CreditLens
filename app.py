@@ -38,6 +38,19 @@ from engine.analytics import run_full_analysis, results_to_excel
 
 st.set_page_config(page_title="CreditLens", page_icon="📊", layout="wide")
 
+
+def _mi(v):
+    """Entrada em reais; saída em R$ milhões, duas casas."""
+    try:
+        return f"{float(v) / 1e6:,.2f}"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _FM(v):            # formatador de coluna monetária (Styler)
+    return _mi(v) if v == v else "—"
+
+
 st.title("CreditLens — Análise de Carteira de Crédito")
 st.caption(
     "Motor quantitativo baseado em Bolder (2018), *Credit-Risk Modelling* (Springer): "
@@ -79,16 +92,8 @@ with st.sidebar:
     contrib_S = st.slider("Iterações da decomposição (S)", 5, 30, 10)
     contrib_alpha = st.selectbox("Nível α das contribuições", [0.95, 0.99, 0.999], index=1)
     seed = st.number_input("Semente aleatória", value=42, step=1)
-    st.subheader("Capital padronizado")
-    _unid = st.selectbox("Unidade monetária da coluna `exposicao`",
-                         ["R$", "R$ mil", "R$ milhões"], index=0,
-                         help="R$: valores em reais (padrão; as bases de "
-                              "demonstração estão em reais). Escolha R$ mil "
-                              "ou R$ milhões se a sua base vier nessa escala. "
-                              "Usada nos limites em reais do varejo (art. 46 "
-                              "da Res. BCB 229: R$ 5 milhões por contraparte) "
-                              "e para identificar a unidade no paper.")
-    escala_reais = {"R$": 1.0, "R$ mil": 1e3, "R$ milhões": 1e6}[_unid]
+    # entrada sempre em reais (R$); relatórios em R$ milhões
+    _unid, escala_reais = "R$", 1.0
 
 # ---------------- 1. Base de dados (só a escolha; nada é processado) --------
 st.subheader("1. Escolha a base")
@@ -123,6 +128,9 @@ with st.expander("Padrão do arquivo"):
         "`categoria_if` (A/B/C), `prazo_original_dias`, `grande_baixo_risco` "
         "(0/1 — art. 35), `ativo_total_mi`, `fpr` (fator informado, "
         "prevalece)\n"
+        "- **Valores monetários em reais (R$)**, sem escala: `exposicao`, "
+        "`provisao` (e `receita_bruta_mi` e `ativo_total_mi` em R$ milhões, "
+        "como o nome indica). Os resultados são apresentados em R$ milhões.\n"
         "- Separador vírgula, decimal ponto, UTF-8. Severidade Bolder: c = EAD × LGD."
     )
 
@@ -474,8 +482,8 @@ if rel_agg is not None:
                f"({rel['n_grandes']} grandes exposições + "
                f"{rel['n_buckets']} buckets GH×setor).")
     q1, q2, q3, q4 = st.columns(4)
-    q1.metric("EL analítica", f"{rel['el_analitica']:,.1f}")
-    q2.metric("EL agregada", f"{rel['el_agregada']:,.1f}",
+    q1.metric("EL analítica (R$ mi)", _mi(rel['el_analitica']))
+    q2.metric("EL agregada (R$ mi)", _mi(rel['el_agregada']),
               f"dif. {rel['el_diferenca_pct']:.4%}", delta_color="off")
     q3.metric("Exposição nos grandes", f"{rel['exposicao_grandes_pct']:.1%}")
     q4.metric("CV de PD máx. no bucket", f"{rel['pd_cv_max_bucket']:.2f}",
@@ -487,8 +495,8 @@ if rel_agg is not None:
 s = port.summary()
 c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric("Contrapartes", f"{s['n_contrapartes']:,}")
-c2.metric("EAD total", f"{s['ead_total']:,.0f}")
-c3.metric("Perda esperada", f"{s['perda_esperada']:,.1f}",
+c2.metric("EAD total (R$ mi)", _mi(s['ead_total']))
+c3.metric("Perda esperada (R$ mi)", _mi(s['perda_esperada']),
           f"{s['perda_esperada_pct']:.2%} da exposição", delta_color="off")
 c4.metric("PD média ponderada", f"{s['pd_media_ponderada']:.2%}")
 c5.metric("HHI (N efetivo)", f"{s['hhi']:.4f}", f"{s['n_efetivo']:.0f} nomes",
@@ -504,7 +512,7 @@ if _desc:
         d1, d2, d3, d4 = st.columns(4)
         d1.metric("Linhas", f"{_g['linhas']:,}",
                   f"{_g['contrapartes']:,} contrapartes", delta_color="off")
-        d2.metric("Exposição total", f"{_g['ead_total']:,.3f}")
+        d2.metric("Exposição total (R$ mi)", _mi(_g['ead_total']))
         d3.metric("10 maiores exposições", f"{_cc['top10']:.3%}",
                   f"Gini {_cc['gini']:.3f}", delta_color="off")
         d4.metric("Nº efetivo de exposições", f"{_cc['n_efetivo']:,.3f}")
@@ -520,14 +528,19 @@ if _desc:
             {"Preenchimento": "{:.3%}", "Não preenchidos": "{:,}"}),
             width='stretch', hide_index=True)
         st.markdown("**Variáveis de risco**")
-        st.dataframe(_desc["numericas"].style.format(
-            {c: "{:,.3f}" for c in ["media", "desvio", "min", "p01", "p25",
-                                    "mediana", "p75", "p99", "max"]}
-            | {"n": "{:,}"}), width='stretch', hide_index=True)
+        _num = _desc["numericas"].copy()
+        _cols_q = ["media", "desvio", "min", "p01", "p25", "mediana", "p75",
+                   "p99", "max"]
+        _ex = _num["variavel"] == "Exposição (EAD)"
+        _num.loc[_ex, _cols_q] = _num.loc[_ex, _cols_q] / 1e3
+        _num.loc[_ex, "variavel"] = "Exposição por contrato (R$ mil)"
+        st.dataframe(_num.style.format({c: "{:,.3f}" for c in _cols_q}
+                                       | {"n": "{:,}"}),
+                     width='stretch', hide_index=True)
         for _c, (_rot, _t) in _desc["categoricas"].items():
             st.markdown(f"**Composição por {_rot.lower() if _rot != 'Categoria IRB' else _rot}**")
             st.dataframe(_t.style.format({
-                "linhas": "{:,}", "ead": "{:,.3f}", "el": "{:,.3f}",
+                "linhas": "{:,}", "ead": _FM, "el": _FM,
                 "ead_pct": "{:.3%}", "pd_media": "{:.3%}",
                 "lgd_media": "{:.3%}", "el_pct": "{:.3%}"}),
                 width='stretch', hide_index=True)
@@ -542,7 +555,8 @@ tabs = st.tabs(["Medidas de risco", "Distribuições", "Capital regulatório",
 # --- Medidas ---
 with tabs[0]:
     med = results["medidas"].copy()
-    fmt = {c: "{:,.1f}" for c in med.columns if c not in ("modelo", "tempo_s")}
+    st.caption("Valores em R$ milhões (base de entrada em reais).")
+    fmt = {c: _FM for c in med.columns if c not in ("modelo", "tempo_s")}
     fmt["tempo_s"] = "{:.2f}"
     st.dataframe(med.style.format(fmt, na_rep="—"), width='stretch')
     col_var = [c for c in med.columns if c.startswith("VaR 99.90")][0]
@@ -567,7 +581,7 @@ with tabs[1]:
            "Threshold t-Student 1F": "#b02418",
            "Threshold Gaussiano MF": "#2e8b57",
            "Threshold t-Student MF": "#e07b00"}
-    dists = results["distribuicoes"]
+    dists = {k: np.asarray(v) / 1e6 for k, v in results["distribuicoes"].items()}
     xmax = max(np.quantile(d, 0.999) for d in dists.values())
     bins = np.linspace(0, xmax, 90)
 
@@ -591,7 +605,7 @@ with tabs[1]:
                    ls="--" if indep else "-")
         srt = np.sort(dist)
         tail = 1.0 - np.arange(1, len(srt) + 1) / len(srt)
-        ax[1].semilogy(srt / total * 100, np.maximum(tail, 1e-6),
+        ax[1].semilogy(srt * 1e6 / total * 100, np.maximum(tail, 1e-6),
                        label=rot, color=cor, lw=1.1 if indep else 1.6,
                        ls="--" if indep else "-")
     ax[0].set_xlim(0, xmax)
@@ -609,6 +623,7 @@ with tabs[1]:
     ax[0].set_title("Corpo (até 99,9%) — escala dos modelos com dependência",
                     fontsize=10)
     ax[0].legend(fontsize=7)
+    ax[0].set_xlabel("Perda (R$ milhões)")
     ax[1].set_title("Cauda P(L > x)"); ax[1].set_ylim(1e-5, 1)
     ax[1].axhline(1e-3, color="k", ls=":", lw=0.8)
     ax[1].legend(fontsize=7); ax[1].grid(alpha=0.2, which="both")
@@ -623,16 +638,16 @@ with tabs[2]:
         ps_ = cp["piso"]
         st.markdown("##### Requerimento de capital — visão consolidada")
         k1, k2, k3, k4 = st.columns(4)
-        k1.metric("RWA IRB (modelos internos)", f"{ps_['rwa_irb']:,.1f}")
-        k2.metric("RWA padronizado (RWACPAD)", f"{ps_['rwa_cpad']:,.1f}",
+        k1.metric("RWA IRB (modelos internos, R$ mi)", _mi(ps_['rwa_irb']))
+        k2.metric("RWA padronizado (RWACPAD, R$ mi)", _mi(ps_['rwa_cpad']),
                   f"IRB/padronizado {ps_['razao_irb_cpad']:.3f}",
                   delta_color="off")
-        k3.metric("Piso: 72,5% × RWACPAD", f"{ps_['piso']:,.1f}",
+        k3.metric("Piso: 72,5% × RWACPAD (R$ mi)", _mi(ps_['piso']),
                   "vinculante" if ps_["vinculante"] else "não vinculante",
                   delta_color="inverse" if ps_["vinculante"] else "off")
-        k4.metric("RWA final (art. 34, Res. BCB 303)",
-                  f"{ps_['rwa_final']:,.1f}",
-                  f"capital {ps_['capital_final']:,.1f} (8%)",
+        k4.metric("RWA final (art. 34, Res. BCB 303; R$ mi)",
+                  _mi(ps_['rwa_final']),
+                  f"capital R$ {_mi(ps_['capital_final'])} mi (8%)",
                   delta_color="off")
         st.caption("RWA final = max(RWA IRB; 72,5% × RWACPAD), calculados "
                    "sobre as mesmas exposições da carteira ativa. Quando o "
@@ -641,11 +656,11 @@ with tabs[2]:
         st.divider()
     st.markdown("##### Abordagem IRB (modelos internos) — Res. BCB 303/2023")
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Capital IRB (99,90%)", f"{irb_res['capital_total_999']:,.1f}",
+    c1.metric("Capital IRB (99,90%; R$ mi)", _mi(irb_res['capital_total_999']),
               f"{irb_res['capital_pct_exposicao']:.2%} da exposição", delta_color="off")
-    c2.metric("Ajuste de granularidade", f"{irb_res['ajuste_granularidade']:,.1f}")
-    c3.metric("Capital + GA", f"{irb_res['capital_com_ga']:,.1f}")
-    c4.metric("RWA equivalente (12,5×)", f"{irb_res['rwa_equivalente']:,.0f}")
+    c2.metric("Ajuste de granularidade (R$ mi)", _mi(irb_res['ajuste_granularidade']))
+    c3.metric("Capital + GA (R$ mi)", _mi(irb_res['capital_com_ga']))
+    c4.metric("RWA equivalente (12,5×; R$ mi)", _mi(irb_res['rwa_equivalente']))
     st.caption("Função de capital da Resolução BCB nº 303/2023: correlação por "
                "categoria (atacado, SME, HVCRE, IF, varejo residencial, rotativo "
                "qualificado e demais varejo), ajuste de maturidade só no atacado, "
@@ -665,9 +680,9 @@ with tabs[2]:
                     "regulatório (art. 61).")
         st.markdown("**Capital por categoria IRB**")
         st.dataframe(seg_tab.drop(columns=["segmento"]).style.format({
-            "ead": "{:,.3f}", "exposicao_liquida": "{:,.3f}",
-            "R_ponderado": "{:.3%}", "capital": "{:,.3f}",
-            "capital_pct": "{:.3%}", "rwa": "{:,.3f}"}),
+            "ead": _FM, "exposicao_liquida": _FM,
+            "R_ponderado": "{:.3%}", "capital": _FM,
+            "capital_pct": "{:.3%}", "rwa": _FM}),
             width='stretch', hide_index=True)
     cols_irb = ["id_contraparte", "exposicao", "pd", "lgd", "prazo_anos"]
     cols_irb += [c for c in ["segmento_irb"] if c in port.df.columns]
@@ -676,16 +691,16 @@ with tabs[2]:
     df_irb["capital_IRB"] = irb_res["capital_por_contraparte"]
     st.dataframe(
         df_irb.sort_values("capital_IRB", ascending=False).head(50)
-        .style.format({"exposicao": "{:,.1f}", "pd": "{:.4%}", "lgd": "{:.0%}",
-                       "prazo_anos": "{:.1f}", "K": "{:.4f}", "capital_IRB": "{:,.2f}"}),
+        .style.format({"exposicao": _FM, "pd": "{:.4%}", "lgd": "{:.0%}",
+                       "prazo_anos": "{:.1f}", "K": "{:.4f}", "capital_IRB": _FM}),
         width='stretch', height=350)
 
     if cp:
         st.divider()
         st.markdown("##### Abordagem padronizada (RWACPAD) — Res. BCB 229/2022")
         q1, q2, q3 = st.columns(3)
-        q1.metric("RWACPAD", f"{cp['rwa_total']:,.1f}")
-        q2.metric("Capital padronizado (8%)", f"{cp['capital']:,.1f}")
+        q1.metric("RWACPAD (R$ mi)", _mi(cp['rwa_total']))
+        q2.metric("Capital padronizado (8%; R$ mi)", _mi(cp['capital']))
         q3.metric("FPR médio", f"{cp['fpr_medio']:.3%}")
         st.caption("RWA = EAD × FPR, com o fator de ponderação de risco de "
                    "cada exposição pela sua categoria (artigos da Res. BCB "
@@ -715,7 +730,7 @@ with tabs[2]:
             st.markdown("**RWACPAD por fator de ponderação**")
             st.dataframe(cp["por_artigo"][["descricao", "linhas", "ead", "rwa",
                                            "fpr_medio"]].style.format({
-                "linhas": "{:,}", "ead": "{:,.3f}", "rwa": "{:,.3f}",
+                "linhas": "{:,}", "ead": _FM, "rwa": _FM,
                 "fpr_medio": "{:.3%}"}), width='stretch', hide_index=True)
         if cp.get("comparacao") is not None:
             st.markdown("**IRB × padronizado por categoria**")
@@ -724,7 +739,7 @@ with tabs[2]:
                                   "rwa_cpad", "razao_irb_cpad"]
                       if c in comp.columns]
             st.dataframe(comp[cols_c].style.format({
-                "ead": "{:,.3f}", "rwa_irb": "{:,.3f}", "rwa_cpad": "{:,.3f}",
+                "ead": _FM, "rwa_irb": _FM, "rwa_cpad": _FM,
                 "razao_irb_cpad": "{:.3f}"}), width='stretch', hide_index=True)
             st.caption("Razão abaixo de 1: o modelo interno exige menos "
                        "capital que o padronizado na categoria; abaixo de "
@@ -736,10 +751,10 @@ with tabs[3]:
         cb = results["contrib_bucket"]
         st.caption(f"Contribuições ao ES {results['contrib_alpha']:.0%} por linha "
                    f"agregada ({results['modelo_contrib']}; ES total "
-                   f"{results['es_total_contrib']:,.1f}). Grandes exposições têm "
+                   f"R$ {_mi(results['es_total_contrib'])} mi). Grandes exposições têm "
                    f"n_contratos = 1; buckets GH×setor agregam o varejo pulverizado.")
         st.dataframe(cb.head(40).style.format(
-            {"exposicao": "{:,.1f}", "pd": "{:.4%}", "contrib_ES": "{:,.2f}",
+            {"exposicao": _FM, "pd": "{:.4%}", "contrib_ES": _FM,
              "contrib_ES_pct": "{:.2%}", "n_contratos": "{:,.0f}"}),
             width='stretch', height=380)
     elif "contribuicoes" not in results:
@@ -747,8 +762,8 @@ with tabs[3]:
     else:
         cc = results["contribuicoes"]
         st.caption(f"Decomposição Monte Carlo do modelo threshold gaussiano "
-                   f"(α = {cc['alpha']:.0%}; VaR médio {cc['var_medio']:,.1f}, "
-                   f"ES médio {cc['es_medio']:,.1f})")
+                   f"(α = {cc['alpha']:.0%}; VaR médio R$ {_mi(cc['var_medio'])} mi, "
+                   f"ES médio R$ {_mi(cc['es_medio'])} mi)")
         df_c = port.df[["id_contraparte", "exposicao", "pd"]].copy()
         if "rating" in port.df.columns:
             df_c["rating"] = port.df["rating"]
@@ -757,8 +772,8 @@ with tabs[3]:
         df_c["contrib_ES_%"] = df_c["contrib_ES"] / cc["es_medio"]
         top = df_c.sort_values("contrib_ES", ascending=False)
         st.dataframe(top.head(30).style.format(
-            {"exposicao": "{:,.1f}", "pd": "{:.4%}", "contrib_VaR": "{:,.2f}",
-             "contrib_ES": "{:,.2f}", "contrib_ES_%": "{:.2%}"}),
+            {"exposicao": _FM, "pd": "{:.4%}", "contrib_VaR": _FM,
+             "contrib_ES": _FM, "contrib_ES_%": "{:.2%}"}),
             width='stretch', height=350)
 
 # --- Setores (multifatorial) ---
@@ -792,13 +807,13 @@ with tabs[4]:
                   "carga_setorial"]} | {"pd_media": "{:.3%}"}),
                   width='stretch', hide_index=True)
         st.caption(f"Contribuições ao ES {mf['contrib_alpha']:.0%} do modelo "
-                   f"gaussiano multifatorial (ES médio {mf['es_medio']:,.1f}). "
+                   f"gaussiano multifatorial (ES médio R$ {_mi(mf['es_medio'])} mi). "
                    "A razão risco/exposição > 1 indica setor que concentra "
                    "proporcionalmente mais cauda do que carteira.")
         df_s = mf["contrib_por_setor"].copy()
         st.dataframe(df_s.style.format({
-            "exposicao_liquida": "{:,.1f}", "perda_esperada": "{:,.1f}",
-            "contrib_ES": "{:,.1f}", "exposicao_pct": "{:.1%}",
+            "exposicao_liquida": _FM, "perda_esperada": _FM,
+            "contrib_ES": _FM, "exposicao_pct": "{:.1%}",
             "contrib_ES_pct": "{:.1%}", "razao_risco_exposicao": "{:.2f}"}),
             width='stretch')
         fig, ax = plt.subplots(figsize=(8, 3.6))
@@ -825,17 +840,17 @@ with tabs[5]:
                      "VaR": {"99.90%": float("nan")},
                      "ES": {"99.90%": float("nan")}, "perdas": np.array([0.0])}
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("ECL 12 meses", f"{ecl_df['ECL_12m'].sum():,.1f}")
-        c2.metric("ECL lifetime", f"{ecl_df['ECL_lifetime'].sum():,.1f}",
+        c1.metric("ECL 12 meses (R$ mi)", _mi(ecl_df['ECL_12m'].sum()))
+        c2.metric("ECL lifetime (R$ mi)", _mi(ecl_df['ECL_lifetime'].sum()),
                   f"{ecl_df['ECL_lifetime'].sum()/ecl_df['ECL_12m'].sum():.2f}x o 12m",
                   delta_color="off")
         if "provisao" in ecl_df:
             c3.metric("Estágio 2", f"{int((ecl_df['estagio']==2).sum())} nomes")
-            c4.metric("Provisão por estágio", f"{ecl_df['provisao'].sum():,.1f}")
+            c4.metric("Provisão por estágio (R$ mi)", _mi(ecl_df['provisao'].sum()))
         st.caption(f"Multiperíodo ({sim_m['T']} anos, M={sim_m['M']:,}, blocos de "
-                   f"{sim_m['block_size']:,}): EL {sim_m['EL']:,.1f} | "
-                   f"VaR 99,9% {sim_m['VaR']['99.90%']:,.1f} | "
-                   f"ES 99,9% {sim_m['ES']['99.90%']:,.1f}")
+                   f"{sim_m['block_size']:,}), em R$ milhões: EL {_mi(sim_m['EL'])} | "
+                   f"VaR 99,9% {_mi(sim_m['VaR']['99.90%'])} | "
+                   f"ES 99,9% {_mi(sim_m['ES']['99.90%'])}")
         colA, colB = st.columns(2)
         with colA:
             fig, ax = plt.subplots(figsize=(5.5, 3.6))
@@ -852,10 +867,10 @@ with tabs[5]:
             ax.set_title(f"Distribuição multiperíodo ({sim_m['T']} anos)")
             st.pyplot(fig)
         st.dataframe(ecl_df.sort_values("ECL_lifetime", ascending=False)
-            .head(50).style.format({"exposicao": "{:,.1f}", "pd": "{:.4%}",
+            .head(50).style.format({"exposicao": _FM, "pd": "{:.4%}",
                 "lgd": "{:.0%}", "prazo_anos": "{:.1f}", "pd_matriz_1a": "{:.4%}",
-                "ECL_12m": "{:,.2f}", "ECL_lifetime": "{:,.2f}",
-                "razao_lifetime_12m": "{:.2f}", "provisao": "{:,.2f}"},
+                "ECL_12m": _FM, "ECL_lifetime": _FM,
+                "razao_lifetime_12m": "{:.2f}", "provisao": _FM},
                 na_rep="—"), width='stretch', height=330)
 
 # --- Calibração ---

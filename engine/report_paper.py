@@ -80,6 +80,13 @@ REFS = [
 ]
 
 
+def mi(v, dec=2):
+    """Valor monetário (entrada em reais) em R$ milhões."""
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return "—"
+    return br(float(v) / 1e6, dec)
+
+
 def br(v, dec=3, pct=False):
     if v is None or (isinstance(v, float) and np.isnan(v)):
         return "—"
@@ -403,7 +410,7 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
     ga = irb.get("ajuste_granularidade")
     if ga is not None:
         rows.append(["Ajuste de granularidade",
-                     f"GA = {br(ga, 3)}", "GA ≥ 0 (risco de nomes)",
+                     f"GA = R$ {mi(ga)} mi", "GA ≥ 0 (risco de nomes)",
                      "OK" if ga >= 0 else "Atenção"])
 
     # 7. migração
@@ -694,12 +701,12 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
         D.y -= 0.01
         D.h2("2. A carteira")
         D.kv([
-            ("Exposição total (EAD)", br(resumo["ead_total"])),
+            ("Exposição total (EAD, R$ mi)", mi(resumo["ead_total"])),
             ("Exposição líquida (EAD × LGD)",
-             br(resumo["exposicao_liquida_total"])),
+             mi(resumo["exposicao_liquida_total"])),
             ("PD média ponderada por severidade", br(pbar, 3, pct=True)),
             ("LGD média", br(resumo["lgd_media"], 3)),
-            ("Perda esperada (EL)", br(resumo["perda_esperada"])),
+            ("Perda esperada (EL, R$ mi)", mi(resumo["perda_esperada"])),
             ("HHI de nomes / nº efetivo",
              f"{br(resumo['hhi'], 5)}  /  {br(resumo['n_efetivo'], 1)}"),
             ("Maior exposição / top 10",
@@ -709,7 +716,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
         if gauss_ref:
             D.y -= 0.01
             D.par(f"Síntese: no modelo de referência ({gauss_ref[0]}), o "
-                  f"VaR 99,90% é de {br(gauss_ref[1])} "
+                  f"VaR 99,90% é de R$ {mi(gauss_ref[1])} milhões "
                   f"({br(gauss_ref[1]/total, 3, pct=True)} da exposição "
                   "líquida). A seção 5 compara as caudas entre os modelos.")
         if pooled:
@@ -927,13 +934,13 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                             "VaR 99.90%", "ES 99.90%"] if c in med.columns]
         linhas = []
         for r in med[cols].itertuples(index=False):
-            linhas.append([_rotulo(r[0])] + [br(v) for v in r[1:]])
-        D.tabela(["Modelo", "EL", "UL", "VaR 99%", "ES 99%", "VaR 99,9%",
+            linhas.append([_rotulo(r[0])] + [mi(v) for v in r[1:]])
+        D.tabela(["Modelo (R$ mi)", "EL", "UL", "VaR 99%", "ES 99%", "VaR 99,9%",
                   "ES 99,9%"][:len(cols)], linhas,
                  [0.30] + [0.1167] * (len(cols) - 1),
                  0.030 + 0.0215 * len(linhas), "Resultados")
-        D.par(f"Valores em {(extra or {}).get('unidade') or 'unidades monetárias da base'}, três "
-              "casas decimais. A hierarquia das caudas reflete a estrutura "
+        D.par("Valores em R$ milhões, duas casas decimais (base de entrada "
+              "em reais). A hierarquia das caudas reflete a estrutura "
               "de dependência de cada modelo sob a calibração comum.",
               color=CINZA)
         # indicadores relativos
@@ -974,7 +981,8 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
         ax.set_title("Hierarquia de caudas", fontsize=9.5, color=AZUL,
                      loc="left")
 
-        dists = results.get("distribuicoes", {})
+        dists = {k: np.asarray(v) / 1e6
+                 for k, v in results.get("distribuicoes", {}).items()}
         if dists:
             xmax = max(np.quantile(d, 0.999) for d in dists.values())
             bins = np.linspace(0, xmax, 90)
@@ -995,12 +1003,13 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                          ls="--" if indep else "-", label=rot, color=cor)
                 srt = np.sort(d)
                 tail = 1 - np.arange(1, len(srt) + 1) / len(srt)
-                ax2.semilogy(srt / total * 100, np.maximum(tail, 1e-6),
+                ax2.semilogy(srt * 1e6 / total * 100, np.maximum(tail, 1e-6),
                              lw=1.0 if indep else 1.4,
                              ls="--" if indep else "-", label=rot,
                              color=cor)
             ax1.set_xlim(0, xmax)
             ax1.set_ylim(0, ylim)
+            ax1.set_xlabel("Perda (R$ milhões)", fontsize=8)
             ax1.set_title("Distribuições de perda — corpo (escala dos "
                           "modelos com dependência)", fontsize=9.5,
                           color=AZUL, loc="left")
@@ -1053,13 +1062,13 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             D.h1("Capital regulatório e concentração")
             D.kv([
                 ("Capital IRB (99,9%)",
-                 f"{br(irb.get('capital_total_999'))}   "
+                 f"R$ {mi(irb.get('capital_total_999'))} mi   "
                  f"({br(irb.get('capital_pct_exposicao'), 3, pct=True)} da "
                  "exposição líquida)"),
                 ("Ajuste de granularidade (GA)",
-                 br(irb.get("ajuste_granularidade"))),
-                ("Capital com GA", br(irb.get("capital_com_ga"))),
-                ("RWA equivalente (12,5×)", br(irb.get("rwa_equivalente"))),
+                 mi(irb.get("ajuste_granularidade"))),
+                ("Capital com GA (R$ mi)", mi(irb.get("capital_com_ga"))),
+                ("RWA equivalente (12,5×, R$ mi)", mi(irb.get("rwa_equivalente"))),
                 ("R regulatório ponderado",
                  br(irb.get("rho_basel_ponderado"), 3, pct=True)),
             ], "Capital e concentração")
@@ -1068,12 +1077,12 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                 ps_ = cp["piso"]
                 D.y -= 0.010
                 D.kv([
-                    ("RWA IRB (modelos internos)", br(ps_["rwa_irb"])),
-                    ("RWA padronizado (Res. BCB 229)", br(ps_["rwa_cpad"])),
+                    ("RWA IRB (modelos internos, R$ mi)", mi(ps_["rwa_irb"])),
+                    ("RWA padronizado (Res. BCB 229, R$ mi)", mi(ps_["rwa_cpad"])),
                     ("IRB / padronizado", br(ps_["razao_irb_cpad"], 3)),
-                    ("Piso: 72,5% × padronizado", br(ps_["piso"])),
+                    ("Piso: 72,5% × padronizado (R$ mi)", mi(ps_["piso"])),
                     ("RWA final (art. 34, Res. BCB 303)",
-                     br(ps_["rwa_final"]) + ("  — piso vinculante"
+                     mi(ps_["rwa_final"]) + ("  — piso vinculante"
                                              if ps_["vinculante"] else "")),
                 ], "Capital e concentração")
             seg = irb.get("por_segmento")
@@ -1082,9 +1091,9 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                 D.h2("Capital IRB por categoria (Res. BCB 303/2023)",
                      "Capital e concentração")
                 lin_s = [[r.descricao, str(r.linhas),
-                          br(r.exposicao_liquida),
+                          mi(r.exposicao_liquida),
                           br(r.R_ponderado, 3, pct=True),
-                          br(r.capital), br(r.capital_pct, 3, pct=True)]
+                          mi(r.capital), br(r.capital_pct, 3, pct=True)]
                          for r in seg.itertuples(index=False)]
                 D.tabela(["Categoria", "Linhas", "Expos. líquida", "R",
                           "Capital", "Capital/expos."], lin_s,
@@ -1117,27 +1126,30 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             e12 = float(ecl_df["ECL_12m"].sum())
             eli = float(ecl_df["ECL_lifetime"].sum())
             pares = [("ECL 12 meses",
-                      f"{br(e12)}   ({br(e12/total, 3, pct=True)} da "
+                      f"R$ {mi(e12)} mi   ({br(e12/total, 3, pct=True)} da "
                       "exposição líquida)"),
                      ("ECL lifetime",
-                      f"{br(eli)}   ({br(eli/e12 if e12 else 0, 3)}× o "
+                      f"R$ {mi(eli)} mi   ({br(eli/e12 if e12 else 0, 3)}× o "
                       "12 meses)")]
             if "provisao" in ecl_df.columns:
                 pares.append(("Provisão por estágios",
                               br(float(ecl_df["provisao"].sum()))))
             if sim_m and sim_m.get("T"):
                 pares += [(f"VaR 99,90% em {int(sim_m['T'])} anos",
-                           br(sim_m["VaR"].get("99.90%"))),
+                           mi(sim_m["VaR"].get("99.90%"))),
                           (f"ES 99,90% em {int(sim_m['T'])} anos",
-                           br(sim_m["ES"].get("99.90%"))),
-                          ("EL multiperíodo descontada", br(sim_m["EL"]))]
+                           mi(sim_m["ES"].get("99.90%"))),
+                          ("EL multiperíodo descontada (R$ mi)", mi(sim_m["EL"]))]
             D.kv(pares, "Migração e ECL")
             if sim_m and sim_m.get("T") and len(np.atleast_1d(
                     sim_m.get("perdas", []))) > 10:
                 ax = D.eixo(0.24, "Migração e ECL")
-                ax.hist(sim_m["perdas"], bins=80, density=True, color=AZUL,
-                        alpha=0.85)
+                ax.hist(np.asarray(sim_m["perdas"]) / 1e6, bins=80,
+                        density=True, color=AZUL, alpha=0.85)
+                ax.set_xlabel("Perda descontada acumulada (R$ milhões)",
+                              fontsize=8)
                 v9 = sim_m["VaR"].get("99.90%")
+                v9 = v9 / 1e6 if v9 == v9 else v9
                 if v9 == v9:
                     ax.axvline(v9, color=VERM, ls="--", lw=1.2)
                     ax.text(v9, ax.get_ylim()[1] * 0.9, " VaR 99,9%",
@@ -1190,8 +1202,8 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   "antes de qualquer agregação.", color=CINZA, secao=sec_ap)
             D.kv([("Linhas", br(g["linhas"], 0)),
                   ("Contrapartes distintas", br(g["contrapartes"], 0)),
-                  ("Exposição total", br(g["ead_total"])),
-                  ("Perda esperada", f"{br(g['el_total'])} "
+                  ("Exposição total (R$ mi)", mi(g["ead_total"])),
+                  ("Perda esperada", f"R$ {mi(g['el_total'])} mi "
                    f"({br(g['el_pct'], 3, pct=True)} da severidade)"),
                   ("PD média ponderada", br(g["pd_media_ponderada"], 3, pct=True)),
                   ("LGD média ponderada", br(g["lgd_media_ponderada"], 3, pct=True)),
@@ -1210,21 +1222,25 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             nu = ds["numericas"]
             if len(nu):
                 pc = lambda var: var in ("PD", "LGD", "LTV")
+
+                def fv(v, var):
+                    if var.startswith("Exposição"):
+                        return br(v / 1e3, 2)          # por contrato: R$ mil
+                    return br(v, 3, pct=pc(var))
                 D.tabela(["Variável", "n", "Média", "Mín.", "Mediana", "p99", "Máx."],
-                         [[r.variavel, br(r.n, 0),
-                           br(r.media, 3, pct=pc(r.variavel)),
-                           br(r.min, 3, pct=pc(r.variavel)),
-                           br(r.mediana, 3, pct=pc(r.variavel)),
-                           br(r.p99, 3, pct=pc(r.variavel)),
-                           br(r.max, 3, pct=pc(r.variavel))]
+                         [[r.variavel.replace("Exposição (EAD)",
+                                              "Exposição (R$ mil)"), br(r.n, 0),
+                           fv(r.media, r.variavel), fv(r.min, r.variavel),
+                           fv(r.mediana, r.variavel), fv(r.p99, r.variavel),
+                           fv(r.max, r.variavel)]
                           for r in nu.itertuples(index=False)],
                          [0.22, 0.11, 0.13, 0.13, 0.13, 0.14, 0.14],
                          0.022 * (len(nu) + 1), sec_ap)
             for c, (rot, t) in ds["categoricas"].items():
                 D.h2(f"Composição por {rot.lower() if rot != 'Categoria IRB' else rot}",
                      secao=sec_ap)
-                D.tabela([rot, "Linhas", "EAD", "% EAD", "PD média", "% EL"],
-                         [[str(getattr(r, c)), br(r.linhas, 0), br(r.ead),
+                D.tabela([rot, "Linhas", "EAD (R$ mi)", "% EAD", "PD média", "% EL"],
+                         [[str(getattr(r, c)), br(r.linhas, 0), mi(r.ead),
                            br(r.ead_pct, 3, pct=True), br(r.pd_media, 3, pct=True),
                            br(r.el_pct, 3, pct=True)]
                           for r in t.itertuples(index=False)],
