@@ -80,7 +80,7 @@ carteira-credito/
 │   ├── analytics.py        # orquestração dos modelos do Bolder
 │   └── bolder/             # bibliotecas originais do livro (patcheadas*)
 ├── templates/carteira_modelo.csv
-├── data/carteira_teste.csv # 250 contrapartes, 8 graus de rating, EAD 10.000
+├── data/carteira_teste.csv # 250 contrapartes, 8 graus de rating, EAD total R$ 10 bilhões (valores em reais)
 └── output/                 # resultados da rodada de teste
 ```
 

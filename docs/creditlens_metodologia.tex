@@ -31,7 +31,7 @@
 \large Análise Quantitativa de Carteiras de Crédito:\\
 Documentação Metodológica e Estudo de Caso}
 \author{Walter C.~Neto\\[1mm]\small Baseado em D.~J.~Bolder, \emph{Credit-Risk Modelling} (Springer, 2018)}
-\date{Outubro de 2026 --- versão 0.11}
+\date{Outubro de 2026 --- versão 0.12}
 
 \begin{document}
 \maketitle
@@ -449,7 +449,7 @@ em que $L_{(k)}$ é a $k$-ésima menor perda e os índices são arredondados par
 
 \subsection{A carteira}
 
-A base de teste contém $N=250$ contrapartes corporativas distribuídas em oito graus de rating (AAA a C), com exposições log-normais (cauda pesada, como é típico do crédito corporativo), LGD atribuída por classe de garantia e prazos uniformes em $[1,5]$ anos. A Tabela~\ref{tab:resumo} resume o perfil.
+A base de teste contém $N=250$ contrapartes corporativas, com exposição total de R\$~10~bilhões, distribuídas em oito graus de rating (AAA a C), com exposições log-normais (cauda pesada, como é típico do crédito corporativo), LGD atribuída por classe de garantia e prazos uniformes em $[1,5]$ anos. A Tabela~\ref{tab:resumo} resume o perfil. Neste estudo de caso, os valores monetários estão em \textbf{R\$ milhões}.
 
 \begin{table}[htb]
 \centering\small
@@ -484,7 +484,7 @@ A análise utilizou $M=100\,000$ simulações, semente 42, alvo de correlação 
 
 \begin{table}[htb]
 \centering\small
-\caption{Medidas de risco por modelo (unidades monetárias; $M=100\,000$). Entre parênteses, o VaR 99{,}90\% em percentual da exposição líquida.}
+\caption{Medidas de risco por modelo (R\$ milhões; $M=100\,000$). Entre parênteses, o VaR 99{,}90\% em percentual da exposição líquida.}
 \label{tab:medidas}
 \setlength{\tabcolsep}{4.5pt}
 \begin{tabular}{lrrrrrr}
@@ -581,7 +581,7 @@ A carteira de teste distribui-se em oito setores, com HHI setorial de $0{,}1364$
 
 \begin{table}[htb]
 \centering\small
-\caption{Um fator vs.\ multifatorial setorial: VaR e ES por nível de confiança (unidades monetárias; variação percentual do multifatorial sobre o um fator).}
+\caption{Um fator vs.\ multifatorial setorial: VaR e ES por nível de confiança (R\$ milhões; variação percentual do multifatorial sobre o um fator).}
 \label{tab:mf-comp}
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{lrrrrrrrr}
@@ -701,9 +701,9 @@ Na simulação multiperíodo de $5$ anos ($M=100\,000$, blocos de $10\,000$, est
 \section{Estudo de caso 2: alta granularidade (300 mil contratos)}
 \label{sec:caso2}
 
-O segundo estudo de caso reproduz, ponta a ponta, uma execução no aplicativo sobre a base analítica de demonstração de $300\,000$ contratos --- varejo pulverizado combinado a $300$ operações \emph{corporate} de porte duas ordens de grandeza maior, concentradas em poucos setores --- exercitando a camada de agregação (Seção~\ref{sec:agregacao}), o motor \emph{pooled} com o portfólio completo de modelos, o IRB segmentado por categoria (Seção~\ref{sec:irb}), o IRB segmentado por categoria (Seção~\ref{sec:irb}), o módulo de migração em modo agregado e a bateria de diagnósticos da Seção~\ref{sec:paper}. Parâmetros: $M=100\,000$, semente 42, alvos de correlação de default de $5\%$ (um fator), $8\%$ intra-setor e $3\%$ inter-setor, $\nu=10$, $(w,v)=(0{,}35;\,1{,}2)$ no CreditRisk\textsuperscript{+}, matriz de transição de exemplo e desconto de $10\%$~a.a.
+O segundo estudo de caso reproduz, ponta a ponta, uma execução no aplicativo sobre a base analítica de demonstração de $300\,000$ contratos, com exposição total de R\$~5~bilhões (\emph{ticket} médio de cerca de R\$~15~mil no varejo e de R\$~1{,}8~milhão no \emph{corporate}) --- varejo pulverizado combinado a $300$ operações \emph{corporate} de porte duas ordens de grandeza maior, concentradas em poucos setores --- exercitando a camada de agregação (Seção~\ref{sec:agregacao}), o motor \emph{pooled} com o portfólio completo de modelos, o IRB segmentado por categoria (Seção~\ref{sec:irb}), o IRB segmentado por categoria (Seção~\ref{sec:irb}), o módulo de migração em modo agregado e a bateria de diagnósticos da Seção~\ref{sec:paper}. Parâmetros: $M=100\,000$, semente 42, alvos de correlação de default de $5\%$ (um fator), $8\%$ intra-setor e $3\%$ inter-setor, $\nu=10$, $(w,v)=(0{,}35;\,1{,}2)$ no CreditRisk\textsuperscript{+}, matriz de transição de exemplo e desconto de $10\%$~a.a.
 
-Nota de versão: a versão 0.11 acrescenta a abordagem padronizada e o piso de saída (Seção~\ref{sec:cpad}) e as colunas \texttt{ltv} e \texttt{transactor} à base de demonstração, sorteadas com gerador próprio, sem alterar os demais campos nem os números anteriores deste caso. A versão 0.10 acrescenta as cargas por setor (Seção~\ref{sec:mf}), sem alterar nenhum número deste caso com a calibração uniforme. Na versão 0.9, o multiperíodo agregado passou a sortear os \emph{defaults} de cada grupo fora do limite de granularidade infinita (equação~\eqref{eq:mig-binom}); apenas os números multiperíodo deste caso mudaram. Na versão 0.8, o motor \emph{pooled} passou a representar cada grupo pelo seu número efetivo de contratos e a aplicar o limite de granularidade infinita apenas pelo critério de razão de variâncias (Seção~\ref{sec:agregacao}); os números deste caso foram regenerados com o motor revisado. A partir da versão 0.7, o gerador da base de demonstração usa um gerador aleatório local com semente fixa, de modo que cada geração reproduz exatamente a mesma base --- e esta coincide com o arquivo de teste distribuído. Na versão 0.6, o gerador era global e avançava a cada chamada, e a base descrita neste caso não era reprodutível; todos os números abaixo foram regenerados sobre a base determinística, que passa a trazer também a categoria IRB de cada contrato: o varejo pulverizado repartido entre demais varejo ($55\%$), rotativo qualificado ($30\%$) e residencial ($15\%$), e as operações \emph{corporate} entre atacado ($70\%$) e SME ($30\%$, com receita bruta entre R\$~15 e 300 milhões). A categoria é sorteada com gerador próprio, sem alterar nenhum outro campo da base.
+Nota de versão: a partir da versão 0.12, as bases de demonstração estão em reais --- R\$~5~bilhões nesta base e R\$~10~bilhões na de teste ---, e os valores deste caso são apresentados em R\$ milhões; percentuais e razões não mudam, porque todas as medidas são proporcionais à escala. A versão 0.11 acrescenta a abordagem padronizada e o piso de saída (Seção~\ref{sec:cpad}) e as colunas \texttt{ltv} e \texttt{transactor} à base de demonstração, sorteadas com gerador próprio, sem alterar os demais campos nem os números anteriores deste caso. A versão 0.10 acrescenta as cargas por setor (Seção~\ref{sec:mf}), sem alterar nenhum número deste caso com a calibração uniforme. Na versão 0.9, o multiperíodo agregado passou a sortear os \emph{defaults} de cada grupo fora do limite de granularidade infinita (equação~\eqref{eq:mig-binom}); apenas os números multiperíodo deste caso mudaram. Na versão 0.8, o motor \emph{pooled} passou a representar cada grupo pelo seu número efetivo de contratos e a aplicar o limite de granularidade infinita apenas pelo critério de razão de variâncias (Seção~\ref{sec:agregacao}); os números deste caso foram regenerados com o motor revisado. A partir da versão 0.7, o gerador da base de demonstração usa um gerador aleatório local com semente fixa, de modo que cada geração reproduz exatamente a mesma base --- e esta coincide com o arquivo de teste distribuído. Na versão 0.6, o gerador era global e avançava a cada chamada, e a base descrita neste caso não era reprodutível; todos os números abaixo foram regenerados sobre a base determinística, que passa a trazer também a categoria IRB de cada contrato: o varejo pulverizado repartido entre demais varejo ($55\%$), rotativo qualificado ($30\%$) e residencial ($15\%$), e as operações \emph{corporate} entre atacado ($70\%$) e SME ($30\%$, com receita bruta entre R\$~15 e 300 milhões). A categoria é sorteada com gerador próprio, sem alterar nenhum outro campo da base.
 
 \subsection{Fluxo de uso}
 
@@ -716,37 +716,37 @@ salva também a \texttt{carteira\_agregada.csv}, que pode ser carregada no aplic
 
 \subsection{Agregação}
 
-A base foi reduzida a \textbf{440 linhas} --- $200$ grandes exposições e $240$ buckets GH$\times$setor$\times$categoria IRB --- em segundos, com \textbf{perda esperada de $1\,180{,}797$ preservada exatamente} (diferença nula entre a base analítica e a agregada), exposição líquida total de $44\,959{,}348$, $9{,}671\%$ da exposição nas grandes e CV de PD intra-bucket máximo de $0{,}463$, dentro do padrão de homogeneidade. O número efetivo mediano dos grupos é $189{,}331$ --- $0{,}375$ vez o número de contratos, efeito da dispersão das severidades dentro de cada grupo ---, e o critério de regime da Seção~\ref{sec:agregacao} enviou $208$ grupos à Binomial condicional e apenas $9$ ao limite de granularidade infinita (limiar $n^{\mathrm{eff}}>1\,900$ para $\rho_D=5\%$), além de $223$ linhas no regime de Bernoulli. A calibração produziu $\rho=22{,}971\%$ de correlação de ativos no modelo de um fator, $(\rho_S,\rho_G)=(31{,}821\%,\,15{,}612\%)$ no multifatorial e $(a,b)=(0{,}499;\,18{,}501)$ na beta-binomial, para $\bar p=2{,}626\%$.
+A base foi reduzida a \textbf{440 linhas} --- $200$ grandes exposições e $240$ buckets GH$\times$setor$\times$categoria IRB --- em segundos, com \textbf{perda esperada de $59{,}040$ preservada exatamente} (diferença nula entre a base analítica e a agregada), exposição líquida total de $2\,247{,}967$, $9{,}671\%$ da exposição nas grandes e CV de PD intra-bucket máximo de $0{,}463$, dentro do padrão de homogeneidade. O número efetivo mediano dos grupos é $189{,}331$ --- $0{,}375$ vez o número de contratos, efeito da dispersão das severidades dentro de cada grupo ---, e o critério de regime da Seção~\ref{sec:agregacao} enviou $208$ grupos à Binomial condicional e apenas $9$ ao limite de granularidade infinita (limiar $n^{\mathrm{eff}}>1\,900$ para $\rho_D=5\%$), além de $223$ linhas no regime de Bernoulli. A calibração produziu $\rho=22{,}971\%$ de correlação de ativos no modelo de um fator, $(\rho_S,\rho_G)=(31{,}821\%,\,15{,}612\%)$ no multifatorial e $(a,b)=(0{,}499;\,18{,}501)$ na beta-binomial, para $\bar p=2{,}626\%$.
 
 \subsection{Capital: o portfólio de modelos no motor \emph{pooled}}
 
 \begin{table}[htb]
 \centering\small
-\caption{Estudo de caso 2 --- medidas de risco da carteira agregada (motor \emph{pooled}, $M=100\,000$; unidades monetárias; entre parênteses, percentual da exposição líquida).}
+\caption{Estudo de caso 2 --- medidas de risco da carteira agregada (motor \emph{pooled}, $M=100\,000$; R\$ milhões; entre parênteses, percentual da exposição líquida).}
 \label{tab:pooled}
 \setlength{\tabcolsep}{3.5pt}
 \begin{tabular}{lrrrrr}
 \toprule
 Modelo & EL & UL & VaR$_{99\%}$ & VaR$_{99,9\%}$ & ES$_{99,9\%}$ \\
 \midrule
-Binomial independente & 1\,180{,}414 & 67{,}502 & 1\,383{,}234 & 1\,474{,}752 \;(3{,}280\%) & 1\,504{,}837 \\
-CreditRisk\textsuperscript{+} (1 fator) & 1\,181{,}171 & 383{,}037 & 2\,512{,}681 & 3\,332{,}486 \;(7{,}412\%) & 3\,652{,}816 \\
-Beta-binomial (\emph{mixture}) & 1\,181{,}927 & 1\,612{,}405 & 7\,427{,}852 & 11\,752{,}560 \;(26{,}140\%) & 13\,377{,}801 \\
+Binomial independente & 59{,}021 & 3{,}375 & 69{,}162 & 73{,}738 \;(3{,}280\%) & 75{,}242 \\
+CreditRisk\textsuperscript{+} (1 fator) & 59{,}059 & 19{,}152 & 125{,}634 & 166{,}624 \;(7{,}412\%) & 182{,}641 \\
+Beta-binomial (\emph{mixture}) & 59{,}096 & 80{,}620 & 371{,}393 & 587{,}628 \;(26{,}140\%) & 668{,}890 \\
 \midrule
-Threshold Gaussiano 1F & 1\,179{,}086 & 1\,267{,}851 & 6\,061{,}016 & 10\,076{,}371 \;(22{,}412\%) & 11\,658{,}565 \\
-Threshold t-Student 1F ($\nu=10$) & 1\,178{,}640 & 1\,621{,}542 & 8\,011{,}675 & 14\,862{,}977 \;(33{,}059\%) & 18\,271{,}851 \\
-Threshold Gaussiano multifatorial & 1\,180{,}740 & 1\,098{,}479 & 5\,302{,}155 & 8\,522{,}385 \;(18{,}956\%) & 9\,538{,}662 \\
-Threshold t multifatorial ($\nu=10$) & 1\,181{,}013 & 1\,483{,}514 & 7\,307{,}129 & 13\,580{,}871 \;(30{,}207\%) & 16\,135{,}650 \\
-ASRF (analítico) & 1\,180{,}797 & --- & 7\,828{,}873 & 13\,539{,}617 \;(30{,}115\%) & 16\,062{,}044 \\
+Threshold Gaussiano 1F & 58{,}954 & 63{,}393 & 303{,}051 & 503{,}819 \;(22{,}412\%) & 582{,}928 \\
+Threshold t-Student 1F ($\nu=10$) & 58{,}932 & 81{,}077 & 400{,}584 & 743{,}149 \;(33{,}059\%) & 913{,}593 \\
+Threshold Gaussiano multifatorial & 59{,}037 & 54{,}924 & 265{,}108 & 426{,}119 \;(18{,}956\%) & 476{,}933 \\
+Threshold t multifatorial ($\nu=10$) & 59{,}051 & 74{,}176 & 365{,}356 & 679{,}044 \;(30{,}207\%) & 806{,}783 \\
+ASRF (analítico) & 59{,}040 & --- & 391{,}444 & 676{,}981 \;(30{,}115\%) & 803{,}102 \\
 \midrule
-IRB Bacen ($K^{*}+\E[L]$) & 1\,180{,}797 & --- & --- & 5\,181{,}794 \;(11{,}526\%) & --- \\
+IRB Bacen ($K^{*}+\E[L]$) & 59{,}040 & --- & --- & 259{,}090 \;(11{,}526\%) & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-A Tabela~\ref{tab:pooled} e as Figuras~\ref{fig:pooled} e~\ref{fig:g-var} exibem a assinatura da alta granularidade, ausente por construção numa carteira de poucas centenas de nomes. A primeira leitura é a \emph{morte do risco idiossincrático}: o modelo binomial independente colapsa para UL de $67{,}502$ contra $1\,267{,}851$ do \emph{threshold} gaussiano --- $18{,}782$ vezes menos ---, porque a lei dos grandes números, agindo sobre $300$ mil contratos, elimina praticamente toda a variabilidade não sistemática. O risco remanescente é inteiramente ciclo: a premissa assintótica do ASRF materializada empiricamente, e a razão pela qual capital de carteiras pulverizadas é uma discussão sobre correlação com o fator sistemático, não sobre PDs individuais.
+A Tabela~\ref{tab:pooled} e as Figuras~\ref{fig:pooled} e~\ref{fig:g-var} exibem a assinatura da alta granularidade, ausente por construção numa carteira de poucas centenas de nomes. A primeira leitura é a \emph{morte do risco idiossincrático}: o modelo binomial independente colapsa para UL de $3{,}375$ contra $63{,}393$ do \emph{threshold} gaussiano --- $18{,}782$ vezes menos ---, porque a lei dos grandes números, agindo sobre $300$ mil contratos, elimina praticamente toda a variabilidade não sistemática. O risco remanescente é inteiramente ciclo: a premissa assintótica do ASRF materializada empiricamente, e a razão pela qual capital de carteiras pulverizadas é uma discussão sobre correlação com o fator sistemático, não sobre PDs individuais.
 
-A segunda leitura vem dos \emph{mixture models}, agora disponíveis no motor \emph{pooled}. A beta-binomial, calibrada ao mesmo $\rho_D=5\%$, entrega VaR 99{,}9\% de $11\,752{,}560$ --- $1{,}166$ vez o do \emph{threshold} gaussiano de um fator ---, reproduzindo na alta granularidade a proximidade entre as duas famílias observada no Estudo de caso~1: com o mesmo par $(\bar p,\rho_D)$, a mistura beta e a cópula gaussiana diferem apenas na forma da distribuição do fator. O CreditRisk\textsuperscript{+}, com $(w,v)=(0{,}35;\,1{,}2)$, fica em $3\,332{,}486$ --- $0{,}331$ do gaussiano ---, a mesma ordem relativa do caso granular: os parâmetros escolhidos implicam correlação de default bem abaixo do alvo comum. A EL do CreditRisk\textsuperscript{+} agregado ($1\,181{,}171$) coincide com a analítica dentro do erro de simulação, como antecipado em \eqref{eq:crplus-pooled}. E a diversificação setorial segue material: o multifatorial reduz o VaR 99{,}9\% gaussiano em $15{,}422\%$ ($10\,076{,}371\to8\,522{,}385$).
+A segunda leitura vem dos \emph{mixture models}, agora disponíveis no motor \emph{pooled}. A beta-binomial, calibrada ao mesmo $\rho_D=5\%$, entrega VaR 99{,}9\% de $587{,}628$ --- $1{,}166$ vez o do \emph{threshold} gaussiano de um fator ---, reproduzindo na alta granularidade a proximidade entre as duas famílias observada no Estudo de caso~1: com o mesmo par $(\bar p,\rho_D)$, a mistura beta e a cópula gaussiana diferem apenas na forma da distribuição do fator. O CreditRisk\textsuperscript{+}, com $(w,v)=(0{,}35;\,1{,}2)$, fica em $166{,}624$ --- $0{,}331$ do gaussiano ---, a mesma ordem relativa do caso granular: os parâmetros escolhidos implicam correlação de default bem abaixo do alvo comum. A EL do CreditRisk\textsuperscript{+} agregado ($59{,}059$) coincide com a analítica dentro do erro de simulação, como antecipado em \eqref{eq:crplus-pooled}. E a diversificação setorial segue material: o multifatorial reduz o VaR 99{,}9\% gaussiano em $15{,}422\%$ ($503{,}819\to426{,}119$).
 
 \begin{figure}[htb]
 \centering
@@ -764,31 +764,31 @@ A segunda leitura vem dos \emph{mixture models}, agora disponíveis no motor \em
 
 \subsection{Capital regulatório por categoria}
 
-Com a categoria de cada contrato informada, o capital IRB da carteira soma $4\,000{,}996$ --- $8{,}899\%$ da exposição líquida; RWA equivalente de $50\,012{,}456$ --- e o IRB$+$EL, $5\,181{,}794$ ($11{,}526\%$). A Tabela~\ref{tab:irb-seg} mostra a origem do número: o varejo, com $89{,}499\%$ da exposição líquida, responde por apenas $79{,}155\%$ do capital, e o rotativo qualificado, com correlação fixa de $4\%$ e sem ajuste de maturidade, exige $4{,}814\%$ de capital sobre a sua exposição, contra $18{,}106\%$ no atacado.
+Com a categoria de cada contrato informada, o capital IRB da carteira soma $200{,}050$ --- $8{,}899\%$ da exposição líquida; RWA equivalente de $2\,500{,}623$ --- e o IRB$+$EL, $259{,}090$ ($11{,}526\%$). A Tabela~\ref{tab:irb-seg} mostra a origem do número: o varejo, com $89{,}499\%$ da exposição líquida, responde por apenas $79{,}155\%$ do capital, e o rotativo qualificado, com correlação fixa de $4\%$ e sem ajuste de maturidade, exige $4{,}814\%$ de capital sobre a sua exposição, contra $18{,}106\%$ no atacado.
 
 \begin{table}[htb]
 \centering\small
-\caption{Estudo de caso 2 --- capital IRB por categoria (Resolução BCB 303/2023; unidades monetárias). $R$ é a correlação regulatória média ponderada pela severidade.}
+\caption{Estudo de caso 2 --- capital IRB por categoria (Resolução BCB 303/2023; R\$ milhões). $R$ é a correlação regulatória média ponderada pela severidade.}
 \label{tab:irb-seg}
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{lrrrrr}
 \toprule
 Categoria & Linhas & Exposição líquida & $R$ & Capital & Capital/expos. \\
 \midrule
-Atacado — demais & 175 & 3\,396{,}540 & 18{,}680\% & 614{,}967 & 18{,}106\% \\
-Atacado — SME & 70 & 1\,324{,}621 & 16{,}313\% & 219{,}060 & 16{,}538\% \\
-Varejo — residencial & 65 & 6\,051{,}430 & 15{,}000\% & 822{,}275 & 13{,}588\% \\
-Varejo — rotativo qualificado & 66 & 12\,124{,}495 & 4{,}000\% & 583{,}620 & 4{,}814\% \\
-Varejo — demais & 64 & 22\,062{,}263 & 10{,}996\% & 1\,761{,}074 & 7{,}982\% \\
+Atacado — demais & 175 & 169{,}827 & 18{,}680\% & 30{,}748 & 18{,}106\% \\
+Atacado — SME & 70 & 66{,}231 & 16{,}313\% & 10{,}953 & 16{,}538\% \\
+Varejo — residencial & 65 & 302{,}571 & 15{,}000\% & 41{,}114 & 13{,}588\% \\
+Varejo — rotativo qualificado & 66 & 606{,}225 & 4{,}000\% & 29{,}181 & 4{,}814\% \\
+Varejo — demais & 64 & 1\,103{,}113 & 10{,}996\% & 88{,}054 & 7{,}982\% \\
 \midrule
-Total & 440 & 44\,959{,}348 & 10{,}385\% & 4\,000{,}996 & 8{,}899\% \\
+Total & 440 & 2\,247{,}967 & 10{,}385\% & 200{,}050 & 8{,}899\% \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-O contrafactual mede o efeito da segmentação: a mesma carteira agregada, tratada inteiramente como atacado --- o comportamento da versão 0.6 ---, teria capital IRB de $8\,275{,}604$ ($18{,}407\%$), $2{,}068$ vezes o valor correto. Em carteiras de varejo, a categoria não é um refinamento: é a diferença entre o capital regulatório e o dobro dele. O ajuste de granularidade é de apenas $10{,}104$ --- ante $91{,}760$ na carteira de 250 nomes --- porque os grupos têm granularidade interna elevada ($C_g^2/n_g^{\mathrm{eff}}$ pequeno) e o ajuste passa a medir somente as $200$ exposições nominais.
+O contrafactual mede o efeito da segmentação: a mesma carteira agregada, tratada inteiramente como atacado --- o comportamento da versão 0.6 ---, teria capital IRB de $413{,}780$ ($18{,}407\%$), $2{,}068$ vezes o valor correto. Em carteiras de varejo, a categoria não é um refinamento: é a diferença entre o capital regulatório e o dobro dele. O ajuste de granularidade é de apenas $0{,}505$ --- ante $91{,}760$ na carteira de 250 nomes --- porque os grupos têm granularidade interna elevada ($C_g^2/n_g^{\mathrm{eff}}$ pequeno) e o ajuste passa a medir somente as $200$ exposições nominais.
 
-\paragraph{Abordagem padronizada e piso de saída.} Na base analítica, o gerador da demonstração informa o LTV de cada financiamento residencial (uniforme entre 30\% e 105\%) e marca como \emph{transactor} 35\% dos contratos de rotativo; as $220$ exposições de atacado não informam receita e recebem $100\%$, e as $80$ SME, sem ativo total, são tratadas como PME ($85\%$). O RWA$_{\mathrm{CPAD}}$ da carteira é $68\,811{,}398$ (FPR médio de $68{,}811\%$), e a soma contrato a contrato coincide com a da carteira agregada. A Tabela~\ref{tab:irb-cpad} compara as abordagens.
+\paragraph{Abordagem padronizada e piso de saída.} Na base analítica, o gerador da demonstração informa o LTV de cada financiamento residencial (uniforme entre 30\% e 105\%) e marca como \emph{transactor} 35\% dos contratos de rotativo; as $220$ exposições de atacado não informam receita e recebem $100\%$, e as $80$ SME, sem ativo total, são tratadas como PME ($85\%$). O RWA$_{\mathrm{CPAD}}$ da carteira é $3\,440{,}570$ (FPR médio de $68{,}811\%$), e a soma contrato a contrato coincide com a da carteira agregada. A Tabela~\ref{tab:irb-cpad} compara as abordagens.
 
 \begin{table}[H]
 \centering\small
@@ -799,18 +799,18 @@ O contrafactual mede o efeito da segmentação: a mesma carteira agregada, trata
 \toprule
 Categoria & RWA IRB & RWA padronizado & IRB / padronizado \\
 \midrule
-Atacado --- demais & 7\,687{,}092 & 7\,747{,}233 & 0{,}992 \\
-Atacado --- SME & 2\,738{,}249 & 2\,437{,}014 & 1{,}124 \\
-Varejo --- demais & 22\,013{,}428 & 36\,789{,}807 & 0{,}598 \\
-Varejo --- residencial & 10\,278{,}433 & 4\,474{,}950 & 2{,}297 \\
-Varejo --- rotativo qualificado & 7\,295{,}254 & 17\,362{,}394 & 0{,}420 \\
+Atacado --- demais & 384{,}355 & 387{,}362 & 0{,}992 \\
+Atacado --- SME & 136{,}912 & 121{,}851 & 1{,}124 \\
+Varejo --- demais & 1\,100{,}671 & 1\,839{,}490 & 0{,}598 \\
+Varejo --- residencial & 513{,}922 & 223{,}747 & 2{,}297 \\
+Varejo --- rotativo qualificado & 364{,}763 & 868{,}120 & 0{,}420 \\
 \midrule
-Total & 50\,012{,}456 & 68\,811{,}398 & 0{,}727 \\
+Total & 2\,500{,}623 & 3\,440{,}570 & 0{,}727 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-O RWA dos modelos internos corresponde a $72{,}680\%$ do padronizado --- a apenas $0{,}180$ ponto percentual do piso. O piso, de $49\,888{,}263$, não é vinculante, mas a folga é mínima: uma redução de $0{,}248\%$ no RWA IRB o tornaria vinculante. A decomposição explica a proximidade. O modelo interno poupa capital no varejo pulverizado (razão de $0{,}598$ no demais varejo e $0{,}420$ no rotativo, onde a correlação regulatória de 4\% contrasta com os fatores de 45\% a 75\%), e a economia é parcialmente devolvida no imobiliário residencial, onde o IRB exige mais que o dobro do padronizado: a correlação de 15\% com LGD média de 45\% pesa mais que os fatores de 20\% a 70\% por LTV. Em carteiras reais, a LGD de financiamentos residenciais é tipicamente bem menor, e a razão se inverteria; o resultado ilustra por que a comparação por categoria é a leitura relevante para o validador --- é nela que aparecem os parâmetros que sustentam, ou ameaçam, o benefício dos modelos internos.
+O RWA dos modelos internos corresponde a $72{,}680\%$ do padronizado --- a apenas $0{,}180$ ponto percentual do piso. O piso, de $2\,494{,}413$, não é vinculante, mas a folga é mínima: uma redução de $0{,}248\%$ no RWA IRB o tornaria vinculante. A decomposição explica a proximidade. O modelo interno poupa capital no varejo pulverizado (razão de $0{,}598$ no demais varejo e $0{,}420$ no rotativo, onde a correlação regulatória de 4\% contrasta com os fatores de 45\% a 75\%), e a economia é parcialmente devolvida no imobiliário residencial, onde o IRB exige mais que o dobro do padronizado: a correlação de 15\% com LGD média de 45\% pesa mais que os fatores de 20\% a 70\% por LTV. Em carteiras reais, a LGD de financiamentos residenciais é tipicamente bem menor, e a razão se inverteria; o resultado ilustra por que a comparação por categoria é a leitura relevante para o validador --- é nela que aparecem os parâmetros que sustentam, ou ameaçam, o benefício dos modelos internos.
 
 \subsection{Setores}
 
@@ -825,9 +825,9 @@ A decomposição setorial (Figura~\ref{fig:g-setores}) mostra razões risco/expo
 
 \subsection{Migração: ECL e capital multiperíodo}
 
-Com a matriz de transição de exemplo e desconto de $10\%$~a.a., o ECL de 12 meses da carteira agregada é de $1\,029{,}833$ e o \emph{lifetime}, de $3\,323{,}958$ --- \textbf{razão de $3{,}228$} ---, com os graus especulativos dominando ambos (Figura~\ref{fig:g-mig}). Vale registrar a reconciliação entre as duas óticas: o ECL 12m ($1\,029{,}833$) difere da EL da carteira ($1\,180{,}797$) porque a matriz opera com a PD \emph{do grau}, enquanto a EL usa a PD ponderada de cada bucket --- a distância entre os dois números mede, na prática, a dispersão de PD dentro dos graus.
+Com a matriz de transição de exemplo e desconto de $10\%$~a.a., o ECL de 12 meses da carteira agregada é de $51{,}492$ e o \emph{lifetime}, de $166{,}198$ --- \textbf{razão de $3{,}228$} ---, com os graus especulativos dominando ambos (Figura~\ref{fig:g-mig}). Vale registrar a reconciliação entre as duas óticas: o ECL 12m ($51{,}492$) difere da EL da carteira ($59{,}040$) porque a matriz opera com a PD \emph{do grau}, enquanto a EL usa a PD ponderada de cada bucket --- a distância entre os dois números mede, na prática, a dispersão de PD dentro dos graus.
 
-No capital multiperíodo --- cinco anos, estrutura multifatorial setorial, matriz condicional da equação~\eqref{eq:mig-pooled} ---, a perda descontada acumulada tem $\E[L]=4\,499{,}808$ (ante $4\,497{,}405$ da esperança analítica da matriz descontada: desvio de $+0{,}053\%$, a verificação de sanidade do motor), $\VaR_{99,9\%}=13\,422{,}210$ ($29{,}854\%$ da exposição líquida) e $\ES_{99,9\%}=14\,639{,}607$. Com o sorteio binomial dos \emph{defaults} nos $208$ grupos fora do limite de granularidade infinita (versão 0.9), a perda inesperada passa de $1\,987{,}371$ para $1\,996{,}266$ ($+0{,}448\%$); a variação do VaR 99{,}9\% ($-0{,}666\%$) está dentro do erro de Monte Carlo do quantil. O efeito é pequeno porque, nesta carteira, o risco idiossincrático já está concentrado nas $200$ exposições nominais, simuladas contrato a contrato, e os grupos têm $n^{\mathrm{eff}}$ mediano de $189$ --- o teste de aceitação da Seção~\ref{sec:migracao} mostra que, em grupos pequenos, a correção é material. Duas leituras fecham o caso: o VaR de cinco anos é $1{,}575$ vez o de um ano do mesmo modelo --- não cinco vezes, pela diversificação \emph{temporal} e pelo desconto, o risco que o ajuste de maturidade do IRB aproxima por fórmula e que aqui aparece medido por simulação --- e a fração de contratos em default cresce de $2{,}537\%$ para $2{,}692\%$ ao ano ao longo do horizonte: a deriva de migração da carteira, invisível a qualquer análise de 12 meses.
+No capital multiperíodo --- cinco anos, estrutura multifatorial setorial, matriz condicional da equação~\eqref{eq:mig-pooled} ---, a perda descontada acumulada tem $\E[L]=224{,}990$ (ante $224{,}870$ da esperança analítica da matriz descontada: desvio de $+0{,}053\%$, a verificação de sanidade do motor), $\VaR_{99,9\%}=671{,}111$ ($29{,}854\%$ da exposição líquida) e $\ES_{99,9\%}=731{,}980$. Com o sorteio binomial dos \emph{defaults} nos $208$ grupos fora do limite de granularidade infinita (versão 0.9), a perda inesperada sobe $0{,}448\%$ em relação à representação apenas por frações, para $99{,}813$; a variação do VaR 99{,}9\% ($-0{,}666\%$) está dentro do erro de Monte Carlo do quantil. O efeito é pequeno porque, nesta carteira, o risco idiossincrático já está concentrado nas $200$ exposições nominais, simuladas contrato a contrato, e os grupos têm $n^{\mathrm{eff}}$ mediano de $189$ --- o teste de aceitação da Seção~\ref{sec:migracao} mostra que, em grupos pequenos, a correção é material. Duas leituras fecham o caso: o VaR de cinco anos é $1{,}575$ vez o de um ano do mesmo modelo --- não cinco vezes, pela diversificação \emph{temporal} e pelo desconto, o risco que o ajuste de maturidade do IRB aproxima por fórmula e que aqui aparece medido por simulação --- e a fração de contratos em default cresce de $2{,}537\%$ para $2{,}692\%$ ao ano ao longo do horizonte: a deriva de migração da carteira, invisível a qualquer análise de 12 meses.
 
 \begin{figure}[htb]
 \centering

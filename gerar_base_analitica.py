@@ -2,6 +2,8 @@
 Gera uma base ANALÍTICA de demonstração: 300 mil contratos, mistura de
 varejo pulverizado e corporate, para exercitar a camada de agregação.
 
+Valores monetários em reais (R$): exposição total de R$ 5 bilhões.
+
 Composição:
   - ~299.700 contratos de varejo/PME: exposições log-normais pequenas,
     8 bandas de rating (GH = rating), 8 setores;
@@ -17,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 SEED = 20260716
+TOTAL_REAIS = 5_000_000_000.0           # exposição total da base, em R$
 RATINGS = ["AAA", "AA", "A", "BBB", "BB", "B", "CCC", "C"]
 PD_CENTRAL = np.array([0.0003, 0.0008, 0.0020, 0.0050, 0.0150,
                        0.0450, 0.1200, 0.2500])
@@ -79,9 +82,10 @@ def gerar(n_varejo=299_700, n_corp=300, path="data/base_analitica_demo.csv",
     rot = seg == "varejo_rotativo"
     df["transactor"] = np.where(rot, (rng_cpad.random(len(df)) < 0.35)
                                 .astype(int), 0)
-    # normaliza o total para 100.000 (unidades monetárias)
+    # normaliza o total para R$ 5 bilhões (valores em reais): ticket médio
+    # de ~R$ 15 mil no varejo e ~R$ 1,8 milhão no corporate
     df["exposicao"] = (df["exposicao"] / df["exposicao"].sum()
-                       * 100_000).round(6)
+                       * TOTAL_REAIS).round(2)
     if path:
         df.to_csv(path, index=False)
         print(f"Base analítica: {path} ({len(df):,} linhas, "

@@ -181,7 +181,7 @@ def _fig_hierarquia(med, total, col999, path):
     plt.close(fig)
 
 
-def _fig_distribuicoes(dists, total, path):
+def _fig_distribuicoes(dists, total, path, unidade="unidades monetárias"):
     xmax = max(np.quantile(d, 0.999) for d in dists.values())
     bins = np.linspace(0, xmax, 90)
     picos = {k: float(np.histogram(d, bins=bins, density=True)[0].max())
@@ -201,7 +201,7 @@ def _fig_distribuicoes(dists, total, path):
     ax[0].set_xlim(0, xmax)
     ax[0].set_ylim(0, ylim)
     ax[0].set_title("Corpo (até 99,9%)", fontsize=10)
-    ax[0].set_xlabel("Perda (unidades monetárias)")
+    ax[0].set_xlabel(f"Perda ({unidade})")
     ax[0].legend(fontsize=7)
     ax[1].set_title("Cauda P(L > x)", fontsize=10)
     ax[1].set_ylim(1e-5, 1)
@@ -214,7 +214,7 @@ def _fig_distribuicoes(dists, total, path):
     plt.close(fig)
 
 
-def _fig_multiperiodo(sim, path):
+def _fig_multiperiodo(sim, path, unidade="unidades monetárias"):
     fig, ax = plt.subplots(figsize=(7.2, 3.2))
     ax.hist(sim["perdas"], bins=80, density=True, color="#12395B",
             alpha=0.85)
@@ -223,7 +223,7 @@ def _fig_multiperiodo(sim, path):
         ax.axvline(v9, color="#B02418", ls="--", lw=1.2)
         ax.text(v9, ax.get_ylim()[1] * 0.9, " VaR 99,9%", fontsize=8,
                 color="#B02418")
-    ax.set_xlabel("Perda descontada acumulada (unidades monetárias)")
+    ax.set_xlabel(f"Perda descontada acumulada ({unidade})")
     ax.spines[["top", "right"]].set_visible(False)
     fig.tight_layout()
     fig.savefig(path)
@@ -401,6 +401,7 @@ def montar_tex(port, results, mig=None, nome_base="", extra=None,
     prm = results.get("parametros", {})
     med = results["medidas"]
     total = resumo["exposicao_liquida_total"]
+    unid = (extra or {}).get("unidade") or "unidades monetárias da base"
     pooled = bool(results.get("pooled", False)) or any(
         "(pooled)" in m for m in med["modelo"])
     cal = results.get("calibracao_gaussiana", {})
@@ -669,9 +670,9 @@ A matriz de transição anual $P$ fornece a estrutura a termo de PD pelas potên
     figs.append("hierarquia.pdf")
     T.append(r"""
 \section{Resultados por modelo}
-A Tabela~\ref{tab:medidas} reporta as medidas de risco de cada modelo, nas unidades monetárias da base de entrada; a Tabela~\ref{tab:relativos} normaliza as caudas, e a Figura~\ref{fig:hier} ordena os modelos pelo VaR 99{,}90\%. A hierarquia reflete a estrutura de dependência de cada modelo sob a calibração comum.
+A Tabela~\ref{tab:medidas} reporta as medidas de risco de cada modelo, em """ + tx(unid) + r""" (unidade da coluna \texttt{exposicao} informada no aplicativo); a Tabela~\ref{tab:relativos} normaliza as caudas, e a Figura~\ref{fig:hier} ordena os modelos pelo VaR 99{,}90\%. A hierarquia reflete a estrutura de dependência de cada modelo sob a calibração comum.
 """ + _tabela(cab, lin, "l" + "r" * (len(cols) - 1),
-              "Medidas de risco por modelo (unidades monetárias).", "tab:medidas")
+              "Medidas de risco por modelo (" + tx(unid) + ").", "tab:medidas")
              + _tabela(["Modelo", r"VaR/expos.", r"VaR/EL", r"ES/VaR", r"$\times$ Gauss 1F"],
                        lin2, "lrrrr",
                        "Indicadores relativos no quantil 99{,}90\\%.", "tab:relativos")
@@ -685,7 +686,7 @@ A Tabela~\ref{tab:medidas} reporta as medidas de risco de cada modelo, nas unida
 """)
     dists = results.get("distribuicoes") or {}
     if dists:
-        _fig_distribuicoes(dists, total, os.path.join(figdir, "distribuicoes.pdf"))
+        _fig_distribuicoes(dists, total, os.path.join(figdir, "distribuicoes.pdf"), unid)
         figs.append("distribuicoes.pdf")
         T.append(r"""
 \begin{figure}[H]
@@ -811,7 +812,7 @@ A Tabela~\ref{{tab:setores}} decompõe a cauda por setor pela alocação de Eule
 """ + _tabela(["Indicador", "Valor"], lm, "lr",
               "Perda esperada de crédito e capital multiperíodo.", "tab:mig", H=True))
         if sim_m and len(np.atleast_1d(sim_m.get("perdas", []))) > 10:
-            _fig_multiperiodo(sim_m, os.path.join(figdir, "multiperiodo.pdf"))
+            _fig_multiperiodo(sim_m, os.path.join(figdir, "multiperiodo.pdf"), unid)
             figs.append("multiperiodo.pdf")
             T.append(r"""
 \begin{figure}[H]

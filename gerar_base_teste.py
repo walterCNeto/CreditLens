@@ -4,7 +4,8 @@ Gera uma carteira de teste sintética no padrão CreditLens.
 250 contrapartes corporativas, escala de rating interna de 8 graus
 (AAA→C) com PDs crescentes, exposições log-normais (carteira
 concentrada, como é típico em crédito corporativo), LGD por classe
-de garantia e prazos entre 1 e 5 anos.
+de garantia e prazos entre 1 e 5 anos. Valores em reais (R$): exposição
+total de R$ 10 bilhões.
 """
 import numpy as np
 import pandas as pd
@@ -28,7 +29,8 @@ def gerar(n=N, path="data/carteira_teste.csv"):
 
     # exposições log-normais — cauda pesada, carteira concentrada
     ead = RNG.lognormal(mean=2.2, sigma=1.1, size=n)
-    ead = np.round(ead / ead.sum() * 10_000, 4)  # normaliza p/ total 10.000 (R$ mi)
+    # normaliza p/ total de R$ 10 bilhões (valores em reais; média R$ 40 mi)
+    ead = np.round(ead / ead.sum() * 10_000, 4) * 1_000_000
 
     classes = RNG.choice(list(LGD_CLASSES.keys()), size=n, p=[0.35, 0.45, 0.20])
     lgd = np.array([LGD_CLASSES[k] for k in classes]) + RNG.normal(0, 0.05, n)

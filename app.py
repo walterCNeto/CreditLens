@@ -82,9 +82,12 @@ with st.sidebar:
     st.subheader("Capital padronizado")
     _unid = st.selectbox("Unidade monetária da coluna `exposicao`",
                          ["R$", "R$ mil", "R$ milhões"], index=0,
-                         help="Usada nos limites em reais do varejo "
-                              "(art. 46 da Res. BCB 229: R$ 5 milhões por "
-                              "contraparte).")
+                         help="R$: valores em reais (padrão; as bases de "
+                              "demonstração estão em reais). Escolha R$ mil "
+                              "ou R$ milhões se a sua base vier nessa escala. "
+                              "Usada nos limites em reais do varejo (art. 46 "
+                              "da Res. BCB 229: R$ 5 milhões por contraparte) "
+                              "e para identificar a unidade no paper.")
     escala_reais = {"R$": 1.0, "R$ mil": 1e3, "R$ milhões": 1e6}[_unid]
 
 # ---------------- 1. Base de dados (só a escolha; nada é processado) --------
@@ -438,6 +441,7 @@ if st.button("▶ Executar", type="primary", disabled=_bloqueio):
         "pooled_mode": pooled_mode, "cfg": cfg_atual,
         "executado_em": _dt.datetime.now().strftime("%H:%M:%S"),
         "params_ui": {"contrib_alpha": contrib_alpha, "contrib_S": contrib_S,
+                      "unidade": _unid,
                       "max_grandes": int(max_grandes), "horizonte": horizonte,
                       "taxa_desc": taxa_desc},
         "nome_base": fonte["nome"],

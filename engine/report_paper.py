@@ -930,7 +930,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   "ES 99,9%"][:len(cols)], linhas,
                  [0.30] + [0.1167] * (len(cols) - 1),
                  0.030 + 0.0215 * len(linhas), "Resultados")
-        D.par("Valores nas unidades monetárias da base de entrada, três "
+        D.par(f"Valores em {(extra or {}).get('unidade') or 'unidades monetárias da base'}, três "
               "casas decimais. A hierarquia das caudas reflete a estrutura "
               "de dependência de cada modelo sob a calibração comum.",
               color=CINZA)
