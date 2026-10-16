@@ -112,12 +112,19 @@ st.caption("Escolha a carteira e, se quiser, a matriz de transição. Nada é "
            "calculado até você clicar em **▶ Executar** (passo 3). Valores "
            "monetários em reais (R\\$); resultados em R\\$ milhões.")
 
-_cc, _cm = st.columns([3, 2], gap="medium")
+# cartões de mesma largura e mesma altura (o menor estica até o maior)
+st.markdown("""<style>
+div[data-testid="stLayoutWrapper"]:has(> .st-key-cartao_carteira),
+div[data-testid="stLayoutWrapper"]:has(> .st-key-cartao_matriz) {
+    flex: 1 1 auto; display: flex; flex-direction: column; }
+.st-key-cartao_carteira, .st-key-cartao_matriz { flex: 1 1 auto; }
+</style>""", unsafe_allow_html=True)
+_cc, _cm = st.columns(2, gap="medium")
 
 # --- cartão: carteira ---
 _ORIG_ARQ, _ORIG_EX = "Enviar arquivo", "Usar exemplo"
 _TIPO_CP, _TIPO_CT = "Por contraparte", "Por contrato"
-with _cc, st.container(border=True):
+with _cc, st.container(border=True, key="cartao_carteira"):
     st.markdown("##### :material/account_balance: Carteira de crédito")
     tipo_sel = _escolha("Granularidade da base", [_TIPO_CP, _TIPO_CT],
                         "tipo_base", _TIPO_CP)
@@ -170,7 +177,7 @@ with _cc, st.container(border=True):
                        "dl_mod_carteira")
 
 # --- cartão: matriz de transição ---
-with _cm, st.container(border=True):
+with _cm, st.container(border=True, key="cartao_matriz"):
     st.markdown("##### :material/swap_vert: Migração e ECL *(opcional)*")
     mtx_sel = st.segmented_control(
         "Matriz de transição anual", [_ORIG_ARQ, _ORIG_EX], default=None,
