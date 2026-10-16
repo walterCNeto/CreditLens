@@ -62,7 +62,8 @@ st.caption(
 
 # ---------------- Sidebar: parâmetros ----------------
 with st.sidebar:
-    st.header("Parâmetros")
+    st.header("Parâmetros dos modelos")
+    st.caption("Os dados de entrada ficam na área central (passo 1).")
     M = st.select_slider("Simulações Monte Carlo (M)",
                          options=[10_000, 50_000, 100_000, 250_000],
                          value=100_000)
@@ -79,18 +80,6 @@ with st.sidebar:
     rho_inter = st.slider("ρ default alvo inter-setor", 0.01, 0.30, 0.03, 0.01)
     if rho_inter > rho_intra:
         st.error("O ρ inter-setor não pode exceder o intra-setor.")
-    st.subheader("Migração e ECL (multiperíodo)")
-    mtx_up = st.file_uploader("Matriz de transição anual (CSV)", type=["csv"],
-                              key="mtx",
-                              help="Linhas: rating de origem; colunas: rating "
-                                   "de destino; último estado = default. "
-                                   "Layout e exemplo em 'Layouts e modelos de "
-                                   "arquivo', na seção 1.")
-    usar_mtx_demo = st.checkbox("Usar matriz de exemplo", value=False)
-    horizonte = st.slider("Horizonte multiperíodo (anos)", 1, 10, 5)
-    taxa_desc = st.slider("Taxa de desconto (a.a.)", 0.0, 0.30, 0.10, 0.01)
-    block_sz = st.select_slider("Bloco de simulação (memória)",
-                                options=[2_000, 5_000, 10_000, 25_000], value=10_000)
     st.subheader("Contribuições de risco")
     run_contrib = st.checkbox("Calcular contribuições de VaR/ES", value=True)
     contrib_S = st.slider("Iterações da decomposição (S)", 5, 30, 10)
@@ -99,16 +88,125 @@ with st.sidebar:
     # entrada sempre em reais (R$); relatórios em R$ milhões
     _unid, escala_reais = "R$", 1.0
 
-# ---------------- 1. Base de dados (só a escolha; nada é processado) --------
-st.subheader("1. Escolha a base")
-st.caption("Configure a base, os parâmetros da barra lateral e, se quiser, as "
-           "correlações por setor. Nada é calculado até você clicar em "
-           "**▶ Executar** — então o pipeline inteiro roda com a configuração "
-           "escolhida.")
-# ---- layouts e arquivos-modelo ----
-with st.expander("📄 Layouts e modelos de arquivo (baixe um exemplo preenchido)"):
+# ---------------- 1. Dados de entrada (só a escolha; nada é processado) ----
+_TDIR = os.path.join(os.path.dirname(__file__), "templates")
+_DEMO250 = os.path.join(os.path.dirname(__file__), "data", "carteira_teste.csv")
+_MTX_DEMO = os.path.join(_TDIR, "matriz_migracao_modelo.csv")
+
+
+def _baixar_modelo(arquivo, rotulo, key):
+    st.download_button(rotulo, open(os.path.join(_TDIR, arquivo), "rb").read(),
+                       file_name=arquivo, mime="text/csv", key=key,
+                       type="tertiary", icon=":material/download:")
+
+
+def _escolha(rotulo, opcoes, key, default):
+    """Seletor segmentado que nunca fica vazio."""
+    v = st.segmented_control(rotulo, opcoes, default=default, key=key,
+                             selection_mode="single")
+    return v if v is not None else default
+
+
+st.subheader("1. Dados de entrada")
+st.caption("Escolha a carteira e, se quiser, a matriz de transição. Nada é "
+           "calculado até você clicar em **▶ Executar** (passo 3). Valores "
+           "monetários em reais (R\\$); resultados em R\\$ milhões.")
+
+_cc, _cm = st.columns([3, 2], gap="medium")
+
+# --- cartão: carteira ---
+_ORIG_ARQ, _ORIG_EX = "Enviar arquivo", "Usar exemplo"
+_TIPO_CP, _TIPO_CT = "Por contraparte", "Por contrato"
+with _cc, st.container(border=True):
+    st.markdown("##### :material/account_balance: Carteira de crédito")
+    t1, t2 = st.columns(2)
+    with t1:
+        tipo_sel = _escolha("Granularidade da base", [_TIPO_CP, _TIPO_CT],
+                            "tipo_base", _TIPO_CP)
+    with t2:
+        orig_sel = _escolha("Origem", [_ORIG_ARQ, _ORIG_EX], "orig_base",
+                            _ORIG_ARQ)
+    analitica = tipo_sel == _TIPO_CT
+    if analitica:
+        st.caption("Uma linha por contrato, até milhões de linhas. Ao "
+                   "executar, as maiores exposições passam individualmente "
+                   "e o restante é agregado em grupos homogêneos (GH × setor "
+                   "× categoria IRB), preservando a perda esperada.")
+    else:
+        st.caption("Uma linha por contraparte, até alguns milhares de nomes; "
+                   "os modelos rodam nome a nome.")
+
+    fonte = None        # descreve a escolha; o conteúdo só é processado ao executar
+    if orig_sel == _ORIG_ARQ:
+        _up = st.file_uploader(
+            "CSV da base analítica" if analitica else "CSV da carteira",
+            type=["csv"], key="up_analitica" if analitica else "up_carteira")
+        if _up is not None:
+            fonte = {"tipo": "analitica" if analitica else "padrao",
+                     "nome": _up.name, "conteudo": _up.getvalue()}
+    else:
+        if analitica:
+            st.info("**Base demo** — 300 mil contratos simulados (R$ 5 bi em 8 setores; "
+                    "varejo, PME e grandes empresas), gerada ao executar.",
+                    icon=":material/dataset:")
+            fonte = {"tipo": "analitica",
+                     "nome": "base analítica demo (300 mil contratos)",
+                     "conteudo": None}
+        else:
+            st.info("**Carteira de teste** — 250 contrapartes em 8 setores "
+                    "(R$ 10 bi).", icon=":material/dataset:")
+            fonte = {"tipo": "padrao",
+                     "nome": "carteira de teste (250 contrapartes)",
+                     "conteudo": None}
+    if analitica:
+        max_grandes = st.number_input(
+            "Máximo de grandes exposições individuais", 0, 2000, 200, 50,
+            help="As maiores exposições ficam fora da agregação, "
+                 "preservando o risco de concentração de nomes.")
+    else:
+        max_grandes = 200
+    if analitica:
+        _baixar_modelo("base_analitica_modelo.csv",
+                       "Baixar modelo de base analítica", "dl_mod_analitica")
+    else:
+        _baixar_modelo("carteira_modelo.csv", "Baixar modelo de carteira",
+                       "dl_mod_carteira")
+
+# --- cartão: matriz de transição ---
+_MTX_NAO = "Não usar"
+with _cm, st.container(border=True):
+    st.markdown("##### :material/swap_vert: Migração e ECL *(opcional)*")
+    mtx_sel = _escolha("Matriz de transição anual",
+                       [_MTX_NAO, _ORIG_ARQ, _ORIG_EX], "orig_mtx", _MTX_NAO)
+    mtx_up, usar_mtx_demo = None, False
+    if mtx_sel == _ORIG_ARQ:
+        mtx_up = st.file_uploader("CSV da matriz de transição", type=["csv"],
+                                  key="mtx")
+    elif mtx_sel == _ORIG_EX:
+        usar_mtx_demo = True
+        st.info("**Matriz de exemplo** — 8 graus (AAA a C) e default.",
+                icon=":material/grid_on:")
+    if mtx_sel == _MTX_NAO:
+        st.caption("Com a matriz, o CreditLens calcula a estrutura a termo "
+                   "de PD, o ECL de 12 meses e *lifetime* (Res. CMN 4.966) "
+                   "e o capital multiperíodo. Exige a coluna `rating`.")
+        horizonte, taxa_desc, block_sz = 5, 0.10, 10_000
+    else:
+        h1, h2 = st.columns(2)
+        horizonte = h1.slider("Horizonte (anos)", 1, 10, 5)
+        taxa_desc = h2.slider("Taxa de desconto (a.a.)", 0.0, 0.30, 0.10,
+                              0.01)
+        block_sz = st.select_slider(
+            "Bloco de simulação (memória)",
+            options=[2_000, 5_000, 10_000, 25_000], value=10_000,
+            help="Cenários simulados por bloco no multiperíodo; blocos "
+                 "menores usam menos memória.")
+    _baixar_modelo("matriz_migracao_modelo.csv",
+                   "Baixar modelo de matriz", "dl_mod_matriz")
+
+with st.expander("Layouts dos arquivos de entrada — dicionário de "
+                 "colunas e exemplos preenchidos", icon=":material/description:"):
     from engine.layouts import dicionario, dicionario_analitica, CARTEIRA, MATRIZ
-    _tdir = os.path.join(os.path.dirname(__file__), "templates")
     st.caption("Convenções: CSV separado por vírgula, decimal com ponto, "
                "UTF-8. Valores monetários **em reais (R$)**, sem escala — "
                "exceto colunas terminadas em `_mi` (R$ milhões). Taxas e "
@@ -123,7 +221,7 @@ with st.expander("📄 Layouts e modelos de arquivo (baixe um exemplo preenchido
                     "O exemplo cobre atacado, PME, instituição financeira, "
                     "varejo (imobiliário, rotativo e demais) e um ativo "
                     "problemático.")
-        _f = os.path.join(_tdir, "carteira_modelo.csv")
+        _f = os.path.join(_TDIR, "carteira_modelo.csv")
         st.download_button("⬇ Baixar modelo de carteira", open(_f, "rb").read(),
                            file_name="carteira_modelo.csv", mime="text/csv")
         st.dataframe(pd.read_csv(_f), hide_index=True, width='stretch')
@@ -137,7 +235,7 @@ with st.expander("📄 Layouts e modelos de arquivo (baixe um exemplo preenchido
                     "perda esperada. O mesmo cliente pode ter vários "
                     "contratos — repita o `id_contraparte`. O modelo traz dois "
                     "clientes com mais de um contrato.")
-        _f = os.path.join(_tdir, "base_analitica_modelo.csv")
+        _f = os.path.join(_TDIR, "base_analitica_modelo.csv")
         st.download_button("⬇ Baixar modelo de base analítica",
                            open(_f, "rb").read(),
                            file_name="base_analitica_modelo.csv", mime="text/csv")
@@ -154,7 +252,7 @@ with st.expander("📄 Layouts e modelos de arquivo (baixe um exemplo preenchido
             "Usada para a estrutura a termo de PD (PDs acumuladas por "
             "potências da matriz), o ECL de 12 meses e *lifetime* e o "
             "capital multiperíodo.")
-        _f = os.path.join(_tdir, "matriz_migracao_modelo.csv")
+        _f = os.path.join(_TDIR, "matriz_migracao_modelo.csv")
         st.download_button("⬇ Baixar modelo de matriz de transição",
                            open(_f, "rb").read(),
                            file_name="matriz_migracao_modelo.csv", mime="text/csv")
@@ -167,38 +265,6 @@ with st.expander("📄 Layouts e modelos de arquivo (baixe um exemplo preenchido
                    "grau.")
         st.markdown("**Regras do layout**")
         st.dataframe(dicionario(MATRIZ), hide_index=True, width='stretch')
-
-col1, col2 = st.columns([2, 1])
-with col1:
-    up = st.file_uploader("Carteira (CSV, uma linha por contraparte)",
-                          type=["csv"])
-with col2:
-    demo = st.checkbox("Usar carteira de teste (250 contrapartes)")
-
-st.markdown("**Ou parta de uma base analítica** (contrato a contrato; será "
-            "agregada em grandes exposições + grupos homogêneos × setor ao executar):")
-ca1, ca2, ca3 = st.columns([2, 1, 1])
-with ca1:
-    up_analitica = st.file_uploader("Base analítica (CSV)", type=["csv"],
-                                    key="analitica")
-with ca2:
-    demo_analitica = st.checkbox("Gerar base analítica demo (300 mil contratos)")
-with ca3:
-    max_grandes = st.number_input("Máx. grandes exposições", 0, 2000, 200, 50)
-
-_DEMO250 = os.path.join(os.path.dirname(__file__), "data", "carteira_teste.csv")
-fonte = None            # descreve a escolha; o conteúdo só é processado ao executar
-if up_analitica is not None:
-    fonte = {"tipo": "analitica", "nome": up_analitica.name,
-             "conteudo": up_analitica.getvalue()}
-elif demo_analitica:
-    fonte = {"tipo": "analitica", "nome": "base analítica demo (300 mil contratos)",
-             "conteudo": None}
-elif up is not None:
-    fonte = {"tipo": "padrao", "nome": up.name, "conteudo": up.getvalue()}
-elif demo:
-    fonte = {"tipo": "padrao", "nome": "carteira de teste (250 contrapartes)",
-             "conteudo": None}
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -255,8 +321,8 @@ def _descrever_base(tipo, nome, conteudo):
 
 
 if fonte is None:
-    st.info("Carregue um CSV (padrão ou base analítica) ou marque uma das "
-            "opções de demonstração para começar.")
+    st.info("Envie o CSV da carteira ou escolha **Usar exemplo** para "
+            "começar.", icon=":material/upload_file:")
     st.stop()
 
 try:
