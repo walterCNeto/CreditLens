@@ -325,22 +325,31 @@ A Tabela~\ref{tab:ap-qual} mostra o preenchimento de cada coluna presente e as v
     # numéricas
     nu = desc["numericas"]
     if len(nu):
+        _rot = {"Exposição (EAD)": "EAD (R\\$ mil)", "PD": "PD (\\%)",
+                "LGD": "LGD (\\%)", "Prazo (anos)": "Prazo (anos)",
+                "LTV": "LTV (\\%)", "Receita bruta (R$ mi)": "Receita (R\\$ mi)"}
+
         def f(v, var):
             if var.startswith("Exposição"):
                 return nb(v / 1e3, 2)          # por contrato: R$ mil
-            pct = var in ("PD", "LGD", "LTV")
-            return nb(v, 3, pct=pct)
-        ln = [[tx(r.variavel.replace("Exposição (EAD)", "Exposição (EAD, R$ mil)")), nb(r.n, 0), f(r.media, r.variavel),
-               f(r.desvio, r.variavel), f(r.min, r.variavel), f(r.p01, r.variavel),
-               f(r.mediana, r.variavel), f(r.p99, r.variavel), f(r.max, r.variavel)]
+            if var in ("PD", "LGD", "LTV"):
+                return nb(v * 100, 3)          # em %, sem o símbolo
+            return nb(v, 3)
+        ln = [[_rot.get(r.variavel, tx(r.variavel)), nb(r.n, 0),
+               f(r.media, r.variavel), f(r.desvio, r.variavel),
+               f(r.min, r.variavel), f(r.p01, r.variavel),
+               f(r.mediana, r.variavel), f(r.p99, r.variavel),
+               f(r.max, r.variavel)]
               for r in nu.itertuples(index=False)]
         T.append(r"""
 \subsection{Variáveis de risco}
-""" + r"{\footnotesize" + _tabela(["Variável", "$n$", "Média", "Desvio", "Mín.",
-                                   "p1", "Mediana", "p99", "Máx."], ln,
-                                  "lrrrrrrrr",
-                                  "Estatísticas das variáveis numéricas por contrato (PD, LGD e LTV em percentual; exposição em R\\$ mil, para que os contratos de varejo não se reduzam a zero na escala de milhões).",
-                                  "tab:ap-num", small=False, H=True) + "}\n")
+""" + r"{\footnotesize\setlength{\tabcolsep}{3.5pt}" + _tabela(
+            ["Variável", "$n$", "Média", "Desvio", "Mín.", "p1", "Mediana",
+             "p99", "Máx."], ln, "lrrrrrrrr",
+            "Estatísticas das variáveis numéricas por contrato. PD, LGD e LTV em percentual; exposição em R\\$ mil, para que os contratos de varejo não se reduzam a zero na escala de milhões.",
+            "tab:ap-num", small=False, H=True).replace(
+                r"\setlength{\tabcolsep}{4pt}", r"\setlength{\tabcolsep}{3pt}")
+            + "}\n")
     # concentração
     lc = [["Índice de Herfindahl--Hirschman (HHI)", nb(cc["hhi"], 6)],
           ["Número efetivo de exposições ($1/\\mathrm{HHI}$)", nb(cc["n_efetivo"])],
