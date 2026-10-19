@@ -140,7 +140,14 @@ def run_full_analysis(
 
     _tick("CreditRisk+ por simulação (Bernoulli)...")
     t0 = time.time()
-    el, ul, var, es = mix.crPlusOneFactor(N, M, crp_w, p, c, crp_v, alphas)
+    # mesmos sorteios de mix.crPlusOneFactor (Bolder), guardando as perdas
+    S_b = np.random.gamma(crp_v, 1 / crp_v, [M])
+    pS_b = np.tile(p, [M, 1]) * np.transpose(
+        np.tile(1 - crp_w + crp_w * S_b, [N, 1]))
+    H_b = np.random.poisson(pS_b, [M, N])
+    loss_cb = np.sort(np.dot(1 * np.greater_equal(H_b, 1), c), axis=None)
+    del S_b, pS_b, H_b
+    el, ul, var, es = util.computeRiskMeasures(M, loss_cb, alphas)
     add_row("CreditRisk+ simulação Bernoulli", el, ul, var, es,
             time.time() - t0)
 
@@ -237,6 +244,9 @@ def run_full_analysis(
     dists["Threshold t-Student 1F"] = np.sort(np.dot(1 * np.less(Yt, Kt), c), axis=None)
     dists["Binomial independente"] = bp.independentBinomialLossDistribution(
         N, Mg, p, c, alphas)
+    _cr_maior_cauda(dists, {"CreditRisk+ simulação Bernoulli": loss_cb,
+                            "CreditRisk+ simulação Poisson": loss_cp},
+                    info_cs, Mg)
     results["distribuicoes"] = dists
 
     # ---------------- Cap. 7: contribuições de risco ----------------
@@ -276,6 +286,23 @@ def run_full_analysis(
 
     results["medidas"] = pd.DataFrame(rows)
     return results
+
+
+def _cr_maior_cauda(dists, sims, info_cs, Mg=50_000):
+    """Entre as versões do CreditRisk+ com distribuição completa (as duas
+    simulações e a clássica), leva aos gráficos a de maior VaR 99,9%."""
+    from .crplus_csfp import amostra_pmf
+    cand = {k: np.asarray(v, float) for k, v in sims.items()
+            if v is not None}
+    if info_cs is not None:
+        cand["CreditRisk+ clássico (CSFP)"] = amostra_pmf(
+            info_cs["pmf"], info_cs["L0"], Mg)
+    if not cand:
+        return None
+    nome = max(cand, key=lambda k: float(np.quantile(cand[k], 0.999)))
+    d = np.sort(cand[nome])
+    dists[nome] = d[::max(1, len(d) // Mg)]
+    return nome
 
 
 def results_to_excel(results: dict, port, path: str):
@@ -444,6 +471,11 @@ def run_pooled_analysis(
             "UL": sl["UL"], "tempo_s": np.nan}
     for a, v_, e_ in zip(alphas, sl["VaR"], sl["ES"]):
         row2[f"VaR {a:.2%}"] = float(v_); row2[f"ES {a:.2%}"] = float(e_)
+    _dp = res_sim["distribuicoes"]
+    _cr_maior_cauda(_dp, {k: _dp.pop(k) for k in
+                          ("CreditRisk+ simulação Poisson",
+                           "CreditRisk+ simulação Bernoulli") if k in _dp},
+                    info_cs)
     medidas = pd.concat([medidas, pd.DataFrame([row, row2])],
                         ignore_index=True)
 

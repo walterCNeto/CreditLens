@@ -41,14 +41,14 @@ import pandas as pd
 from scipy.stats import norm
 
 SEGMENTOS = {
-    "corporate": ("Atacado — demais", True),
-    "sme": ("Atacado — SME", True),
-    "hvcre": ("Atacado — HVCRE", True),
+    "corporate": ("Atacado (demais)", True),
+    "sme": ("Atacado (SME)", True),
+    "hvcre": ("Atacado (HVCRE)", True),
     "if": ("Instituição financeira", True),
     "if_s1s2": ("Instituição financeira S1/S2", True),
-    "varejo_residencial": ("Varejo — residencial", False),
-    "varejo_rotativo": ("Varejo — rotativo qualificado", False),
-    "varejo_demais": ("Varejo — demais", False),
+    "varejo_residencial": ("Varejo (residencial)", False),
+    "varejo_rotativo": ("Varejo (rotativo qualificado)", False),
+    "varejo_demais": ("Varejo (demais)", False),
 }
 SEGMENTO_PADRAO = "corporate"
 SME_S_MIN, SME_X = 15.0, 300.0          # R$ milhões

@@ -161,7 +161,7 @@ def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]
         el, ul, var, es = _measures(np.sort(loss), M, alphas)
         rows.append(("CreditRisk+ simulação Poisson (pooled)",
                      el, ul, var, es))
-        dists["CreditRisk+"] = np.sort(loss)
+        dists["CreditRisk+ simulação Poisson"] = np.sort(loss)
 
         # versão Bernoulli: cada contrato inadimple no máximo uma vez,
         # com probabilidade 1 − e^{−λ}; gerador próprio, para não alterar
@@ -177,6 +177,7 @@ def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]
         el, ul, var, es = _measures(np.sort(loss), M, alphas)
         rows.append(("CreditRisk+ simulação Bernoulli (pooled)",
                      el, ul, var, es))
+        dists["CreditRisk+ simulação Bernoulli"] = np.sort(loss)
 
     # ---------- threshold gaussiano / t, 1F e multifatorial ----------
     BLOCO = 20_000   # simulação em blocos p/ controle de memória

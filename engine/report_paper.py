@@ -81,7 +81,7 @@ REFS = [
     "relativa às exposições ao risco de crédito sob abordagem IRB "
     "(revoga a Circular no 3.648/2013). Brasília: BCB.",
     "[16] BANCO CENTRAL DO BRASIL (2022). Resolução BCB no 229, de 12 de "
-    "maio de 2022: abordagem padronizada (RWACPAD), arts. 36 e 46 — "
+    "maio de 2022: abordagem padronizada (RWACPAD), arts. 36 e 46, com as "
     "definições de porte SME e de exposição de varejo. Brasília: BCB.",
     "[17] GORDY, M. B. (2002). Saddlepoint approximation of CreditRisk+. "
     "Journal of Banking & Finance, 26(7), 1335-1353.",
@@ -120,7 +120,7 @@ class _Doc:
         fig.patches.append(plt.Rectangle(
             (0, 0.962), 1, 0.038, transform=fig.transFigure,
             facecolor=AZUL, edgecolor="none"))
-        fig.text(0.06, 0.974, "CreditLens — Validação de Modelos",
+        fig.text(0.06, 0.974, "CreditLens | Validação de Modelos",
                  fontsize=8.5, color="white", va="center", fontweight="bold")
         fig.text(0.94, 0.974, secao, fontsize=8.5, color="#B9C7D4",
                  va="center", ha="right")
@@ -272,11 +272,11 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
             continue                     # analíticos: diagnóstico próprio
         if "Bernoulli" in nome:
             st_ = "Esperado"
-            crit = "aprox. Poisson: P(H≥1)=1−e^{−p}<p"
+            crit = "Bernoulli: P(H ≥ 1) = 1 − exp(−p) < p"
         else:
             st_ = "OK" if abs(dev) <= tol else "Atenção"
             crit = f"|desvio| ≤ 3σ_MC = {br(tol, 3, pct=True)}"
-        rows.append([f"EL simulada — {_rotulo(nome)}",
+        rows.append([f"EL simulada ({_rotulo(nome)})",
                      f"desvio {br(dev, 3, pct=True)}", crit, st_])
 
     # 1b. CreditRisk+ clássico: discretização e comparação com a simulação
@@ -386,10 +386,10 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
 
     # 4. precisão de Monte Carlo do VaR 99,9%
     for nome, d in (results.get("distribuicoes") or {}).items():
-        if "independente" in nome.lower() or len(d) < 1000:
+        if "independente" in nome.lower() or "CSFP" in nome or len(d) < 1000:
             continue
         r_ = _ic_var(d, 0.999, M)
-        rows.append([f"IC95% VaR99,9 — {_rotulo(nome)}",
+        rows.append([f"IC95% VaR99,9 ({_rotulo(nome)})",
                      f"± {br(r_, 3, pct=True)}",
                      "meia-amplitude ≤ 5,000%",
                      "OK" if r_ <= 0.05 else "Atenção"])
@@ -526,7 +526,7 @@ def _interpretar(drows, M):
     n_es = sum(r[3] == "Esperado" for r in drows)
     if n_ok == n:
         sint = (f"Todos os {n} testes passaram: a execução é internamente "
-                "consistente — a perda esperada simulada adere à analítica, "
+                "consistente: a perda esperada simulada adere à analítica, "
                 "as calibrações reproduzem os alvos, a ordem das caudas é a "
                 "prevista pela teoria e os quantis têm precisão adequada.")
     else:
@@ -554,8 +554,8 @@ def _interpretar(drows, M):
             leitura = (f"a meia-amplitude do intervalo de confiança do VaR "
                        f"99,9% é {res.replace('± ', '±')}, acima de 5%: o VaR "
                        "reportado é correto em média, mas oscila mais que o "
-                       "tolerado entre simulações — típico de modelos de "
-                       "cauda pesada.")
+                       "tolerado entre simulações, o que é típico de modelos "
+                       "de cauda pesada.")
             acao = ("aumentar o número de simulações; como o erro do "
                     "quantil cai com 1/√M, M ≈ "
                     f"{br(M_sug, 0)} deve reduzir a meia-amplitude para menos de 5%."
@@ -599,8 +599,9 @@ def _interpretar(drows, M):
                     "corte de grandes exposições.")
         elif teste.startswith("IRB: categoria"):
             leitura = ("a carteira não informa a categoria IRB: todas as "
-                       "exposições foram tratadas como atacado — adequado a "
-                       "carteiras corporativas, conservador para varejo.")
+                       "exposições foram tratadas como atacado, o que é "
+                       "adequado a carteiras corporativas e conservador "
+                       "para varejo.")
             acao = ("se houver varejo ou SME, informar a coluna "
                     "segmento_irb.")
         elif teste.startswith("IRB: SME"):
@@ -613,7 +614,7 @@ def _interpretar(drows, M):
             acao = "revisar a camada de agregação (deveria ser identidade)."
         elif teste.startswith("Padronizado: dados"):
             leitura = (f"faltam atributos para alguns fatores ({res}): "
-                       "aplicou-se o fator conservador — faixa de LTV acima "
+                       "aplicou-se o fator conservador: faixa de LTV acima "
                        "de 100%, 100% para PJ sem receita, categoria A para "
                        "IF sem classificação.")
             acao = ("informar ltv, receita_bruta_mi e categoria_if para "
@@ -821,7 +822,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             D.par("A base analítica (contrato a contrato) foi agregada em "
                   "grandes exposições nominais e grupos homogêneos rating × "
                   "setor × categoria IRB, com parâmetros ponderados pela "
-                  "severidade c = EAD × LGD — o que preserva a perda "
+                  "severidade c = EAD × LGD, o que preserva a perda "
                   "esperada exatamente. A técnica é legítima porque, nos "
                   "modelos de fator, os defaults são independentes dado o "
                   "fator sistemático: num grupo homogêneo, a contagem de "
@@ -872,7 +873,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             D.par("Defaults independentes com as PDs individuais da "
                   "carteira. Serve de contrafactual: pela lei dos grandes "
                   "números, a perda concentra-se na EL e o risco de cauda "
-                  "desaparece — a distância até os demais modelos mede o "
+                  "desaparece; a distância até os demais modelos mede o "
                   "efeito da dependência [13].")
             D.formula(r"$L=\sum_i c_i\,\mathbf{1}\{D_i\},\quad "
                       r"D_i\sim \mathrm{Bernoulli}(p_i)\ \ "
@@ -934,7 +935,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   "correlação de default alvo via normal bivariada [11]. A "
                   f"variante t-Student (ν = {prm.get('nu_t', 10):g}) "
                   "adiciona um choque radial comum, produzindo dependência "
-                  "de cauda estritamente positiva — o contraste entre as "
+                  "de cauda estritamente positiva. O contraste entre as "
                   "duas variantes é um teste de sensibilidade de premissa "
                   "de cauda [11, 13].")
             D.formula(r"$Y_i=\sqrt{\rho}\,G+\sqrt{1-\rho}\;\epsilon_i,"
@@ -949,7 +950,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   "alvos de correlação de default intra-setor "
                   f"({br(prm.get('rho_intra'), 3, pct=True)}) e "
                   "entre setores "
-                  f"({br(prm.get('rho_inter'), 3, pct=True)}) — correlações "
+                  f"({br(prm.get('rho_inter'), 3, pct=True)}), com correlações "
                   "de ativos calibradas de "
                   f"{br(mfc.get('rho_ativos_intra'), 3)} e "
                   f"{br(mfc.get('rho_ativos_inter'), 3)}. A decomposição "
@@ -971,8 +972,8 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
         if tem("ASRF"):
             secao("ASRF (carteira assintoticamente granular)")
             D.par("Limite analítico de Vasicek [1] para uma carteira de "
-                  "granularidade infinita — número de exposições tendendo ao "
-                  "infinito, cada uma com peso desprezível — e um único "
+                  "granularidade infinita (número de exposições tendendo ao "
+                  "infinito, cada uma com peso desprezível) e um único "
                   "fator sistemático, que fundamenta o IRB [2]. Serve de referência "
                   "superior de diversificação idiossincrática perfeita.")
             D.formula(r"$\mathrm{VaR}_\alpha = C\cdot\Phi\!\left("
@@ -983,7 +984,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             secao("Capital regulatório: IRB (modelos internos, Res. BCB 303/2023), GA e padronizado")
             seg = irb.get("por_segmento")
             cats = (", ".join(seg["descricao"]) if seg is not None
-                    and len(seg) else "atacado — demais")
+                    and len(seg) else "atacado (demais)")
             D.par("Função de capital da abordagem IRB do Banco Central do "
                   "Brasil [15], derivada do modelo assintótico de fator único "
                   "[1, 2, 3]. A correlação R depende da categoria da "
@@ -999,7 +1000,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   f"(art. 61). Categorias presentes nesta carteira: {cats}."
                   + ("" if irb.get("segmentado") else
                      " A carteira não informa a coluna segmento_irb: todas "
-                     "as exposições foram tratadas como atacado — demais."))
+                     "as exposições foram tratadas como atacado (demais)."))
             D.formula(r"$K=\left[\Phi\!\left(\frac{\Phi^{-1}(PD)+"
                       r"\sqrt{R}\,\Phi^{-1}(0{,}999)}{\sqrt{1-R}}"
                       r"\right)-PD\right]\cdot MA$",
@@ -1017,7 +1018,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             if results.get("padronizado"):
                 D.par("Abordagem padronizada (Res. BCB 229/2022): RWA = soma "
                       "de EAD × FPR, com o fator da categoria de cada "
-                      "exposição — varejo 75% (art. 46), rotativo sem uso em "
+                      "exposição: varejo 75% (art. 46), rotativo sem uso em "
                       "360 dias 45% (art. 47), pessoa natural fora do varejo "
                       "100% (art. 48), PME 85% (art. 36), demais PJ 100% "
                       "(art. 41), residencial por faixa de LTV de 20% a 70% "
@@ -1037,14 +1038,14 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   "estágios por deterioração de rating, conforme IFRS 9 / "
                   "Res. CMN 4.966 [14]. O capital multiperíodo evolui a "
                   "carteira ano a ano pela matriz condicional ao fator "
-                  "sistemático — generalização do deslocamento de crédito "
-                  "de um parâmetro [10] — acumulando perdas descontadas."
+                  "sistemático, acumulando perdas descontadas; a construção "
+                  "generaliza o deslocamento de crédito de um parâmetro [10]."
                   + (" Na carteira agregada, cada grupo evolui como vetor de "
                      "frações por rating; nos grupos fora do limite de "
                      "granularidade infinita, os defaults de cada ano são sorteados "
                      "por Binomial(A, q) sobre o número inteiro de contratos "
                      "equivalentes vivos A, com a taxa de default condicional "
-                     "entre os vivos q — o risco idiossincrático intragrupo "
+                     "entre os vivos q; assim, o risco idiossincrático intragrupo "
                      "entra no capital multiperíodo." if pooled else ""))
 
         # ================= resultados =================
@@ -1130,7 +1131,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             ax1.set_xlim(0, xmax)
             ax1.set_ylim(0, ylim)
             ax1.set_xlabel("Perda (R$ milhões)", fontsize=8)
-            ax1.set_title("Distribuições de perda — corpo (escala dos "
+            ax1.set_title("Distribuições de perda: corpo (escala dos "
                           "modelos com dependência)", fontsize=9.5,
                           color=AZUL, loc="left")
             ax1.legend(fontsize=6)
@@ -1173,7 +1174,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
         D.h2("Leitura dos resultados", "Diagnósticos")
         D.par(sint)
         for st_, teste, leitura, acao in itens:
-            D.par(f"• {st_} — {teste}: {leitura} Ação: {acao}",
+            D.par(f"• {teste} ({st_}): {leitura} Ação: {acao}",
                   color=VERM if st_ == "Atenção" else AZUL2)
 
         # ----- capital / setores -----
@@ -1202,7 +1203,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                     ("IRB / padronizado", br(ps_["razao_irb_cpad"], 3)),
                     ("Piso: 72,5% × padronizado (R$ mi)", mi(ps_["piso"])),
                     ("RWA final (art. 34, Res. BCB 303)",
-                     mi(ps_["rwa_final"]) + ("  — piso vinculante"
+                     mi(ps_["rwa_final"]) + ("  (piso vinculante)"
                                              if ps_["vinculante"] else "")),
                 ], "Capital e concentração")
             ad = results.get("inadimplidos")
@@ -1220,7 +1221,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                       f"k = {br(r_['k'], 3)}; perda em 12 meses = EAD × "
                       "[ELBE(t+12) − ELBE(t)].")
                 D.kv([
-                    ("Provisão requerida — ELBE (R$ mi)",
+                    ("Provisão requerida pela ELBE (R$ mi)",
                      mi(r_["provisao_elbe"])),
                     ("Capital IRB do default (R$ mi)", mi(r_["capital_irb"])),
                     ("RWA IRB / RWACPAD do default (R$ mi)",
@@ -1312,14 +1313,14 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             "fixo por contrato; extensões estocásticas (Beta) são "
             "documentadas na literatura [13].",
             "Correlações calibradas a alvos prudenciais informados pelo "
-            "usuário, não estimadas da série histórica da carteira — a "
+            "usuário, não estimadas da série histórica da carteira; a "
             "sensibilidade a esses alvos deve ser testada.",
             "PD do grau atribuída uniformemente dentro de cada grupo "
             "homogêneo; o coeficiente de variação de PD intra-bucket é o "
             "diagnóstico de adequação (desigualdade de Jensen).",
             "Matriz de transição homogênea no tempo; horizontes acima de "
             "5 anos devem ser lidos como cenário exploratório.",
-            "Exposições em default: tratamento determinístico — ELBE pela "
+            "Exposições em default: tratamento determinístico, com ELBE pela "
             "curva de LGD em default e LGD_D por proxy (margem k); a "
             "incerteza da recuperação não é simulada.",
             "Monte Carlo simples: erro de simulação no quantil 99,9% da "
@@ -1344,7 +1345,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             ds, g, cc = descritiva, descritiva["geral"], descritiva["concentracao"]
             sec_ap = "Apêndice A"
             D.nova(sec_ap)
-            D.h1("Apêndice A — Análise descritiva da base de entrada")
+            D.h1("Apêndice A: análise descritiva da base de entrada")
             D.par(f"Base original ({nome_base or 'informada pelo usuário'}), "
                   "antes de qualquer agregação.", color=CINZA, secao=sec_ap)
             D.kv([("Linhas", br(g["linhas"], 0)),

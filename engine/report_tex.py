@@ -90,7 +90,7 @@ def _tabela_longa(cab, linhas, spec, legenda, rotulo, small=True):
 {h}
 \midrule
 \endfirsthead
-\multicolumn{{{n}}}{{l}}{{\emph{{Tabela~\ref{{{rotulo}}} --- continuação}}}}\\
+\multicolumn{{{n}}}{{l}}{{\emph{{Tabela~\ref{{{rotulo}}} (continuação)}}}}\\
 \toprule
 {h}
 \midrule
@@ -169,10 +169,10 @@ REFS_TEX = [
     r"Frey, R.; McNeil, A.~J. (2003). Dependent defaults in models of portfolio credit risk. \emph{Journal of Risk}, 6(1), 59--92.",
     r"Merton, R.~C. (1974). On the pricing of corporate debt: the risk structure of interest rates. \emph{Journal of Finance}, 29(2), 449--470.",
     r"Bolder, D.~J. (2018). \emph{Credit-Risk Modelling: Theoretical Foundations, Diagnostic Tools, Practical Examples, and Numerical Recipes in Python}. Cham: Springer. [Referencial de implementação do aplicativo.]",
-    r"IFRS Foundation (2014). \emph{IFRS 9 --- Financial Instruments}. Londres. Conselho Monetário Nacional (2021). \emph{Resolução nº 4.966, de 25 de novembro de 2021}. Brasília: BCB.",
+    r"IFRS Foundation (2014). \emph{IFRS 9: Financial Instruments}. Londres. Conselho Monetário Nacional (2021). \emph{Resolução nº 4.966, de 25 de novembro de 2021}. Brasília: BCB.",
     r"Conselho Monetário Nacional (2017). \emph{Resolução nº 4.557, de 23 de fevereiro de 2017} (estrutura de gerenciamento de riscos e de capital). Brasília: BCB.",
     r"Banco Central do Brasil (2023). \emph{Resolução BCB nº 303, de 16 de março de 2023} (abordagem IRB para risco de crédito; revoga a Circular nº 3.648/2013). Brasília: BCB.",
-    r"Banco Central do Brasil (2022). \emph{Resolução BCB nº 229, de 12 de maio de 2022} (RWA de risco de crédito pela abordagem padronizada --- RWA\textsubscript{CPAD}; texto consolidado). Brasília: BCB.",
+    r"Banco Central do Brasil (2022). \emph{Resolução BCB nº 229, de 12 de maio de 2022} (RWA de risco de crédito pela abordagem padronizada, RWA\textsubscript{CPAD}; texto consolidado). Brasília: BCB.",
     r"David, H.~A.; Nagaraja, H.~N. (2003). \emph{Order Statistics}. 3.\,ed. Hoboken: Wiley.",
     r"Glasserman, P. (2004). \emph{Monte Carlo Methods in Financial Engineering}. Nova York: Springer.",
     r"Gordy, M.~B. (2002). Saddlepoint approximation of CreditRisk\textsuperscript{+}. \emph{Journal of Banking \& Finance}, 26(7), 1335--1353.",
@@ -378,7 +378,7 @@ def _apendice_descritiva(desc, figdir, nome_base=""):
 \appendix
 \section{Análise descritiva da base de entrada}
 \label{ap:descritiva}
-""" + rf"""Este apêndice descreve a base de entrada \emph{{original}}{(' (' + tx(nome_base) + ')') if nome_base else ''} --- {'contrato a contrato, antes da agregação' if g['linhas'] > 5_000 else 'como enviada'} ---, para que o validador avalie os dados que sustentam a execução. A base tem {nb(g['linhas'], 0)} linhas e {nb(g['contrapartes'], 0)} contrapartes distintas, exposição total de R\$~{mi(g['ead_total'])}~milhões e perda esperada de R\$~{mi(g['el_total'])}~milhões, isto é, {nb(g['el_pct'], 3, pct=True)} da severidade (PD média ponderada pela severidade de {nb(g['pd_media_ponderada'], 3, pct=True)} e LGD média ponderada pela exposição de {nb(g['lgd_media_ponderada'], 3, pct=True)}).
+""" + rf"""Este apêndice descreve a base de entrada \emph{{original}}{(' (' + tx(nome_base) + ')') if nome_base else ''}, {'contrato a contrato, antes da agregação' if g['linhas'] > 5_000 else 'tal como foi enviada'}, para que o validador avalie os dados que sustentam a execução. A base tem {nb(g['linhas'], 0)} linhas e {nb(g['contrapartes'], 0)} contrapartes distintas, exposição total de R\$~{mi(g['ead_total'])}~milhões e perda esperada de R\$~{mi(g['el_total'])}~milhões, isto é, {nb(g['el_pct'], 3, pct=True)} da severidade (PD média ponderada pela severidade de {nb(g['pd_media_ponderada'], 3, pct=True)} e LGD média ponderada pela exposição de {nb(g['lgd_media_ponderada'], 3, pct=True)}).
 """]
     # qualidade
     q = desc["qualidade"]
@@ -579,15 +579,15 @@ A base analítica, contrato a contrato, foi convertida numa carteira compacta: a
 \begin{equation}
 N_g\mid Z\;\sim\;\mathrm{Binomial}\bigl(n_g,\,p_g(Z)\bigr),
 \end{equation}
-em que $p_g(Z)$ é a PD do grupo condicional ao fator (a expressão de cada modelo). A agregação reduz a simulação de $M\times N$ para $M\times G$ sorteios sem aproximação --- $N$ contratos, $G$ grupos --- e é o que torna viável a carteira de milhões de linhas (Frey e McNeil, 2003).
+em que $p_g(Z)$ é a PD do grupo condicional ao fator (a expressão de cada modelo). A agregação reduz a simulação de $M\times N$ para $M\times G$ sorteios sem aproximação, em que $N$ é o número de contratos e $G$ o de grupos. É isso que torna viável a carteira de milhões de linhas (Frey e McNeil, 2003).
 
 \paragraph{Preservação da perda esperada e número efetivo.} Os parâmetros do grupo são ponderados pela severidade,
 \begin{equation}
 C_g=\sum_{i\in g}c_i,\qquad p_g=\frac{\sum_{i\in g}p_i\,c_i}{C_g},\qquad n_g^{\mathrm{eff}}=\frac{C_g^2}{\sum_{i\in g}c_i^2},
 \end{equation}
-em que $C_g$ é a severidade total, $p_g$ a PD ponderada --- com a qual $p_g C_g=\sum_i p_i c_i$ e a EL é preservada exatamente --- e $n_g^{\mathrm{eff}}$ o número efetivo de contratos, um índice de Herfindahl interno ao grupo. Com severidades desiguais, a variância idiossincrática condicional do grupo é $\sum_i c_i^2\,p_g(Z)(1-p_g(Z))=C_g^2\,p_g(Z)(1-p_g(Z))/n_g^{\mathrm{eff}}$: simular $\mathrm{Binomial}(n_g^{\mathrm{eff}},p_g(Z))$ com severidade $C_g/n_g^{\mathrm{eff}}$ por default preserva a média e a variância condicionais, enquanto usar o número bruto de contratos superestimaria a granularidade. Para a parte idiossincrática, tratar PDs heterogêneas como homogêneas é conservador: a variância de uma soma de Bernoullis heterogêneas nunca excede a da Binomial com a PD média (desigualdade de Hoeffding).
+em que $C_g$ é a severidade total, $p_g$ a PD ponderada e $n_g^{\mathrm{eff}}$ o número efetivo de contratos, um índice de Herfindahl interno ao grupo. Com essa ponderação, $p_g C_g=\sum_i p_i c_i$, e a EL é preservada exatamente. Com severidades desiguais, a variância idiossincrática condicional do grupo é $\sum_i c_i^2\,p_g(Z)(1-p_g(Z))=C_g^2\,p_g(Z)(1-p_g(Z))/n_g^{\mathrm{eff}}$: simular $\mathrm{Binomial}(n_g^{\mathrm{eff}},p_g(Z))$ com severidade $C_g/n_g^{\mathrm{eff}}$ por default preserva a média e a variância condicionais, enquanto usar o número bruto de contratos superestimaria a granularidade. Para a parte idiossincrática, tratar PDs heterogêneas como homogêneas é conservador: a variância de uma soma de Bernoullis heterogêneas nunca excede a da Binomial com a PD média (desigualdade de Hoeffding).
 
-\paragraph{Limite de granularidade infinita e seu critério.} Chama-se de \emph{granularidade infinita} o limite em que o grupo tem tantos contratos, e tão pequenos, que o risco idiossincrático se dilui por completo --- na literatura em inglês, \emph{large pool} ou carteira \emph{infinitely fine-grained} (Gordy, 2003). Pela lei dos grandes números condicional, a fração em default converge para $p_g(Z)$ e a perda do grupo para $L_g=C_g\,p_g(Z)$ --- o limite de Vasicek (2002) que fundamenta o ASRF e o IRB (Gordy, 2003). O limite descarta a variância idiossincrática; a razão entre ela e a sistemática é
+\paragraph{Limite de granularidade infinita e seu critério.} Chama-se de \emph{granularidade infinita} o limite em que o grupo tem tantos contratos, e tão pequenos, que o risco idiossincrático se dilui por completo; na literatura em inglês, fala-se em \emph{large pool} ou carteira \emph{infinitely fine-grained} (Gordy, 2003). Pela lei dos grandes números condicional, a fração em default converge para $p_g(Z)$ e a perda do grupo para $L_g=C_g\,p_g(Z)$, que é o limite de Vasicek (2002) em que se apoiam o ASRF e o IRB (Gordy, 2003). O limite descarta a variância idiossincrática; a razão entre ela e a sistemática é
 \begin{equation}
 r_g=\frac{\E\bigl[p_g(Z)(1-p_g(Z))\bigr]/n_g^{\mathrm{eff}}}{\mathrm{Var}\bigl[p_g(Z)\bigr]}=\frac{1-\rho_D}{n_g^{\mathrm{eff}}\,\rho_D},
 \end{equation}
@@ -646,7 +646,7 @@ em que $H_n$ é a contagem de defaults, $w={nm(prm.get('crplus_w'))}$ a carga do
             r"pela inversão exata da FGP por transformada rápida de Fourier, porque $\Pr(L=0)=e^{" + nm(cs["log_p0"], 1) + r"}$ está abaixo da precisão de ponto flutuante e a recursão de Panjer não pode partir dela"
         T.append(rf"""
 \subsection{{CreditRisk\textsuperscript{{+}} clássico (Credit Suisse First Boston, 1997)}}
-A versão original é analítica. Com a mesma intensidade estocástica, $\lambda_n(S)=p_n(w_0+wS)$, $w_0=1-w$ e $S\sim\Gamma(\alpha,1/\alpha)$ com $\alpha=v$ e $\sigma^2=1/\alpha$, a contagem de cada devedor é tratada como Poisson --- um devedor pode, em tese, inadimplir mais de uma vez --- e as severidades são discretizadas em faixas: com a unidade $L_0$, cada linha recebe $\nu_n=\max\{{1,\mathrm{{round}}(c_n/L_0)\}}$, e a intensidade de cada faixa $j$ é ajustada para preservar a perda esperada,
+A versão original é analítica. Com a mesma intensidade estocástica, $\lambda_n(S)=p_n(w_0+wS)$, $w_0=1-w$ e $S\sim\Gamma(\alpha,1/\alpha)$ com $\alpha=v$ e $\sigma^2=1/\alpha$, a contagem de cada devedor é tratada como Poisson (um devedor pode, em tese, inadimplir mais de uma vez), e as severidades são discretizadas em faixas: com a unidade $L_0$, cada linha recebe $\nu_n=\max\{{1,\mathrm{{round}}(c_n/L_0)\}}$, e a intensidade de cada faixa $j$ é ajustada para preservar a perda esperada,
 \begin{{equation}}
 \varepsilon_j=\sum_{{n:\,\nu_n=\nu_j}}\frac{{p_n c_n}}{{\nu_j L_0}}.
 \end{{equation}}
@@ -661,7 +661,7 @@ f(n)=\sum_j\Bigl(a+b\,\frac{{\nu_j}}{{n}}\Bigr)q_j\,f(n-\nu_j),
 com $(a,b)=(0,\mu)$ na Poisson composta e $(a,b)=(\delta,(\alpha-1)\delta)$ na binomial negativa, e da convolução das duas. Nesta execução, $L_0=$~R\$~{nb(cs['L0'] / 1e3, 2)}~mil, com {nb(cs['faixas'], 0)} faixas e {nb(cs['defaults_esperados'], 1)} \emph{{defaults}} esperados; a distribuição foi obtida {_met}.""" + _sela_txt(cs)
                  + (r" Na carteira agregada, cada grupo entra com intensidade $n_g p_g$ e perda por \emph{default} $C_g/n_g$, o que é exato para soma de Poissons." if pooled else "") + r"""
 
-\paragraph{As quatro versões.} Os quatro modelos compartilham as premissas de mistura: não há modelo para o evento de \emph{default}, a PD é estocástica e linear no fator, os \emph{defaults} são independentes dado o fator e a correlação só existe implicitamente, pelo fator comum. Diferem na contagem, na severidade e no cálculo (Tabela~\ref{tab:crplus}). O ponto de sela é reportado como modelo próprio: a aproximação de Lugannani--Rice sobre a FGP com as severidades exatas, sem faixas, com o ES obtido pela integral da cauda aproximada.
+\paragraph{As quatro versões.} As quatro versões partem das mesmas hipóteses do CreditRisk\textsuperscript{+}: o evento de \emph{default} não é modelado a partir de uma variável de ativos, a PD é aleatória e depende linearmente do fator, os \emph{defaults} são independentes quando o fator é conhecido e a correlação entre devedores surge apenas do fator comum. O que muda entre elas é a contagem de \emph{defaults}, o tratamento da severidade e o método de cálculo (Tabela~\ref{tab:crplus}). O ponto de sela é reportado como modelo próprio: a aproximação de Lugannani--Rice sobre a FGP com as severidades exatas, sem faixas, com o ES obtido pela integral da cauda aproximada.
 """ + _tabela(["Aspecto", "Simulação Bernoulli", "Simulação Poisson", r"Clássico (CSFP)", "Ponto de sela"],
               [["Contagem", r"$\Ind\{H_n\ge1\}$: no máximo um \emph{default} por contrato", "Poisson", "Poisson", "Poisson"],
                ["Severidade", "exata", "exata", r"faixas de $L_0$ (EL preservada)", "exata"],
@@ -684,7 +684,7 @@ em que $G$ é o fator sistemático, $\varepsilon_n$ o choque idiossincrático (a
 \rho_D=\frac{{\Phi_2(z,z;\rho)-\bar p^{{\,2}}}}{{\bar p(1-\bar p)}},\qquad z=\Phi^{{-1}}(\bar p),
 \label{{eq:rhoD}}
 \end{{equation}}
-em que $\Phi_2(\cdot,\cdot;\rho)$ é a distribuição normal bivariada com correlação $\rho$. A variante t-Student, com $\nu={nm(prm.get('nu_t', 10), 0)}$ graus de liberdade, multiplica as variáveis latentes por um choque radial comum $\sqrt{{\nu/V}}$, $V\sim\chi^2_\nu$, e introduz dependência de cauda --- o contraste entre as duas variantes é um teste de sensibilidade à premissa de cauda.
+em que $\Phi_2(\cdot,\cdot;\rho)$ é a distribuição normal bivariada com correlação $\rho$. A variante t-Student, com $\nu={nm(prm.get('nu_t', 10), 0)}$ graus de liberdade, multiplica as variáveis latentes por um choque radial comum $\sqrt{{\nu/V}}$, $V\sim\chi^2_\nu$, e introduz dependência de cauda. O contraste entre as duas variantes funciona como teste de sensibilidade à premissa de cauda.
 """)
     if tem("multifatorial"):
         mfc = (mf or {}).get("calibracao", {})
@@ -703,7 +703,7 @@ em que $F_{{s(n)}}$ é o fator do setor do devedor $n$, $\rho_S$ a correlação 
 \begin{equation}
 Y_n=\sqrt{\rho_{G,s}}\,G+\sqrt{\rho_{S,s}-\rho_{G,s}}\,F_{s}+\sqrt{1-\rho_{S,s}}\,\varepsilon_n,\qquad s=s(n).
 \end{equation}
-A correlação de ativos dentro do setor $s$ é $\rho_{S,s}$; entre os setores $s$ e $t$, $\sqrt{\rho_{G,s}\,\rho_{G,t}}$. A estrutura entre setores é de posto 1: os pares diferem pela carga de cada setor no fator global, mas a razão entre as correlações de um setor com outros dois é a mesma para todo setor --- blocos de setores exigiriam um segundo fator global. Os valores de $\rho_S$ e $\rho_G$ acima são médias ponderadas pela exposição; a Tabela~\ref{tab:mf-setor} traz a calibração de cada setor."""
+A correlação de ativos dentro do setor $s$ é $\rho_{S,s}$; entre os setores $s$ e $t$, $\sqrt{\rho_{G,s}\,\rho_{G,t}}$. A estrutura entre setores é de posto 1: os pares diferem pela carga de cada setor no fator global, mas a razão entre as correlações de um setor com outros dois é a mesma para todo setor; blocos de setores exigiriam um segundo fator global. Os valores de $\rho_S$ e $\rho_G$ acima são médias ponderadas pela exposição; a Tabela~\ref{tab:mf-setor} traz a calibração de cada setor."""
                      + _tabela(
                          ["Setor", "PD média", r"$\rho_D$ intra", r"$\rho_D$ inter",
                           r"$\rho_{S,s}$", r"$\rho_{G,s}$"],
@@ -723,16 +723,16 @@ A correlação de ativos dentro do setor $s$ é $\rho_{S,s}$; entre os setores $
                 mfc, _ri, _re, calibrate_rho(_pb, _ri), calibrate_rho(_pb, _re))
             (v1, a1, b1), (vz, az, bz) = lpares[0], lpares[-1]
             T.append(r"""
-\paragraph{Leitura das escolhas.} A fração da correlação de ativos intra-setor que vem do fator global, $\rho_{G,s}/\rho_{S,s}$, indica a origem da dependência: perto de 1, o setor é \emph{cíclico} --- os defaults andam juntos porque a economia os move juntos, e o setor contagia os demais; perto de 0, é \emph{concentrado} --- um choque próprio derruba muitos nomes de uma vez, mas pouco se espalha. Nesta execução:
+\paragraph{Leitura das escolhas.} A fração da correlação de ativos intra-setor que vem do fator global, $\rho_{G,s}/\rho_{S,s}$, indica a origem da dependência: perto de 1, o setor é \emph{cíclico}: os defaults andam juntos porque a economia os move juntos, e o setor contagia os demais. Perto de 0, é \emph{concentrado}: um choque próprio derruba muitos nomes de uma vez, mas pouco se espalha. Nesta execução:
 \begin{itemize}\setlength\itemsep{1pt}
 """ + "".join(rf"\item \textbf{{{tx(r['setor'])}}} (fração global {nb(r['fracao_global'])}, {tx(r['perfil'])}): {tx(r['leitura'])}." + "\n"
               for _, r in lps.iterrows()) + rf"""\end{{itemize}}
-O par de setores mais ligado é {tx(a1)}--{tx(b1)}, com correlação de default de {nb(v1, 3, pct=True)}; o menos ligado, {tx(az)}--{tx(bz)}, com {nb(vz, 3, pct=True)}. As correlações de ativos médias, ponderadas pela exposição, ficaram em {nm(lres['rho_s_medio'])} (intra) e {nm(lres['rho_g_medio'])} (inter), ante {nm(lres['rho_s_ref'])} e {nm(lres['rho_g_ref'])} na calibração uniforme --- {tx({'acima': 'acima do padrão', 'abaixo': 'abaixo do padrão'}.get(lres['direcao'], 'em linha com o padrão'))}. Os alvos por setor são hipóteses do usuário; esta seção verifica a sua calibração, não a sua fundamentação empírica.
+O par de setores mais ligado é {tx(a1)}--{tx(b1)}, com correlação de default de {nb(v1, 3, pct=True)}; o menos ligado, {tx(az)}--{tx(bz)}, com {nb(vz, 3, pct=True)}. As correlações de ativos médias, ponderadas pela exposição, ficaram em {nm(lres['rho_s_medio'])} (intra) e {nm(lres['rho_g_medio'])} (inter), ante {nm(lres['rho_s_ref'])} e {nm(lres['rho_g_ref'])} na calibração uniforme, ou seja, {tx({'acima': 'acima do padrão', 'abaixo': 'abaixo do padrão'}.get(lres['direcao'], 'em linha com o padrão'))}. Os alvos por setor são hipóteses do usuário; esta seção verifica a sua calibração, não a sua fundamentação empírica.
 """)
     if tem("ASRF"):
         T.append(r"""
 \subsection{ASRF: carteira assintoticamente granular}
-O limite analítico de Vasicek (2002), para uma carteira de granularidade infinita --- número de exposições tendendo ao infinito, cada uma com peso desprezível --- e um único fator sistemático,
+O limite analítico de Vasicek (2002), para uma carteira de granularidade infinita (número de exposições tendendo ao infinito, cada uma com peso desprezível) e um único fator sistemático,
 \begin{equation}
 \VaR_\alpha=C\,\Phi\!\left(\frac{\Phi^{-1}(\bar p)+\sqrt{\rho}\,\Phi^{-1}(\alpha)}{\sqrt{1-\rho}}\right),
 \end{equation}
@@ -740,7 +740,7 @@ em que $C=\sum_n c_n$ é a exposição líquida e $\alpha$ o nível de confianç
 """)
     if irb:
         seg = irb.get("por_segmento")
-        cats = ", ".join(seg["descricao"]) if seg is not None and len(seg) else "atacado --- demais"
+        cats = ", ".join(seg["descricao"]) if seg is not None and len(seg) else "atacado (demais)"
         T.append(rf"""
 \subsection{{Capital regulatório: abordagem IRB (modelos internos, Resolução BCB 303/2023)}}
 O requerimento pela abordagem IRB do Banco Central do Brasil (Resolução BCB 303/2023), derivada do modelo ASRF:
@@ -796,7 +796,7 @@ em que $\mathcal{D}$ é o conjunto das exposições em \emph{default}; por ser c
     if mig is not None:
         T.append(r"""
 \subsection{Migração de ratings, ECL e capital multiperíodo}
-A matriz de transição anual $P$ fornece a estrutura a termo de PD pelas potências $P^t$; o ECL desconta as perdas marginais em 12 meses e no prazo de cada contrato (\emph{lifetime}), com estágios conforme o IFRS 9 e a Resolução CMN 4.966: estágio 1 (ECL de 12 meses), estágio 2 (ECL \emph{lifetime}, com PD da matriz e LGD não \emph{default}) para atraso acima de 30 dias ou queda de rating desde a origem, e estágio 3 para as exposições em \emph{default} (provisão $\mathrm{EAD}\cdot\mathrm{ELBE}(t)$). Como o ECL é linear na exposição, é calculado contrato a contrato, antes da agregação. O capital multiperíodo evolui a carteira ano a ano pela matriz condicional ao fator sistemático --- generalização do deslocamento de crédito de um parâmetro de Belkin, Suchower e Forest (1998) ---, acumulando perdas descontadas."""
+A matriz de transição anual $P$ fornece a estrutura a termo de PD pelas potências $P^t$; o ECL desconta as perdas marginais em 12 meses e no prazo de cada contrato (\emph{lifetime}), com estágios conforme o IFRS 9 e a Resolução CMN 4.966: estágio 1 (ECL de 12 meses), estágio 2 (ECL \emph{lifetime}, com PD da matriz e LGD não \emph{default}) para atraso acima de 30 dias ou queda de rating desde a origem, e estágio 3 para as exposições em \emph{default} (provisão $\mathrm{EAD}\cdot\mathrm{ELBE}(t)$). Como o ECL é linear na exposição, é calculado contrato a contrato, antes da agregação. O capital multiperíodo evolui a carteira ano a ano pela matriz condicional ao fator sistemático, acumulando perdas descontadas; a construção generaliza o deslocamento de crédito de um parâmetro de Belkin, Suchower e Forest (1998)."""
             + (r" Na carteira agregada, cada grupo evolui como vetor de frações por rating; nos grupos fora do limite de granularidade infinita, os \emph{defaults} de cada ano são sorteados, $D_t\mid Z_t\sim\mathrm{Binomial}(A_{t-1},q_t)$, sobre o número inteiro de contratos equivalentes vivos $A_t$ (com $A_0=n^{\mathrm{eq}}$) e a taxa de \emph{default} condicional entre os vivos $q_t$, de modo que o risco idiossincrático intragrupo entra no capital multiperíodo; as migrações entre ratings não \emph{default} seguem as frações condicionais."
                if pooled else "") + "\n")
 
@@ -878,7 +878,7 @@ em que $L_{{(k)}}$ é a $k$-ésima menor perda simulada (David e Nagaraja, 2003)
              + r"""
 \subsection*{Leitura dos resultados}
 """ + tx(sint) + ("\n\\begin{itemize}\\setlength\\itemsep{2pt}\n" + "".join(
-                rf"\item {cor[st_]} --- \textbf{{{tx(teste)}}}: {tx(leitura)} \emph{{Ação:}} {tx(acao)}" + "\n"
+                rf"\item \textbf{{{tx(teste)}}} ({cor[st_]}): {tx(leitura)} \emph{{Ação:}} {tx(acao)}" + "\n"
                 for st_, teste, leitura, acao in itens) + "\\end{itemize}\n" if itens else "\n"))
 
     # ---------------- 6. capital ----------------

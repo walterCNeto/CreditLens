@@ -171,6 +171,14 @@ def ponto_de_sela(nus, eps0, eps1, alpha, delta, mu1, alphas):
     return float(np.sqrt(var0)), np.array(var), np.array(es)
 
 
+def amostra_pmf(pmf, L0, m=50_000):
+    """Amostra estratificada (determinística) da distribuição exata, para
+    gráficos: quantis nos pontos (i + 0,5)/m."""
+    F = np.cumsum(pmf)
+    u = (np.arange(m) + 0.5) / m
+    return np.searchsorted(F, u * F[-1], side="left") * L0
+
+
 def crplus_csfp(p, c, w, v, alphas, n=None, unidades_max=UNIDADES_MAX):
     """CreditRisk+ clássico de um setor sistemático (mais o específico).
 
@@ -221,6 +229,7 @@ def crplus_csfp(p, c, w, v, alphas, n=None, unidades_max=UNIDADES_MAX):
             "el_exato": float((lam * u).sum()), "w": w, "v": v,
             "var_sela": {f"{a:.2%}": float(x) for a, x in zip(alphas, sela)},
             "var_exato": {f"{a:.2%}": float(x) for a, x in zip(alphas, var)},
+            "pmf": f / massa,
             "sela": {"EL": float((lam * u).sum()), "UL": float(ul_s),
                      "VaR": np.asarray(sela, float),
                      "ES": np.asarray(es_s, float)}}
