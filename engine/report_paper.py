@@ -1460,7 +1460,8 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             D.h1(f"Apêndice {letra}: alocação de capital por modelo")
             D.par("Capital econômico de cada modelo: perda inesperada "
                   "(VaR − EL e ES − EL, com a EL do próprio modelo) em cada "
-                  "nível de confiança"
+                  "nível de confiança, do maior para o menor capital pelo "
+                  "ES 99,9% − EL"
                   + (f", somada ao capital das exposições em default "
                      f"(R$ {mi(_kd)} mi), que não depende do nível"
                      if _kd else "")

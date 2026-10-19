@@ -573,7 +573,7 @@ def _apendice_alocacao(results, primeiro, letra):
 \clearpage
 """ + (r"\appendix" + "\n" if primeiro else "") + rf"""\section{{Alocação de capital por modelo}}
 \label{{ap:alocacao}}
-Este apêndice resume o capital que cada modelo atribuiria à carteira em cada nível de confiança. O capital econômico é a perda inesperada: $\mathrm{{VaR}}_\alpha-\mathrm{{EL}}$ ou $\mathrm{{ES}}_\alpha-\mathrm{{EL}}$, com a EL do próprio modelo.{k_txt} As linhas de referência trazem o IRB e o capital regulatório final, após o piso de saída; ambos são definidos apenas a 99{{,}}9\%. A Tabela~\ref{{tab:aloc-rs}} apresenta os valores em R\$ milhões; a Tabela~\ref{{tab:aloc-pct}}, em percentual da EAD total da carteira (R\$~{mi(ead)}~milhões, incluídas as exposições em \emph{{default}}).
+Este apêndice resume o capital que cada modelo atribuiria à carteira em cada nível de confiança. O capital econômico é a perda inesperada: $\mathrm{{VaR}}_\alpha-\mathrm{{EL}}$ ou $\mathrm{{ES}}_\alpha-\mathrm{{EL}}$, com a EL do próprio modelo. Os modelos estão ordenados do maior para o menor capital pelo $\mathrm{{ES}}_{{99{{,}}9\%}}-\mathrm{{EL}}$.{k_txt} As linhas de referência trazem o IRB e o capital regulatório final, após o piso de saída; ambos são definidos apenas a 99{{,}}9\%. A Tabela~\ref{{tab:aloc-rs}} apresenta os valores em R\$ milhões; a Tabela~\ref{{tab:aloc-pct}}, em percentual da EAD total da carteira (R\$~{mi(ead)}~milhões, incluídas as exposições em \emph{{default}}).
 """ + tab(df, lambda v: mi(v),
           r"Capital por modelo e nível de confiança (R\$ milhões).",
           "tab:aloc-rs")

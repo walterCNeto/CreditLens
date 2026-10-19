@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 ALPHAS = ["95.00%", "99.00%", "99.90%", "99.97%"]
+ORDEM = "ES 99.90%"          # coluna que ordena os modelos
 
 
 def _f(x):
@@ -48,6 +49,8 @@ def tabela_alocacao(results):
             v = _f(d.get(c))
             lin[c] = v - el + k_def if v == v and el == el else np.nan
         linhas.append(lin)
+    # do maior para o menor capital pelo ES 99,9% − EL (sem ES: ao final)
+    linhas.sort(key=lambda l: -l[ORDEM] if l[ORDEM] == l[ORDEM] else np.inf)
 
     def ref(nome, valor):
         lin = {"modelo": nome, "tipo": "referencia"}
