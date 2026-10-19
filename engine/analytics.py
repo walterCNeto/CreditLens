@@ -138,10 +138,26 @@ def run_full_analysis(
     add_row("Beta-binomial (mixture)", el, ul, var, es, time.time() - t0)
     results["calibracao_beta"] = {"a": float(a_beta), "b": float(b_beta)}
 
-    _tick("CreditRisk+ (1 fator)...")
+    _tick("CreditRisk+ por simulação (Bernoulli)...")
     t0 = time.time()
     el, ul, var, es = mix.crPlusOneFactor(N, M, crp_w, p, c, crp_v, alphas)
-    add_row("CreditRisk+ (Poisson-gama 1F)", el, ul, var, es, time.time() - t0)
+    add_row("CreditRisk+ simulação Bernoulli", el, ul, var, es,
+            time.time() - t0)
+
+    _tick("CreditRisk+ por simulação (Poisson)...")
+    t0 = time.time()
+    # gerador próprio: não altera os sorteios dos demais modelos
+    rng_cp = np.random.default_rng(None if seed is None else [seed, 7])
+    loss_cp = np.empty(M)
+    for i0 in range(0, M, 20_000):
+        m = min(20_000, M - i0)
+        S = rng_cp.gamma(crp_v, 1.0 / crp_v, (m, 1))
+        loss_cp[i0:i0 + m] = rng_cp.poisson(
+            p[None, :] * (1.0 - crp_w + crp_w * S)) @ c
+    loss_cp.sort()
+    el, ul, var, es = util.computeRiskMeasures(M, loss_cp, alphas)
+    add_row("CreditRisk+ simulação Poisson", el, ul, var, es,
+            time.time() - t0)
 
     _tick("CreditRisk+ clássico (CSFP: faixas, FGP e Panjer)...")
     t0 = time.time()
@@ -149,6 +165,9 @@ def run_full_analysis(
     el, ul, var, es, info_cs = crplus_csfp(p, c, crp_w, crp_v, alphas)
     add_row("CreditRisk+ clássico (CSFP)", el, ul, var, es, time.time() - t0)
     results["crplus_csfp"] = info_cs
+    sl = info_cs["sela"]
+    add_row("CreditRisk+ ponto de sela", sl["EL"], sl["UL"], sl["VaR"],
+            sl["ES"], np.nan)
 
     # ---------------- Cap. 4: limiar ----------------
     _tick("Calibrando correlação de ativos...")
@@ -420,7 +439,13 @@ def run_pooled_analysis(
            "tempo_s": time.time() - _t0}
     for a, v_, e_ in zip(alphas, var_c, es_c):
         row[f"VaR {a:.2%}"] = float(v_); row[f"ES {a:.2%}"] = float(e_)
-    medidas = pd.concat([medidas, pd.DataFrame([row])], ignore_index=True)
+    sl = info_cs["sela"]
+    row2 = {"modelo": "CreditRisk+ ponto de sela", "EL": sl["EL"],
+            "UL": sl["UL"], "tempo_s": np.nan}
+    for a, v_, e_ in zip(alphas, sl["VaR"], sl["ES"]):
+        row2[f"VaR {a:.2%}"] = float(v_); row2[f"ES {a:.2%}"] = float(e_)
+    medidas = pd.concat([medidas, pd.DataFrame([row, row2])],
+                        ignore_index=True)
 
     # ---- ASRF e IRB (analíticos, por bucket) ----
     import thresholdModels as th

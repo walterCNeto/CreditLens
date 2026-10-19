@@ -27,6 +27,10 @@ FUNDO = "#F4F6F8"
 PALETA = {"Binomial independente": "#9aa0a6",
           "Beta-binomial": "#6a5acd",
           "CreditRisk+": "#0e8a8a",
+          "CreditRisk+ simulação Bernoulli": "#7fc8c8",
+          "CreditRisk+ simulação Poisson": "#0e8a8a",
+          "CreditRisk+ clássico (CSFP)": "#075e5e",
+          "CreditRisk+ ponto de sela": "#3fa7a0",
           "Threshold Gaussiano 1F": "#1f4e79",
           "Threshold t-Student 1F": "#b02418",
           "Threshold Gaussiano MF": "#2e8b57",
@@ -218,8 +222,6 @@ def _rotulo(n):
                 " (mixture, pooled)", " (mixture)", " (Poisson-gama 1F)",
                 " (MC)", " (analítico, homog.)"]:
         n = n.replace(suf, "")
-    if n == "CreditRisk+":
-        n = "CreditRisk+ (simulação)"
     return n.replace(" multifatorial", " MF")
 
 
@@ -266,9 +268,9 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
             continue
         dev = el / el0 - 1
         tol = 3 * ul / np.sqrt(M) / el0
-        if "CSFP" in nome:
-            continue                     # analítico: diagnóstico próprio
-        if "CreditRisk+" in nome and not pooled:
+        if "CSFP" in nome or "ponto de sela" in nome:
+            continue                     # analíticos: diagnóstico próprio
+        if "Bernoulli" in nome:
             st_ = "Esperado"
             crit = "aprox. Poisson: P(H≥1)=1−e^{−p}<p"
         else:
@@ -297,22 +299,26 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
                 rows.append(["CreditRisk+ clássico: exato × ponto de sela",
                              "ponto de sela não convergiu",
                              "|dif.| ≤ 1% (Lugannani–Rice)", "Atenção"])
-        _sim = med[med["modelo"].str.startswith("CreditRisk+ (")]
-        _cls = med[med["modelo"].str.contains("CSFP")]
         _c9 = [c for c in med.columns if c.startswith("VaR 99.90")]
-        if len(_sim) and len(_cls) and _c9:
-            vs, vc = float(_sim.iloc[0][_c9[0]]), float(_cls.iloc[0][_c9[0]])
-            dif = vc / vs - 1 if vs else np.nan
-            if pooled:
-                rows.append(["CreditRisk+: clássico × simulação (VaR 99,9%)",
-                             f"diferença {br(dif, 3, pct=True)}",
-                             "|dif.| ≤ 3% (mesma contagem Poisson)",
-                             "OK" if abs(dif) <= 0.03 else "Atenção"])
-            else:
-                rows.append(["CreditRisk+: clássico × simulação (VaR 99,9%)",
-                             f"diferença {br(dif, 3, pct=True)}",
-                             "clássico ≥ simulação (Poisson × Bernoulli)",
-                             "Esperado" if dif >= -0.03 else "Atenção"])
+
+        def _v9(chave):
+            m_ = med[med["modelo"].str.contains(chave, regex=False)]
+            return float(m_.iloc[0][_c9[0]]) if len(m_) and _c9 else None
+        vp, vc, vb = (_v9("simulação Poisson"), _v9("CSFP"),
+                      _v9("simulação Bernoulli"))
+        if vp and vc:
+            dif = vc / vp - 1
+            rows.append(["CreditRisk+: clássico × simulação Poisson "
+                         "(VaR 99,9%)", f"diferença {br(dif, 3, pct=True)}",
+                         "|dif.| ≤ 3% (mesma contagem Poisson)",
+                         "OK" if abs(dif) <= 0.03 else "Atenção"])
+        if vp and vb:
+            dif = vb / vp - 1
+            rows.append(["CreditRisk+: Bernoulli × Poisson (VaR 99,9%)",
+                         f"diferença {br(dif, 3, pct=True)}",
+                         "Bernoulli ≤ Poisson (no máximo um default "
+                         "por contrato)",
+                         "Esperado" if dif <= 0.03 else "Atenção"])
 
     # 2. calibração comum de dependência
     rho_a, pbar = cal.get("rho_ativos"), cal.get("pbar")
@@ -556,7 +562,7 @@ def _interpretar(drows, M):
                     if M_sug else "aumentar o número de simulações M.")
         elif teste.startswith("EL simulada"):
             if st == "Esperado":
-                leitura = ("no fluxo granular, o CreditRisk+ declara default "
+                leitura = ("o CreditRisk+ Bernoulli declara default "
                            "quando há ao menos um evento de Poisson, o que dá "
                            "probabilidade 1−e^(−p) < p: a EL fica levemente "
                            "abaixo da analítica por construção.")
@@ -897,7 +903,14 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                       secao="Metodologia")
             cs = results.get("crplus_csfp")
             if cs:
-                D.par("Duas versões são reportadas. A clássica (CSFP, 1997) "
+                D.par("Quatro versões são reportadas como modelos "
+                      "distintos, todas com os mesmos (w, v). Por simulação: "
+                      "Bernoulli (cada contrato inadimple no máximo uma vez, "
+                      "com probabilidade 1 − e^(−λ)) e Poisson (contagem "
+                      "Poisson, como no original). Analíticas: a clássica "
+                      "(CSFP, 1997) e o ponto de sela (Gordy, 2002), que "
+                      "aproxima a cauda pela fórmula de Lugannani–Rice com "
+                      "as severidades exatas. A clássica "
                       "trata a contagem como Poisson, discretiza as "
                       "severidades em faixas de L0 (aqui R$ "
                       f"{br(cs['L0'] / 1e3, 2)} mil, {cs['faixas']} faixas, EL "
@@ -906,12 +919,9 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                       + ("recursão de Panjer" if cs["metodo"] == "Panjer"
                          else "FFT (o Panjer falha quando P(L=0) é ínfima)")
                       + ": sem ruído de simulação, mas com erro de "
-                      "discretização e superestimação em PDs altas. A "
-                      "versão por simulação usa as severidades exatas e "
-                      + ("contagem Poisson nos grupos"
-                         if pooled else "o indicador H ≥ 1 por devedor "
-                         "(Bernoulli), com EL levemente abaixo da analítica")
-                      + "; é flexível, mas tem erro amostral.")
+                      "discretização e superestimação em PDs altas. As "
+                      "versões por simulação usam as severidades exatas; são "
+                      "flexíveis, mas têm erro amostral.")
                 D.formula(r"$G_L(z)=e^{\sum_j w_0\varepsilon_j(z^{\nu_j}-1)}"
                           r"\left[\frac{1-\delta}{1-\delta P(z)}\right]^{\alpha}$",
                           secao="Metodologia")

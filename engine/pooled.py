@@ -159,9 +159,24 @@ def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]
             lam = (n_eff * p) * (1.0 - w_c + w_c * S)
             loss[i0:i0 + m] = (rng.poisson(lam) * (C / n_eff)).sum(axis=1)
         el, ul, var, es = _measures(np.sort(loss), M, alphas)
-        rows.append(("CreditRisk+ (Poisson-gama 1F, pooled)",
+        rows.append(("CreditRisk+ simulação Poisson (pooled)",
                      el, ul, var, es))
         dists["CreditRisk+"] = np.sort(loss)
+
+        # versão Bernoulli: cada contrato inadimple no máximo uma vez,
+        # com probabilidade 1 − e^{−λ}; gerador próprio, para não alterar
+        # os sorteios dos demais modelos
+        tick("CreditRisk+ Bernoulli (pooled)...")
+        rng_b = np.random.default_rng(None if seed is None else [seed, 7])
+        loss = np.empty(M)
+        for i0 in range(0, M, _B2):
+            m = min(_B2, M - i0)
+            S = rng_b.gamma(v_c, 1.0 / v_c, (m, 1))
+            q_ = -np.expm1(-p * (1.0 - w_c + w_c * S))
+            loss[i0:i0 + m] = (rng_b.binomial(n, q_) * cbar).sum(axis=1)
+        el, ul, var, es = _measures(np.sort(loss), M, alphas)
+        rows.append(("CreditRisk+ simulação Bernoulli (pooled)",
+                     el, ul, var, es))
 
     # ---------- threshold gaussiano / t, 1F e multifatorial ----------
     BLOCO = 20_000   # simulação em blocos p/ controle de memória

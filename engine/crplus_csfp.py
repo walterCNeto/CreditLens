@@ -110,11 +110,12 @@ def _medidas(f, L0, alphas):
     return el, ul, np.array(var), np.array(es)
 
 
-def var_ponto_de_sela(nus, eps0, eps1, alpha, delta, mu1, alphas):
-    """VaR pela aproximação de ponto de sela de Lugannani–Rice (Gordy,
-    2002) sobre a função geradora de cumulantes K(t) = ln G(e^t), em
-    unidades de L₀. Verificação independente da inversão exata."""
-    nu = nus.astype(float)
+def ponto_de_sela(nus, eps0, eps1, alpha, delta, mu1, alphas):
+    """Aproximação de ponto de sela de Lugannani–Rice (Gordy, 2002) sobre
+    a função geradora de cumulantes K(t) = ln G(e^t). As "faixas" podem
+    ser reais (severidades exatas, sem discretização). Devolve
+    (UL, VaR, ES) na unidade de `nus`; o ES integra a cauda aproximada."""
+    nu = np.asarray(nus, float)
     q = eps1 / mu1 if mu1 > 0 else np.zeros_like(eps1)
 
     def K(t):
@@ -139,6 +140,7 @@ def var_ponto_de_sela(nus, eps0, eps1, alpha, delta, mu1, alphas):
         tmax = 50.0 / nu.max()
     _, media, var0 = K(0.0)
     lo = media + 0.5 * np.sqrt(var0)       # longe da média: L–R estável
+    xmax = K(tmax * (1.0 - 1e-7))[1]
 
     def cauda(x):
         t = brentq(lambda t: K(t)[1] - x, 1e-14, tmax)
@@ -147,14 +149,26 @@ def var_ponto_de_sela(nus, eps0, eps1, alpha, delta, mu1, alphas):
         u = t * np.sqrt(k2)
         return 1.0 - norm.cdf(w) + norm.pdf(w) * (1.0 / u - 1.0 / w)
 
-    xmax = K(tmax * (1.0 - 1e-7))[1]
-    out = []
+    var, es = [], []
     for a in alphas:
         try:
-            out.append(brentq(lambda x: cauda(x) - (1.0 - a), lo, xmax))
+            v = brentq(lambda x: cauda(x) - (1.0 - a), lo, xmax)
         except ValueError:
-            out.append(np.nan)
-    return np.array(out)
+            var.append(np.nan); es.append(np.nan)
+            continue
+        # ES = VaR + ∫_VaR^∞ P(L > x) dx / (1 − α), em grade até a cauda
+        # ficar desprezível
+        passo = max(np.sqrt(var0), 1e-9)
+        fim = v + passo
+        while fim < xmax and cauda(fim) > 1e-9 * (1.0 - a):
+            fim = min(v + 2.0 * (fim - v), xmax * (1.0 - 1e-9))
+            if fim >= xmax * (1.0 - 1e-9):
+                break
+        xs = np.linspace(v, fim, 241)
+        ts = np.array([cauda(x) for x in xs])
+        var.append(v)
+        es.append(v + np.trapezoid(ts, xs) / (1.0 - a))
+    return float(np.sqrt(var0)), np.array(var), np.array(es)
 
 
 def crplus_csfp(p, c, w, v, alphas, n=None, unidades_max=UNIDADES_MAX):
@@ -190,15 +204,24 @@ def crplus_csfp(p, c, w, v, alphas, n=None, unidades_max=UNIDADES_MAX):
         metodo = "FFT (P(L=0) abaixo da precisão do Panjer)"
     massa = float(f.sum())
     el, ul, var, es = _medidas(f / massa, L0, alphas)
+    # ponto de sela sobre as severidades exatas (sem faixas)
     try:
-        sela = var_ponto_de_sela(nus, eps0, eps1, alpha, delta, mu1,
-                                 alphas) * L0
+        mu1_e = float(w * lam.sum())             # contagem exata
+        delta_e = s2 * mu1_e / (1.0 + s2 * mu1_e)
+        ul_s, var_s, es_s = ponto_de_sela(u / L0, (1.0 - w) * lam,
+                                          w * lam, alpha, delta_e, mu1_e,
+                                          alphas)
+        ul_s, sela, es_s = ul_s * L0, var_s * L0, es_s * L0
     except (ValueError, FloatingPointError):
-        sela = np.full(len(alphas), np.nan)
+        ul_s = np.nan
+        sela = es_s = np.full(len(alphas), np.nan)
     info = {"L0": L0, "faixas": int(len(nus)), "metodo": metodo,
             "massa": massa, "n_max": n_max,
             "defaults_esperados": mu0 + mu1, "log_p0": float(log_p0),
             "el_exato": float((lam * u).sum()), "w": w, "v": v,
             "var_sela": {f"{a:.2%}": float(x) for a, x in zip(alphas, sela)},
-            "var_exato": {f"{a:.2%}": float(x) for a, x in zip(alphas, var)}}
+            "var_exato": {f"{a:.2%}": float(x) for a, x in zip(alphas, var)},
+            "sela": {"EL": float((lam * u).sum()), "UL": float(ul_s),
+                     "VaR": np.asarray(sela, float),
+                     "ES": np.asarray(es_s, float)}}
     return el, ul, var, es, info

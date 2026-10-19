@@ -72,8 +72,8 @@ with st.sidebar:
     rho_target = st.slider("Correlação de default alvo (ρ)", 0.01, 0.20, 0.05, 0.01)
     nu = st.slider("Graus de liberdade t-Student (ν)", 3, 50, 10)
     st.subheader("CreditRisk+")
-    st.caption("Mesmos (w, v) nas duas versões: por simulação e clássica "
-               "(CSFP, 1997: faixas de exposição, FGP e Panjer).")
+    st.caption("Mesmos (w, v) nas quatro versões: simulação Bernoulli e "
+               "Poisson, clássica (CSFP, 1997) e ponto de sela.")
     crp_w = st.slider("Carga do fator (w)", 0.05, 0.95, 0.35, 0.05)
     crp_v = st.slider("Parâmetro gama (v)", 0.2, 5.0, 1.2, 0.1)
     st.subheader("Multifatorial setorial")

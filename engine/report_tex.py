@@ -630,16 +630,16 @@ A probabilidade comum de default é sorteada de uma distribuição beta e, dado 
 Z\sim\mathrm{{Beta}}(a,b),\qquad D_n\mid Z\sim\mathrm{{Bernoulli}}(Z),\qquad \E[Z]=\frac{{a}}{{a+b}}=\bar p,\qquad \rho_D=\frac{{1}}{{a+b+1}},
 \end{{equation}}
 em que $a$ e $b$ são os parâmetros de forma, calibrados por momentos: $a={nm(ab['a'])}$ e $b={nm(ab['b'])}$.""" + (r" Na representação agregada, cada grupo segue os três regimes com $p_g(\cdot)=Z$." if pooled else "") + "\n")
-    if tem("CreditRisk+ ("):
+    if tem("CreditRisk+ simulação"):
         T.append(rf"""
-\subsection{{CreditRisk\textsuperscript{{+}} por simulação (Poisson-gama, um fator)}}
+\subsection{{CreditRisk\textsuperscript{{+}} por simulação: Bernoulli e Poisson}}
 O fator sistemático $S\sim\Gamma(v,1/v)$, com $\E[S]=1$ e $\mathrm{{Var}}(S)=1/v$, escala as intensidades de default:
 \begin{{equation}}
 H_n\mid S\sim\mathrm{{Poisson}}\bigl(p_n(1-w+wS)\bigr),
 \end{{equation}}
-em que $H_n$ é a contagem de defaults, $w={nm(prm.get('crplus_w'))}$ a carga do fator e $v={nm(prm.get('crplus_v'))}$ a dispersão (Credit Suisse First Boston, 1997)."""
-                 + (r" Na representação agregada, a contagem do grupo agrega exatamente, pois a soma de Poissons independentes é Poisson: $H_g\mid S\sim\mathrm{Poisson}\bigl(n_g p_g(1-w+wS)\bigr)$, com perda $L_g=(C_g/n_g)\,H_g$." if pooled
-                    else r" No fluxo granular, o default é declarado quando $H_n\ge1$, de modo que $\Pr(D_n)=1-e^{-p_n}<p_n$: a EL simulada fica ligeiramente abaixo da analítica.") + "\n")
+em que $H_n$ é a contagem de defaults, $w={nm(prm.get('crplus_w'))}$ a carga do fator e $v={nm(prm.get('crplus_v'))}$ a dispersão (Credit Suisse First Boston, 1997). Duas versões são simuladas, como modelos distintos. Na \emph{{Poisson}}, a perda é $L=\sum_n c_n H_n$, como no original: um devedor pode, em tese, inadimplir mais de uma vez, e $\E[L]=\sum_n p_n c_n$. Na \emph{{Bernoulli}}, o default é o evento $H_n\ge1$, de probabilidade $1-e^{{-\lambda_n(S)}}<\lambda_n(S)$: cada devedor perde no máximo uma vez a sua severidade, e a EL fica abaixo da analítica."""
+                 + (r" Na representação agregada, a versão Poisson agrega exatamente, pois a soma de Poissons independentes é Poisson: $H_g\mid S\sim\mathrm{Poisson}\bigl(n_g p_g(1-w+wS)\bigr)$, com perda $L_g=(C_g/n_g)\,H_g$; na Bernoulli, $D_g\mid S\sim\mathrm{Binomial}\bigl(n_g,1-e^{-p_g(1-w+wS)}\bigr)$." if pooled
+                    else "") + "\n")
     cs = results.get("crplus_csfp")
     if tem("CSFP") and cs:
         _met = "pela recursão de Panjer" if cs["metodo"] == "Panjer" else \
@@ -661,20 +661,17 @@ f(n)=\sum_j\Bigl(a+b\,\frac{{\nu_j}}{{n}}\Bigr)q_j\,f(n-\nu_j),
 com $(a,b)=(0,\mu)$ na Poisson composta e $(a,b)=(\delta,(\alpha-1)\delta)$ na binomial negativa, e da convolução das duas. Nesta execução, $L_0=$~R\$~{nb(cs['L0'] / 1e3, 2)}~mil, com {nb(cs['faixas'], 0)} faixas e {nb(cs['defaults_esperados'], 1)} \emph{{defaults}} esperados; a distribuição foi obtida {_met}.""" + _sela_txt(cs)
                  + (r" Na carteira agregada, cada grupo entra com intensidade $n_g p_g$ e perda por \emph{default} $C_g/n_g$, o que é exato para soma de Poissons." if pooled else "") + r"""
 
-\paragraph{As duas versões.} Os dois modelos compartilham as premissas de mistura: não há modelo para o evento de \emph{default}, a PD é estocástica e linear no fator, os \emph{defaults} são independentes dado o fator e a correlação só existe implicitamente, pelo fator comum. Diferem na contagem, na severidade e no cálculo (Tabela~\ref{tab:crplus}).
-""" + _tabela(["Aspecto", r"Clássico (CSFP)", r"Por simulação"],
-              [["Contagem", "Poisson: um devedor pode inadimplir mais de uma vez",
-                ("Poisson nos grupos; " if pooled else "") + r"indicador $\Ind\{H_n\ge1\}$ por devedor (Bernoulli)"],
-               ["Severidade", r"discretizada em faixas de $L_0$, com EL preservada", "exata, linha a linha"],
-               ["Cálculo", "FGP em forma fechada; Panjer (ou FFT)", r"Monte Carlo com $M$ cenários"],
-               ["Erro", "de discretização; instabilidade do Panjer quando $\\Pr(L=0)$ é ínfima", r"amostral, proporcional a $1/\sqrt{M}$"],
-               ["Tempo", "segundos, independente de $M$", r"proporcional a $M\times N$"],
-               ["Vantagens", "sem ruído de simulação; reprodutível; rápido; auditável pela forma fechada",
-                "flexível: LGD estocástica, contribuições por simulação, outras distribuições do fator"],
-               ["Desvantagens", "Poisson superestima a perda em PDs altas; faixas grosseiras distorcem a cauda; fatores gama independentes (correlação só positiva)",
-                "ruído de Monte Carlo; custo; no fluxo granular, EL abaixo da analítica ($1-e^{-p}<p$)"]],
-              r">{\raggedright\arraybackslash}p{2.1cm}>{\raggedright\arraybackslash}p{6.0cm}>{\raggedright\arraybackslash}p{6.0cm}",
-              r"CreditRisk\textsuperscript{+}: versão clássica e versão por simulação.", "tab:crplus", H=True))
+\paragraph{As quatro versões.} Os quatro modelos compartilham as premissas de mistura: não há modelo para o evento de \emph{default}, a PD é estocástica e linear no fator, os \emph{defaults} são independentes dado o fator e a correlação só existe implicitamente, pelo fator comum. Diferem na contagem, na severidade e no cálculo (Tabela~\ref{tab:crplus}). O ponto de sela é reportado como modelo próprio: a aproximação de Lugannani--Rice sobre a FGP com as severidades exatas, sem faixas, com o ES obtido pela integral da cauda aproximada.
+""" + _tabela(["Aspecto", "Simulação Bernoulli", "Simulação Poisson", r"Clássico (CSFP)", "Ponto de sela"],
+              [["Contagem", r"$\Ind\{H_n\ge1\}$: no máximo um \emph{default} por contrato", "Poisson", "Poisson", "Poisson"],
+               ["Severidade", "exata", "exata", r"faixas de $L_0$ (EL preservada)", "exata"],
+               ["Cálculo", r"Monte Carlo, $M$ cenários", r"Monte Carlo, $M$ cenários", "FGP; Panjer (ou FFT)", "cumulantes da FGP; Lugannani--Rice"],
+               ["Erro", r"amostral ($1/\sqrt{M}$)", r"amostral ($1/\sqrt{M}$)", "discretização; Panjer instável se $\\Pr(L=0)$ é ínfima", "da aproximação, maior perto da média"],
+               ["EL", r"abaixo da analítica ($1-e^{-p}<p$)", "analítica", "analítica", "analítica"],
+               ["Vantagens", "realista para PD alta; flexível", "fiel ao original; flexível", "exato; reprodutível; rápido", "instantâneo; sem faixas; cauda precisa"],
+               ["Desvantagens", "ruído; custo; EL menor", "ruído; custo; superestima em PD alta", "faixas distorcem a cauda; correlação só positiva", "aproxima o corpo; ES por integração"]],
+              r">{\raggedright\arraybackslash}p{2.25cm}>{\raggedright\arraybackslash}p{2.85cm}>{\raggedright\arraybackslash}p{2.85cm}>{\raggedright\arraybackslash}p{2.85cm}>{\raggedright\arraybackslash}p{2.85cm}",
+              r"CreditRisk\textsuperscript{+}: as quatro versões implementadas.", "tab:crplus", H=True))
     if tem("Threshold"):
         T.append(rf"""
 \subsection{{Modelos de limiar: Gaussiano e t-Student}}

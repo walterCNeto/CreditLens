@@ -31,7 +31,7 @@
 \large Análise Quantitativa de Carteiras de Crédito:\\
 Documentação Metodológica e Estudo de Caso}
 \author{Walter C.~Neto\\[1mm]\small Baseado em D.~J.~Bolder, \emph{Credit-Risk Modelling} (Springer, 2018)}
-\date{Outubro de 2026 --- versão 0.14}
+\date{Outubro de 2026 --- versão 0.15}
 
 \begin{document}
 \maketitle
@@ -131,25 +131,25 @@ com $\mu_1=w\sum_j\varepsilon_j$: o setor específico é uma Poisson composta e 
 \end{equation}
 A aproximação não exige a recursão nem a FFT, custa centésimos de segundo e é tanto mais precisa quanto mais distante da média; não entrega, porém, a distribuição inteira nem o ES sem fórmula adicional. Por isso entra como diagnóstico, e não como método principal: nos dois estudos de caso, o VaR 99{,}9\% pelo ponto de sela difere do exato em $-0{,}22\%$ (carteira granular) e $+0{,}13\%$ (carteira agregada), dentro do critério de $1\%$; parte da diferença decorre de a inversão exata produzir valores em múltiplos de $L_0$.
 
-A Tabela~\ref{tab:crplus-versoes} resume as diferenças. Em uma frase: a versão clássica troca o ruído de simulação pelo erro de discretização e pela aproximação de Poisson; a versão por simulação troca a forma fechada pela flexibilidade.
+A partir da versão 0.15, o CreditLens reporta \emph{quatro} versões do CreditRisk\textsuperscript{+} como modelos distintos, todas com os mesmos $(w,v)$: duas por simulação --- \emph{Bernoulli}, em que o default é o evento $H_n\ge1$, de probabilidade $1-e^{-\lambda_n(S)}$, e \emph{Poisson}, em que a perda é $\sum_n c_nH_n$, como no original --- e duas analíticas --- a clássica, acima, e o \emph{ponto de sela} da equação abaixo, calculado com as severidades exatas, sem faixas, e com o ES obtido pela integral da cauda aproximada. Na carteira agregada, a versão Bernoulli sorteia $D_g\mid S\sim\mathrm{Binomial}\bigl(n_g,1-e^{-p_g(1-w+wS)}\bigr)$. A Tabela~\ref{tab:crplus-versoes} resume as diferenças. Em uma frase: as versões analíticas trocam o ruído de simulação pelo erro de discretização (clássica) ou de aproximação (ponto de sela); a contagem Bernoulli troca a fidelidade ao original pelo realismo de um default por contrato.
 
 \begin{table}[H]
 \centering
-\small
-\begin{tabular}{>{\raggedright\arraybackslash}p{2.2cm}>{\raggedright\arraybackslash}p{6.1cm}>{\raggedright\arraybackslash}p{6.1cm}}
+\footnotesize
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{3.0cm}}
 \toprule
-Aspecto & Clássico (CSFP) & Por simulação \\
+Aspecto & Simulação Bernoulli & Simulação Poisson & Clássico (CSFP) & Ponto de sela \\
 \midrule
-Contagem & Poisson: admite mais de um default por devedor & indicador $H_n\ge1$ por devedor (Bernoulli); Poisson nos grupos do motor \emph{pooled} \\
-Severidade & discretizada em faixas de $L_0$, EL preservada & exata, linha a linha \\
-Cálculo & FGP em forma fechada; Panjer (ou FFT) & Monte Carlo com $M$ cenários \\
-Erro & discretização; instabilidade do Panjer quando $\Pr(L=0)$ é ínfima & amostral, $\propto 1/\sqrt{M}$ \\
-Tempo & segundos, independente de $M$ & proporcional a $M\times N$ \\
-Vantagens & sem ruído de simulação; reprodutível; rápido; auditável pela forma fechada & flexível: LGD estocástica, contribuições por simulação, outras distribuições do fator \\
-Desvantagens & Poisson superestima a perda em PDs altas; faixas grosseiras distorcem a cauda; fatores gama independentes (correlação só positiva) & ruído de Monte Carlo; custo; no fluxo granular, EL abaixo da analítica ($1-e^{-p}<p$) \\
+Contagem & $H_n\ge1$: no máximo um default por contrato & Poisson & Poisson & Poisson \\
+Severidade & exata & exata & faixas de $L_0$ (EL preservada) & exata \\
+Cálculo & Monte Carlo, $M$ cenários & Monte Carlo, $M$ cenários & FGP; Panjer (ou FFT) & cumulantes da FGP; Lugannani--Rice \\
+Erro & amostral ($1/\sqrt{M}$) & amostral ($1/\sqrt{M}$) & discretização; Panjer instável se $\Pr(L=0)$ é ínfima & da aproximação, maior perto da média \\
+EL & abaixo da analítica ($1-e^{-p}<p$) & analítica & analítica & analítica \\
+Vantagens & realista para PD alta; flexível & fiel ao original; flexível & exato; reprodutível; rápido & instantâneo; sem faixas; cauda precisa \\
+Desvantagens & ruído; custo; EL menor & ruído; custo; superestima em PD alta & faixas distorcem a cauda; correlação só positiva & aproxima o corpo; ES por integração \\
 \bottomrule
 \end{tabular}
-\caption{CreditRisk\textsuperscript{+}: versão clássica (CSFP, 1997) e versão por simulação.}
+\caption{CreditRisk\textsuperscript{+}: as quatro versões implementadas.}
 \label{tab:crplus-versoes}
 \end{table}
 
@@ -552,8 +552,10 @@ Modelo & EL & UL & VaR$_{99\%}$ & ES$_{99\%}$ & VaR$_{99,9\%}$ & ES$_{99,9\%}$ \
 \midrule
 Binomial indep.\ (analítico, homog.) & 95{,}0 & 40{,}5 & 192{,}0 & 192{,}4 & 233{,}9 \;(5{,}3\%) & --- \\
 Binomial independente (MC) & 94{,}9 & 60{,}5 & 279{,}3 & 320{,}3 & 371{,}2 \;(8{,}4\%) & 407{,}3 \\
-CreditRisk\textsuperscript{+} (1 fator) & 89{,}1 & 64{,}9 & 295{,}8 & 337{,}7 & 396{,}2 \;(9{,}0\%) & 427{,}5 \\
+CreditRisk\textsuperscript{+} simulação Bernoulli & 89{,}1 & 64{,}9 & 295{,}8 & 337{,}7 & 396{,}2 \;(9{,}0\%) & 427{,}5 \\
+CreditRisk\textsuperscript{+} simulação Poisson & 95{,}0 & 70{,}2 & 325{,}7 & 380{,}4 & 451{,}5 \;(10{,}3\%) & 496{,}9 \\
 CreditRisk\textsuperscript{+} clássico (CSFP) & 95{,}0 & 70{,}4 & 326{,}2 & 380{,}8 & 451{,}5 \;(10{,}3\%) & 504{,}7 \\
+CreditRisk\textsuperscript{+} ponto de sela & 95{,}0 & 70{,}4 & 324{,}6 & 379{,}6 & 450{,}5 \;(10{,}2\%) & 503{,}9 \\
 Threshold Gaussiano 1F & 95{,}2 & 120{,}6 & 563{,}6 & 727{,}9 & 927{,}1 \;(21{,}1\%) & 1\,116{,}7 \\
 Beta-binomial (\emph{mixture}) & 94{,}9 & 157{,}9 & 735{,}7 & 930{,}4 & 1\,187{,}5 \;(27{,}0\%) & 1\,332{,}1 \\
 ASRF (analítico) & 95{,}0 & --- & 701{,}0 & 944{,}9 & 1\,265{,}6 \;(28{,}7\%) & 1\,520{,}5 \\
@@ -567,7 +569,7 @@ IRB Bacen ($K^{*}+\E[L]$) & 95{,}0 & --- & --- & --- & 808{,}5 \;(18{,}4\%) & --
 \end{tabular}
 \end{table}
 
-A Tabela~\ref{tab:medidas} contém a mensagem central do exercício, que pode ser lida em três camadas. A primeira é a \emph{verificação de consistência}: a perda esperada é de aproximadamente $95$ em todos os modelos (o desvio do CreditRisk\textsuperscript{+} por simulação, $89{,}1$, decorre do indicador $H_n\ge1$, com $\Prob(\text{default})=1-e^{-p_n}<p_n$; a versão clássica, com contagem de Poisson, preserva a EL de $95{,}0$). A diferença entre as duas versões chega a $14\%$ no VaR 99{,}9\% ($396{,}2$ contra $451{,}5$): a contagem de Poisson acrescenta defaults múltiplos justamente nos nomes de PD alta, que dominam a cauda desta carteira. A versão clássica usou a recursão de Panjer, com $L_0=$~R\$~$149{,}36$~mil, $155$ faixas e $5{,}9$ defaults esperados. Ora, se modelos calibrados ao mesmo primeiro momento chegam a diferir por um fator de quase seis vezes no VaR 99{,}90\% --- de 234 a 1\,373 ---, fica demonstrado empiricamente que o risco de crédito de uma carteira reside, essencialmente, na estrutura de dependência entre os defaults, e não nas PDs individuais.
+A Tabela~\ref{tab:medidas} contém a mensagem central do exercício, que pode ser lida em três camadas. A primeira é a \emph{verificação de consistência}: a perda esperada é de aproximadamente $95$ em todos os modelos (o desvio do CreditRisk\textsuperscript{+} por simulação, $89{,}1$, decorre do indicador $H_n\ge1$, com $\Prob(\text{default})=1-e^{-p_n}<p_n$; a versão clássica, com contagem de Poisson, preserva a EL de $95{,}0$). As três versões com contagem de Poisson concordam --- VaR 99{,}9\% de $451{,}5$ na simulação e na clássica e $450{,}5$ no ponto de sela ---, e a Bernoulli fica abaixo: a diferença chega a $14\%$ no VaR 99{,}9\% ($396{,}2$ contra $451{,}5$): a contagem de Poisson acrescenta defaults múltiplos justamente nos nomes de PD alta, que dominam a cauda desta carteira. A versão clássica usou a recursão de Panjer, com $L_0=$~R\$~$149{,}36$~mil, $155$ faixas e $5{,}9$ defaults esperados. Ora, se modelos calibrados ao mesmo primeiro momento chegam a diferir por um fator de quase seis vezes no VaR 99{,}90\% --- de 234 a 1\,373 ---, fica demonstrado empiricamente que o risco de crédito de uma carteira reside, essencialmente, na estrutura de dependência entre os defaults, e não nas PDs individuais.
 
 A segunda camada é a hierarquia das caudas, que segue exatamente a teoria: independente $<$ CreditRisk\textsuperscript{+} (com os $w,v$ adotados) $<$ \emph{threshold} gaussiano $<$ beta-binomial $\approx$ ASRF $<$ t-Student. A variante t, mantida a \emph{mesma} correlação de ativos do modelo gaussiano, entrega VaR 99{,}9\% 48\% maior e ES 99{,}9\% 55\% maior --- o preço da dependência de cauda, que a cópula gaussiana, por construção, não captura.
 
@@ -790,8 +792,10 @@ A base foi reduzida a \textbf{440 linhas} --- $200$ grandes exposições e $240$
 Modelo & EL & UL & VaR$_{99\%}$ & VaR$_{99,9\%}$ & ES$_{99,9\%}$ \\
 \midrule
 Binomial independente & 59{,}021 & 3{,}375 & 69{,}162 & 73{,}738 \;(3{,}280\%) & 75{,}242 \\
-CreditRisk\textsuperscript{+} (1 fator) & 59{,}059 & 19{,}152 & 125{,}634 & 166{,}624 \;(7{,}412\%) & 182{,}641 \\
+CreditRisk\textsuperscript{+} simulação Poisson & 59{,}059 & 19{,}152 & 125{,}634 & 166{,}624 \;(7{,}412\%) & 182{,}641 \\
+CreditRisk\textsuperscript{+} simulação Bernoulli & 56{,}025 & 17{,}157 & 114{,}525 & 149{,}494 \;(6{,}650\%) & 163{,}703 \\
 CreditRisk\textsuperscript{+} clássico (CSFP) & 59{,}040 & 19{,}190 & 125{,}977 & 167{,}051 \;(7{,}431\%) & 184{,}766 \\
+CreditRisk\textsuperscript{+} ponto de sela & 59{,}040 & 19{,}191 & 126{,}121 & 167{,}267 \;(7{,}441\%) & 185{,}038 \\
 Beta-binomial (\emph{mixture}) & 59{,}096 & 80{,}620 & 371{,}393 & 587{,}628 \;(26{,}140\%) & 668{,}890 \\
 \midrule
 Threshold Gaussiano 1F & 58{,}954 & 63{,}393 & 303{,}051 & 503{,}819 \;(22{,}412\%) & 582{,}928 \\
@@ -807,7 +811,7 @@ IRB Bacen ($K^{*}+\E[L]$) & 59{,}040 & --- & --- & 259{,}090 \;(11{,}526\%) & --
 
 A Tabela~\ref{tab:pooled} e as Figuras~\ref{fig:pooled} e~\ref{fig:g-var} exibem a assinatura da alta granularidade, ausente por construção numa carteira de poucas centenas de nomes. A primeira leitura é a \emph{morte do risco idiossincrático}: o modelo binomial independente colapsa para UL de $3{,}375$ contra $63{,}393$ do \emph{threshold} gaussiano --- $18{,}782$ vezes menos ---, porque a lei dos grandes números, agindo sobre $300$ mil contratos, elimina praticamente toda a variabilidade não sistemática. O risco remanescente é inteiramente ciclo: a premissa assintótica do ASRF materializada empiricamente, e a razão pela qual capital de carteiras pulverizadas é uma discussão sobre correlação com o fator sistemático, não sobre PDs individuais.
 
-A segunda leitura vem dos \emph{mixture models}, agora disponíveis no motor \emph{pooled}. A beta-binomial, calibrada ao mesmo $\rho_D=5\%$, entrega VaR 99{,}9\% de $587{,}628$ --- $1{,}166$ vez o do \emph{threshold} gaussiano de um fator ---, reproduzindo na alta granularidade a proximidade entre as duas famílias observada no Estudo de caso~1: com o mesmo par $(\bar p,\rho_D)$, a mistura beta e a cópula gaussiana diferem apenas na forma da distribuição do fator. O CreditRisk\textsuperscript{+}, com $(w,v)=(0{,}35;\,1{,}2)$, fica em $166{,}624$ --- $0{,}331$ do gaussiano ---, a mesma ordem relativa do caso granular: os parâmetros escolhidos implicam correlação de default bem abaixo do alvo comum. A EL do CreditRisk\textsuperscript{+} agregado ($59{,}059$) coincide com a analítica dentro do erro de simulação, como antecipado em \eqref{eq:crplus-pooled}. A versão clássica confirma a simulação: EL de $59{,}040$, exatamente a analítica, e VaR 99{,}9\% de $167{,}051$, $0{,}256\%$ acima --- dentro do erro de Monte Carlo, porque aqui as duas versões usam a mesma contagem de Poisson. Com $3\,018$ defaults esperados, $\Pr(L=0)=e^{-1\,969{,}8}$ e a recursão de Panjer é inviável; a FGP foi invertida por FFT, com $L_0=$~R\$~$7{,}74$~mil e $156$ faixas. E a diversificação setorial segue material: o multifatorial reduz o VaR 99{,}9\% gaussiano em $15{,}422\%$ ($503{,}819\to426{,}119$).
+A segunda leitura vem dos \emph{mixture models}, agora disponíveis no motor \emph{pooled}. A beta-binomial, calibrada ao mesmo $\rho_D=5\%$, entrega VaR 99{,}9\% de $587{,}628$ --- $1{,}166$ vez o do \emph{threshold} gaussiano de um fator ---, reproduzindo na alta granularidade a proximidade entre as duas famílias observada no Estudo de caso~1: com o mesmo par $(\bar p,\rho_D)$, a mistura beta e a cópula gaussiana diferem apenas na forma da distribuição do fator. O CreditRisk\textsuperscript{+}, com $(w,v)=(0{,}35;\,1{,}2)$, fica em $166{,}624$ --- $0{,}331$ do gaussiano ---, a mesma ordem relativa do caso granular: os parâmetros escolhidos implicam correlação de default bem abaixo do alvo comum. A EL do CreditRisk\textsuperscript{+} agregado ($59{,}059$) coincide com a analítica dentro do erro de simulação, como antecipado em \eqref{eq:crplus-pooled}. A versão clássica confirma a simulação: EL de $59{,}040$, exatamente a analítica, e VaR 99{,}9\% de $167{,}051$, $0{,}256\%$ acima --- dentro do erro de Monte Carlo, porque aqui as duas versões usam a mesma contagem de Poisson. Com $3\,018$ defaults esperados, $\Pr(L=0)=e^{-1\,969{,}8}$ e a recursão de Panjer é inviável; a FGP foi invertida por FFT, com $L_0=$~R\$~$7{,}74$~mil e $156$ faixas. O ponto de sela, com as severidades exatas, dá $167{,}267$. A versão Bernoulli, sorteada com gerador próprio para não alterar os demais modelos, fica $10{,}3\%$ abaixo ($149{,}494$), com EL de $56{,}025$, abaixo da analítica: como no Estudo de caso~1, limitar a um default por contrato reduz a EL e a cauda. E a diversificação setorial segue material: o multifatorial reduz o VaR 99{,}9\% gaussiano em $15{,}422\%$ ($503{,}819\to426{,}119$).
 
 \begin{figure}[htb]
 \centering
