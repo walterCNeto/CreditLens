@@ -291,14 +291,9 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
         tol = 3 * ul / np.sqrt(M) / el0
         if "CSFP" in nome or "ponto de sela" in nome:
             continue                     # analíticos: diagnóstico próprio
-        if "Bernoulli" in nome:
-            st_ = "Esperado"
-            crit = "Bernoulli: " + fm(r"\Pr(H\ge 1)=1-e^{-p}<p",
-                                     "P(H ≥ 1) = 1 − e^(−p) < p")
-        else:
-            st_ = "OK" if abs(dev) <= tol else "Atenção"
-            crit = (fm(r"|\mathrm{desvio}|\le 3\sigma_{\mathrm{MC}}",
-                       "|desvio| ≤ 3σ_MC") + f" = {br(tol, 3, pct=True)}")
+        st_ = "OK" if abs(dev) <= tol else "Atenção"
+        crit = (fm(r"|\mathrm{desvio}|\le 3\sigma_{\mathrm{MC}}",
+                   "|desvio| ≤ 3σ_MC") + f" = {br(tol, 3, pct=True)}")
         rows.append([f"EL simulada ({_rotulo(nome)})",
                      f"desvio {br(dev, 3, pct=True)}", crit, st_])
 
@@ -342,8 +337,8 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
             dif = vb / vp - 1
             rows.append(["CreditRisk+: Bernoulli × Poisson (VaR 99,9%)",
                          f"diferença {br(dif, 3, pct=True)}",
-                         "Bernoulli ≤ Poisson (no máximo um default "
-                         "por contrato)",
+                         "Bernoulli ≤ Poisson (a Poisson admite vários "
+                         "defaults por contrato)",
                          "Esperado" if dif <= 0.03 else "Atenção"])
 
     # 2. calibração comum de dependência
@@ -365,6 +360,15 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
                      f"{br(imp, 3, pct=True)} (alvo {br(alvo, 3, pct=True)})",
                      "|desvio| ≤ 0,100 p.p.",
                      "OK" if abs(imp - alvo) <= 0.001 else "Atenção"])
+    ccr = results.get("calibracao_crplus")
+    if ccr:
+        _i, _a = ccr["rho_default_implicita"], ccr["rho_default_alvo"]
+        rows.append(["Calibração CreditRisk+: " + fm(r"\rho_D(w,v)",
+                                                    "ρ_D(w, v)"),
+                     f"{br(_i, 3, pct=True)} (alvo {br(_a, 3, pct=True)})"
+                     + ("" if ccr["calibrado"] else "; (w, v) do usuário"),
+                     "|desvio| ≤ 0,100 p.p.",
+                     "OK" if abs(_i - _a) <= 0.001 else "Atenção"])
     mfc = (results.get("multifator") or {}).get("calibracao", {})
     if mfc.get("cargas_por_setor"):
         from .multifactor import rho_default_par
@@ -593,19 +597,10 @@ def _interpretar(drows, M):
                     f"{br(M_sug, 0)} deve reduzir a meia-amplitude para menos de 5%."
                     if M_sug else "aumentar o número de simulações M.")
         elif teste.startswith("EL simulada"):
-            if st == "Esperado":
-                leitura = ("o CreditRisk+ Bernoulli declara default "
-                           "quando há ao menos um evento de Poisson, o que dá "
-                           "probabilidade " + fm(r"1-e^{-p}<p",
-                                                 "1 − e^(−p) < p")
-                           + ": a EL fica levemente "
-                           "abaixo da analítica por construção.")
-                acao = "nenhuma."
-            else:
-                leitura = (f"a EL simulada desvia da analítica ({res}) além "
-                           "de três erros-padrão de Monte Carlo.")
-                acao = ("rodar novamente com outra semente ou M maior; se o "
-                        "desvio persistir, revisar a implementação do modelo.")
+            leitura = (f"a EL simulada desvia da analítica ({res}) além "
+                       "de três erros-padrão de Monte Carlo.")
+            acao = ("rodar novamente com outra semente ou M maior; se o "
+                    "desvio persistir, revisar a implementação do modelo.")
         elif teste.startswith("CreditRisk+ clássico: exato"):
             leitura = (f"o VaR 99,9% da inversão exata e o da aproximação "
                        f"de ponto de sela divergem ({res}) além de 1%.")
@@ -613,6 +608,12 @@ def _interpretar(drows, M):
                     "concentradas; prevalece o valor exato, mas convém "
                     "revisar a discretização (" + fm("L_0", "L0")
                     + ") e a carteira.")
+        elif teste.startswith("Calibração CreditRisk+"):
+            leitura = (f"a correlação de default implícita do CreditRisk+ "
+                       f"({res}) não reproduz o alvo comum.")
+            acao = ("ativar a calibração ao ρ alvo (w = 1, v resolvido) ou "
+                    "ajustar w e v; sem isso, o CreditRisk+ não é comparável "
+                    "aos demais modelos.")
         elif teste.startswith("Calibração"):
             leitura = (f"a correlação de default implícita ({res}) não "
                        "reproduz o alvo dentro de 0,1 p.p.")
@@ -712,7 +713,10 @@ def _parametros(results, prm, pooled, tem, mig, extra):
         R.append(["CreditRisk+ (w, v)",
                   f"{br(prm.get('crplus_w'), 3)} / "
                   f"{br(prm.get('crplus_v'), 3)}",
-                  "peso do fator gama e sua dispersão", "[8]"])
+                  "peso do fator gama e sua dispersão; "
+                  + ("calibrados ao ρ_D alvo (w = 1, v resolvido)"
+                     if prm.get("crplus_calibrado", False)
+                     else "informados pelo usuário"), "[8]"])
     if tem("multifatorial"):
         R.append(["ρ_D intra / inter-setor",
                   f"{br(prm.get('rho_intra'), 3, pct=True)} / "
@@ -935,7 +939,15 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   "intensidades de default; os defaults condicionais são "
                   "Poisson. Parâmetros desta execução: peso do fator "
                   f"w = {br(prm.get('crplus_w'), 3)} e dispersão "
-                  f"v = {br(prm.get('crplus_v'), 3)}."
+                  f"v = {br(prm.get('crplus_v'), 3)}"
+                  + (", calibrados para reproduzir a correlação de default "
+                     "alvo comum (w = 1, v resolvido)."
+                     if prm.get("crplus_calibrado", False)
+                     else ", informados pelo usuário.")
+                  + " Com v pequeno, o fator gama tem cauda pesada e a "
+                  "contagem Poisson soma vários defaults do mesmo devedor "
+                  "nos cenários extremos; por isso as versões Poisson "
+                  "ficam acima da Bernoulli na cauda."
                   + (" Na representação agregada, a contagem do pool "
                      "agrega exatamente: a soma de Poissons é Poisson."
                      if pooled else ""))
@@ -946,8 +958,9 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             if cs:
                 D.par("Quatro versões são reportadas como modelos "
                       "distintos, todas com os mesmos (w, v). Por simulação: "
-                      "Bernoulli (cada contrato inadimple no máximo uma vez, "
-                      "com probabilidade 1 − e^(−λ)) e Poisson (contagem "
+                      "Bernoulli (cada contrato inadimple no máximo uma vez; "
+                      "a intensidade λ é ajustada para que P(H ≥ 1) = p e "
+                      "a EL seja a analítica) e Poisson (contagem "
                       "Poisson, como no original). Analíticas: a clássica "
                       "(CSFP, 1997) e o ponto de sela (Gordy, 2002), que "
                       "aproxima a cauda pela fórmula de Lugannani–Rice com "
@@ -958,7 +971,9 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                       "preservada) e obtém a distribuição exata da função "
                       "geradora de probabilidade por "
                       + ("recursão de Panjer" if cs["metodo"] == "Panjer"
-                         else "FFT (o Panjer falha quando P(L=0) é ínfima)")
+                         else "FFT (o Panjer falha quando P(L=0) é ínfima)"
+                         if cs["log_p0"] <= -700 else
+                         "FFT (suporte longo demais para o Panjer)")
                       + ": sem ruído de simulação, mas com erro de "
                       "discretização e superestimação em PDs altas. As "
                       "versões por simulação usam as severidades exatas; são "
@@ -1434,4 +1449,35 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                           for r in t.itertuples(index=False)],
                          [0.26, 0.12, 0.17, 0.14, 0.15, 0.14],
                          0.022 * (len(t) + 1), sec_ap)
+
+        # ================= apêndice: alocação de capital =================
+        from .alocacao import tabela_alocacao, ALPHAS
+        _al, _ap, _ead, _kd = tabela_alocacao(results)
+        if _al is not None and len(_al):
+            letra = "B" if descritiva else "A"
+            sec_b = f"Apêndice {letra}"
+            D.nova(sec_b)
+            D.h1(f"Apêndice {letra}: alocação de capital por modelo")
+            D.par("Capital econômico de cada modelo: perda inesperada "
+                  "(VaR − EL e ES − EL, com a EL do próprio modelo) em cada "
+                  "nível de confiança"
+                  + (f", somada ao capital das exposições em default "
+                     f"(R$ {mi(_kd)} mi), que não depende do nível"
+                     if _kd else "")
+                  + ". As linhas de referência (IRB e capital regulatório "
+                  "final, após o piso de saída) existem apenas a 99,9%. "
+                  f"EAD total: R$ {mi(_ead)} mi, incluídas as exposições em "
+                  "default.", secao=sec_b)
+            niv = [a.replace(".", ",") for a in ALPHAS]
+            for med_, rot_ in (("VaR", "VaR − EL"), ("ES", "ES − EL")):
+                for d_, un_, f_ in ((_al, "R$ mi", mi),
+                                    (_ap, "% da EAD total",
+                                     lambda v: br(v, 2, pct=True))):
+                    D.h2(f"{rot_} ({un_})", secao=sec_b)
+                    lin = [[str(r["modelo"]).replace(" (pooled)", "")]
+                           + [f_(r[f"{med_} {a}"]) for a in ALPHAS]
+                           for _, r in d_.iterrows()]
+                    D.tabela(["Modelo"] + niv, lin,
+                             [0.44, 0.14, 0.14, 0.14, 0.14],
+                             0.022 * (len(lin) + 1), sec_b)
         D.fecha()

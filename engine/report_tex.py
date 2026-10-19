@@ -248,6 +248,26 @@ def _fig_distribuicoes(dists, total, path, unidade="R$ milhões"):
     plt.close(fig)
 
 
+def _crp_cal_txt(results, prm):
+    """Parágrafo sobre a calibração (w, v) do CreditRisk+."""
+    c = results.get("calibracao_crplus")
+    if not c:
+        return ""
+    alvo, imp = c["rho_default_alvo"], c["rho_default_implicita"]
+    base = (r" Para dois devedores com a PD média $\bar p$ e intensidade $\lambda$ que a reproduz, a probabilidade de \emph{default} conjunto é $\Pr(D_1D_2)=1-2(1-\bar p)+e^{-2\lambda(1-w)}(1+2\lambda w/v)^{-v}$, e a correlação de \emph{default} implícita é $\rho_D=\bigl(\Pr(D_1D_2)-\bar p^{\,2}\bigr)/\bigl(\bar p(1-\bar p)\bigr)$.")
+    if c["calibrado"]:
+        t = (rf"""
+
+\paragraph{{Calibração.}} Os parâmetros são calibrados à mesma correlação de \emph{{default}} alvo dos demais modelos.{base} Com todo o risco no fator ($w=1$), a dispersão $v$ é a raiz de $\rho_D(v)=\rho_D^{{\mathrm{{alvo}}}}$: nesta execução, $v={nm(c['v'])}$, com $\rho_D={nm(imp, 3, pct=True)}$ (alvo ${nm(alvo, 3, pct=True)}$).""")
+        if not c.get("atingivel", True):
+            t += r" O alvo não é atingível com $w=1$; usou-se o valor mais próximo."
+    else:
+        t = (rf"""
+
+\paragraph{{Calibração.}} Os parâmetros $w$ e $v$ foram informados pelo usuário, sem calibração ao alvo comum.{base} Nesta execução, $\rho_D={nm(imp, 3, pct=True)}$, contra o alvo de ${nm(alvo, 3, pct=True)}$ dos demais modelos, e a comparação entre famílias deve levar essa diferença em conta.""")
+    return t + r" Quando $v$ é pequeno, o fator gama tem cauda pesada: nos cenários extremos, $\lambda_n S$ fica grande e a contagem Poisson soma vários \emph{defaults} do mesmo devedor, o que a versão Bernoulli não permite. Por isso as versões Poisson (simulação, clássica e ponto de sela) ficam acima da Bernoulli na cauda, e a distância entre elas mede o peso dessa aproximação."
+
+
 def _sela_txt(cs):
     """Frase da verificação por ponto de sela (Gordy, 2002)."""
     vs = (cs.get("var_sela") or {}).get("99.90%")
@@ -507,6 +527,61 @@ O maior contribuinte para a perda esperada é {tx(str(maior[c]))}, com {nb(maior
     return "".join(T), figs
 
 
+def _apendice_alocacao(results, primeiro, letra):
+    """Apêndice com o capital por modelo (R$ milhões e % da EAD total)."""
+    from .alocacao import tabela_alocacao, ALPHAS
+    df, pct, ead, k_def = tabela_alocacao(results)
+    if df is None or not len(df):
+        return ""
+    cols = [f"VaR {a}" for a in ALPHAS] + [f"ES {a}" for a in ALPHAS]
+    niveis = [a.replace(".", "{,}").replace("%", r"\%") for a in ALPHAS]
+    cab = (r"& \multicolumn{4}{c}{VaR $-$ EL} & \multicolumn{4}{c}{ES $-$ EL} \\"
+           "\n" r"\cmidrule(lr){2-5}\cmidrule(lr){6-9}" "\n"
+           "Modelo & " + " & ".join(niveis + niveis) + r" \\")
+
+    def corpo(d, fmt):
+        out, ref = [], False
+        for r in d.itertuples(index=False):
+            lin = dict(zip(d.columns, r))
+            if lin["tipo"] == "referencia" and not ref:
+                out.append(r"\midrule")
+                ref = True
+            nome = tx(lin["modelo"])
+            out.append(nome + " & " + " & ".join(fmt(lin[c]) for c in cols)
+                       + r" \\")
+        return "\n".join(out)
+
+    def tab(d, fmt, leg, rot):
+        return rf"""
+\begin{{table}}[H]
+\centering\footnotesize
+\caption{{{leg}}}
+\label{{{rot}}}
+\setlength{{\tabcolsep}}{{3pt}}
+\begin{{tabular}}{{>{{\raggedright\arraybackslash}}p{{4.4cm}}rrrrrrrr}}
+\toprule
+{cab}
+\midrule
+{corpo(d, fmt)}
+\bottomrule
+\end{{tabular}}
+\end{{table}}
+"""
+    k_txt = (rf" Em todas as linhas de modelo soma-se o capital das exposições em \emph{{default}}, $\mathrm{{EAD}}\cdot(\mathrm{{LGD}}_D-\mathrm{{ELBE}})$, de R\$~{mi(k_def)}~milhões, que não depende do nível de confiança (Seção~\ref{{sec:capital}})."
+             if k_def else "")
+    return (r"""
+\clearpage
+""" + (r"\appendix" + "\n" if primeiro else "") + rf"""\section{{Alocação de capital por modelo}}
+\label{{ap:alocacao}}
+Este apêndice resume o capital que cada modelo atribuiria à carteira em cada nível de confiança. O capital econômico é a perda inesperada: $\mathrm{{VaR}}_\alpha-\mathrm{{EL}}$ ou $\mathrm{{ES}}_\alpha-\mathrm{{EL}}$, com a EL do próprio modelo.{k_txt} As linhas de referência trazem o IRB e o capital regulatório final, após o piso de saída; ambos são definidos apenas a 99{{,}}9\%. A Tabela~\ref{{tab:aloc-rs}} apresenta os valores em R\$ milhões; a Tabela~\ref{{tab:aloc-pct}}, em percentual da EAD total da carteira (R\$~{mi(ead)}~milhões, incluídas as exposições em \emph{{default}}).
+""" + tab(df, lambda v: mi(v),
+          r"Capital por modelo e nível de confiança (R\$ milhões).",
+          "tab:aloc-rs")
+            + tab(pct, lambda v: nb(v, 2, pct=True),
+                  r"Capital por modelo e nível de confiança, em percentual da EAD total.",
+                  "tab:aloc-pct"))
+
+
 def montar_tex(port, results, mig=None, nome_base="", extra=None,
                rel_agg=None, figdir=".", descritiva=None):
     """Devolve (código LaTeX, lista de figuras geradas em `figdir`)."""
@@ -653,13 +728,18 @@ O fator sistemático $S\sim\Gamma(v,1/v)$, com $\E[S]=1$ e $\mathrm{{Var}}(S)=1/
 \begin{{equation}}
 H_n\mid S\sim\mathrm{{Poisson}}\bigl(p_n(1-w+wS)\bigr),
 \end{{equation}}
-em que $H_n$ é a contagem de defaults, $w={nm(prm.get('crplus_w'))}$ a carga do fator e $v={nm(prm.get('crplus_v'))}$ a dispersão (Credit Suisse First Boston, 1997). Duas versões são simuladas, como modelos distintos. Na \emph{{Poisson}}, a perda é $L=\sum_n c_n H_n$, como no original: um devedor pode, em tese, inadimplir mais de uma vez, e $\E[L]=\sum_n p_n c_n$. Na \emph{{Bernoulli}}, o default é o evento $H_n\ge1$, de probabilidade $1-e^{{-\lambda_n(S)}}<\lambda_n(S)$: cada devedor perde no máximo uma vez a sua severidade, e a EL fica abaixo da analítica."""
-                 + (r" Na representação agregada, a versão Poisson agrega exatamente, pois a soma de Poissons independentes é Poisson: $H_g\mid S\sim\mathrm{Poisson}\bigl(n_g p_g(1-w+wS)\bigr)$, com perda $L_g=(C_g/n_g)\,H_g$; na Bernoulli, $D_g\mid S\sim\mathrm{Binomial}\bigl(n_g,1-e^{-p_g(1-w+wS)}\bigr)$." if pooled
+em que $H_n$ é a contagem de defaults, $w={nm(prm.get('crplus_w'))}$ a carga do fator e $v={nm(prm.get('crplus_v'))}$ a dispersão (Credit Suisse First Boston, 1997). Duas versões são simuladas, como modelos distintos. Na \emph{{Poisson}}, a perda é $L=\sum_n c_n H_n$, como no original: um devedor pode, em tese, inadimplir mais de uma vez, e $\E[L]=\sum_n p_n c_n$. Na \emph{{Bernoulli}}, o default é o evento $H_n\ge1$ e cada devedor perde no máximo uma vez a sua severidade. Para que a PD seja reproduzida, a intensidade $p_n$ é trocada por $\lambda_n$, solução de
+\begin{{equation}}
+\Pr(H_n\ge1)=1-\E\bigl[e^{{-\lambda_n(1-w+wS)}}\bigr]=1-e^{{-\lambda_n(1-w)}}\Bigl(1+\frac{{\lambda_n w}}{{v}}\Bigr)^{{-v}}=p_n,
+\end{{equation}}
+e a EL da versão Bernoulli coincide com a analítica.{_crp_cal_txt(results, prm)}"""
+                 + (r" Na representação agregada, a versão Poisson agrega exatamente, pois a soma de Poissons independentes é Poisson: $H_g\mid S\sim\mathrm{Poisson}\bigl(n_g p_g(1-w+wS)\bigr)$, com perda $L_g=(C_g/n_g)\,H_g$; na Bernoulli, $D_g\mid S\sim\mathrm{Binomial}\bigl(n_g,1-e^{-\lambda_g(1-w+wS)}\bigr)$." if pooled
                     else "") + "\n")
     cs = results.get("crplus_csfp")
     if tem("CSFP") and cs:
         _met = "pela recursão de Panjer" if cs["metodo"] == "Panjer" else \
-            r"pela inversão exata da FGP por transformada rápida de Fourier, porque $\Pr(L=0)=e^{" + nm(cs["log_p0"], 1) + r"}$ está abaixo da precisão de ponto flutuante e a recursão de Panjer não pode partir dela"
+            (rf"pela inversão exata da FGP por transformada rápida de Fourier, porque o suporte tem {nb(cs['n_max'], 0)} unidades de $L_0$ e a recursão de Panjer, de custo quadrático no suporte, seria lenta" if cs["log_p0"] > -700 else
+             r"pela inversão exata da FGP por transformada rápida de Fourier, porque $\Pr(L=0)=e^{" + nm(cs["log_p0"], 1) + r"}$ está abaixo da precisão de ponto flutuante e a recursão de Panjer não pode partir dela")
         T.append(rf"""
 \subsection{{CreditRisk\textsuperscript{{+}} clássico (Credit Suisse First Boston, 1997)}}
 A versão original é analítica. Com a mesma intensidade estocástica, $\lambda_n(S)=p_n(w_0+wS)$, $w_0=1-w$ e $S\sim\Gamma(\alpha,1/\alpha)$ com $\alpha=v$ e $\sigma^2=1/\alpha$, a contagem de cada devedor é tratada como Poisson (um devedor pode, em tese, inadimplir mais de uma vez), e as severidades são discretizadas em faixas: com a unidade $L_0$, cada linha recebe $\nu_n=\max\{{1,\mathrm{{round}}(c_n/L_0)\}}$, e a intensidade de cada faixa $j$ é ajustada para preservar a perda esperada,
@@ -683,9 +763,9 @@ com $(a,b)=(0,\mu)$ na Poisson composta e $(a,b)=(\delta,(\alpha-1)\delta)$ na b
                ["Severidade", "exata", "exata", r"faixas de $L_0$ (EL preservada)", "exata"],
                ["Cálculo", r"Monte Carlo, $M$ cenários", r"Monte Carlo, $M$ cenários", "FGP; Panjer (ou FFT)", "cumulantes da FGP; Lugannani--Rice"],
                ["Erro", r"amostral ($1/\sqrt{M}$)", r"amostral ($1/\sqrt{M}$)", "discretização; Panjer instável se $\\Pr(L=0)$ é ínfima", "da aproximação, maior perto da média"],
-               ["EL", r"abaixo da analítica ($1-e^{-p}<p$)", "analítica", "analítica", "analítica"],
+               ["EL", r"analítica ($\lambda_n$ tal que $\Pr(H_n\ge1)=p_n$)", "analítica", "analítica", "analítica"],
                ["Vantagens", "realista para PD alta; flexível", "fiel ao original; flexível", "exato; reprodutível; rápido", "instantâneo; sem faixas; cauda precisa"],
-               ["Desvantagens", "ruído; custo; EL menor", "ruído; custo; superestima em PD alta", "faixas distorcem a cauda; correlação só positiva", "aproxima o corpo; ES por integração"]],
+               ["Desvantagens", "ruído; custo; afasta-se do original", "ruído; custo; múltiplos \\emph{defaults} sob fator gama pesado", "faixas distorcem a cauda; correlação só positiva", "aproxima o corpo; ES por integração"]],
               r">{\raggedright\arraybackslash}p{2.25cm}>{\raggedright\arraybackslash}p{2.85cm}>{\raggedright\arraybackslash}p{2.85cm}>{\raggedright\arraybackslash}p{2.85cm}>{\raggedright\arraybackslash}p{2.85cm}",
               r"CreditRisk\textsuperscript{+}: as quatro versões implementadas.", "tab:crplus", H=True))
     if tem("Threshold"):
@@ -907,6 +987,7 @@ em que $L_{{(k)}}$ é a $k$-ésima menor perda simulada (David e Nagaraja, 2003)
         cp = results.get("padronizado")
         T.append(r"""
 \section{Capital regulatório e concentração}
+\label{sec:capital}
 """ + _tabela(["Indicador", "Valor"], lin_k, "lr",
               "Capital regulatório pela abordagem IRB (modelos internos, Resolução BCB 303/2023); valores em R\\$ milhões.", "tab:irb", H=True))
         if cp:
@@ -1059,6 +1140,8 @@ A Tabela~\ref{{tab:setores}} decompõe a cauda por setor pela alocação de Eule
         _ta, _fa = _apendice_descritiva(descritiva, figdir, nome_base)
         T.append(_ta)
         figs += _fa
+    T.append(_apendice_alocacao(results, primeiro=not descritiva,
+                                letra="B" if descritiva else "A"))
     T.append(r"""
 \end{document}
 """)

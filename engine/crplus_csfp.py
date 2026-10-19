@@ -171,6 +171,51 @@ def ponto_de_sela(nus, eps0, eps1, alpha, delta, mu1, alphas):
     return float(np.sqrt(var0)), np.array(var), np.array(es)
 
 
+# ------------------------------------------------------------ calibração
+def lambda_bernoulli(p, w, v, iters=60):
+    """Intensidade λ tal que, na versão Bernoulli (default = {H ≥ 1}),
+    P(D) = 1 − E[e^{−λ(1−w+wS)}] = 1 − e^{−λ(1−w)} (1 + λw/v)^{−v} = p
+    exatamente; resolve por Newton, vetorizado."""
+    p = np.clip(np.asarray(p, float), 1e-12, 1 - 1e-12)
+    alvo = -np.log1p(-p)                        # λ(1−w) + v ln(1+λw/v)
+    if w <= 0:
+        return alvo
+    lam = alvo.copy()
+    for _ in range(iters):
+        f = lam * (1 - w) + v * np.log1p(lam * w / v) - alvo
+        df = (1 - w) + w / (1 + lam * w / v)
+        passo = f / df
+        lam = np.maximum(lam - passo, 1e-15)
+        if np.max(np.abs(passo)) < 1e-14:
+            break
+    return lam
+
+
+def rho_default_crplus(pbar, w, v):
+    """Correlação de default exata entre dois devedores de PD p̄ na versão
+    Bernoulli do CreditRisk+ (fator gama de média 1 e variância 1/v)."""
+    lam = float(lambda_bernoulli(pbar, w, v))
+    b = np.exp(-2 * lam * (1 - w)) * (1 + 2 * lam * w / v) ** (-v)
+    p11 = 1 - 2 * (1 - pbar) + b
+    return (p11 - pbar ** 2) / (pbar * (1 - pbar))
+
+
+def calibrar_crplus(pbar, rho_alvo, w=1.0):
+    """v que reproduz a correlação de default alvo com a carga w (por
+    padrão, w = 1: toda a intensidade responde ao fator). Devolve
+    (v, ρ_D implícita, atingível)."""
+    f = lambda lv: rho_default_crplus(pbar, w, np.exp(lv)) - rho_alvo
+    lo, hi = np.log(1e-4), np.log(1e4)
+    if f(lo) < 0:                     # alvo acima do máximo possível
+        v = float(np.exp(lo))
+        return v, rho_default_crplus(pbar, w, v), False
+    if f(hi) > 0:
+        v = float(np.exp(hi))
+        return v, rho_default_crplus(pbar, w, v), False
+    v = float(np.exp(brentq(f, lo, hi, xtol=1e-12)))
+    return v, rho_default_crplus(pbar, w, v), True
+
+
 def amostra_pmf(pmf, L0, m=50_000):
     """Amostra estratificada (determinística) da distribuição exata, para
     gráficos: quantis nos pontos (i + 0,5)/m."""
@@ -209,7 +254,9 @@ def crplus_csfp(p, c, w, v, alphas, n=None, unidades_max=UNIDADES_MAX):
         metodo = "Panjer"
     else:
         f = _fft(nus, eps0, eps1, alpha, delta, mu1, n_max)
-        metodo = "FFT (P(L=0) abaixo da precisão do Panjer)"
+        metodo = ("FFT (P(L=0) abaixo da precisão do Panjer)"
+                  if log_p0 <= LOG_MIN else
+                  "FFT (suporte longo demais para o Panjer)")
     massa = float(f.sum())
     el, ul, var, es = _medidas(f / massa, L0, alphas)
     # ponto de sela sobre as severidades exatas (sem faixas)

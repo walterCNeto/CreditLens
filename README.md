@@ -10,7 +10,7 @@ Python* (Springer, 2018)** — o referencial teórico do projeto (`model.pdf`).
 | Módulo | Modelos | Referência no livro |
 |---|---|---|
 | Independentes | Binomial (analítico homogêneo + Monte Carlo) | Cap. 2 |
-| Misturas | Beta-binomial calibrado; CreditRisk+ (Poisson-gama 1 fator) em quatro versões: simulação Bernoulli e Poisson, clássico CSFP (faixas, FGP, Panjer/FFT) e ponto de sela (Gordy, 2002) | Cap. 3 |
+| Misturas | Beta-binomial calibrado; CreditRisk+ (Poisson-gama 1 fator) em quatro versões: simulação Bernoulli e Poisson, clássico CSFP (faixas, FGP, Panjer/FFT) e ponto de sela (Gordy, 2002), calibrado à mesma correlação de default alvo dos demais modelos (w = 1, v resolvido; desligável na barra lateral) | Cap. 3 |
 | Limiar | Gaussiano 1 fator; t-Student 1 fator; ASRF analítico | Cap. 4 |
 | Capital regulatório | Abordagem IRB por modelos internos (Res. BCB 303/2023: correlação por categoria, ajuste de maturidade, pisos de PD) com ajuste de granularidade Gordy–Lütkebohmert (via CreditRisk+); abordagem padronizada RWACPAD (Res. BCB 229/2022: FPR por categoria, LTV, varejo, ativo problemático); piso de saída de 72,5% (art. 34 da Res. BCB 303) | Cap. 6 |
 | Contribuições | Decomposição Monte Carlo de VaR/ES por contraparte (limiar gaussiano) | Cap. 7 |
@@ -89,6 +89,7 @@ carteira-credito/
 ├── engine/
 │   ├── portfolio.py        # padrão de carteira + validação
 │   ├── analytics.py        # orquestração dos modelos do Bolder
+│   ├── alocacao.py         # capital por modelo (VaR/ES − EL, R$ e % da EAD)
 │   └── bolder/             # bibliotecas originais do livro (patcheadas*)
 ├── templates/carteira_modelo.csv         # modelo preenchido: uma linha por contraparte (R$)
 ├── templates/base_analitica_modelo.csv  # modelo preenchido: uma linha por contrato (R$)

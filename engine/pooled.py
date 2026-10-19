@@ -151,13 +151,21 @@ def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]
 
     if crp is not None:
         tick("CreditRisk+ (pooled)...")
-        w_c, v_c = crp
+        w_c, v_c = crp[0], crp[1]
+        lam_b = crp[2] if len(crp) > 2 else p
+        w0, v0 = (crp[3], crp[4]) if len(crp) > 4 else (w_c, v_c)
+        # reprodutibilidade: o gerador principal consome os mesmos sorteios
+        # da versão 0.15 (w e v informados); o CreditRisk+ usa gerador
+        # próprio, de modo que os modelos seguintes não mudam
+        rng_p = np.random.default_rng(None if seed is None else [seed, 13])
         loss = np.empty(M)
         for i0 in range(0, M, _B2):
             m = min(_B2, M - i0)
-            S = rng.gamma(v_c, 1.0 / v_c, (m, 1))
+            S0 = rng.gamma(v0, 1.0 / v0, (m, 1))
+            rng.poisson((n_eff * p) * (1.0 - w0 + w0 * S0))
+            S = rng_p.gamma(v_c, 1.0 / v_c, (m, 1))
             lam = (n_eff * p) * (1.0 - w_c + w_c * S)
-            loss[i0:i0 + m] = (rng.poisson(lam) * (C / n_eff)).sum(axis=1)
+            loss[i0:i0 + m] = (rng_p.poisson(lam) * (C / n_eff)).sum(axis=1)
         el, ul, var, es = _measures(np.sort(loss), M, alphas)
         rows.append(("CreditRisk+ simulação Poisson (pooled)",
                      el, ul, var, es))
@@ -172,7 +180,7 @@ def simulate_pooled(port, M=100_000, alphas=np.array([0.95, 0.99, 0.999, 0.9997]
         for i0 in range(0, M, _B2):
             m = min(_B2, M - i0)
             S = rng_b.gamma(v_c, 1.0 / v_c, (m, 1))
-            q_ = -np.expm1(-p * (1.0 - w_c + w_c * S))
+            q_ = -np.expm1(-lam_b * (1.0 - w_c + w_c * S))
             loss[i0:i0 + m] = (rng_b.binomial(n, q_) * cbar).sum(axis=1)
         el, ul, var, es = _measures(np.sort(loss), M, alphas)
         rows.append(("CreditRisk+ simulação Bernoulli (pooled)",

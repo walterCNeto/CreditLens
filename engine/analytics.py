@@ -74,6 +74,7 @@ def run_full_analysis(
     nu: float = 10.0,
     crp_w: float = 0.35,
     crp_v: float = 1.2,
+    crp_calibrar: bool = True,
     run_contributions: bool = True,
     run_multifactor: bool = False,
     rho_intra: float = 0.08,
@@ -138,15 +139,28 @@ def run_full_analysis(
     add_row("Beta-binomial (mixture)", el, ul, var, es, time.time() - t0)
     results["calibracao_beta"] = {"a": float(a_beta), "b": float(b_beta)}
 
+    _w0, _v0 = crp_w, crp_v               # informados (ou padrão da interface)
+    crp_w, crp_v, lam_b = _calibrar_crplus(results, pbar, rho_target, p,
+                                           crp_w, crp_v, crp_calibrar)
+
     _tick("CreditRisk+ por simulação (Bernoulli)...")
     t0 = time.time()
-    # mesmos sorteios de mix.crPlusOneFactor (Bolder), guardando as perdas
-    S_b = np.random.gamma(crp_v, 1 / crp_v, [M])
-    pS_b = np.tile(p, [M, 1]) * np.transpose(
-        np.tile(1 - crp_w + crp_w * S_b, [N, 1]))
-    H_b = np.random.poisson(pS_b, [M, N])
-    loss_cb = np.sort(np.dot(1 * np.greater_equal(H_b, 1), c), axis=None)
-    del S_b, pS_b, H_b
+    # Reprodutibilidade: consome do gerador global os mesmos sorteios da
+    # versão 0.15 (w e v informados), para que os modelos seguintes não
+    # mudem; o CreditRisk+ usa gerador próprio.
+    _S0 = np.random.gamma(_v0, 1 / _v0, [M])
+    np.random.poisson(np.tile(p, [M, 1]) * np.transpose(
+        np.tile(1 - _w0 + _w0 * _S0, [N, 1])), [M, N])
+    del _S0
+    # intensidade λ_B: P(D) = p exatamente na versão Bernoulli
+    rng_b = np.random.default_rng(None if seed is None else [seed, 11])
+    loss_cb = np.empty(M)
+    for i0 in range(0, M, 20_000):
+        m = min(20_000, M - i0)
+        S_b = rng_b.gamma(crp_v, 1 / crp_v, (m, 1))
+        H_b = rng_b.poisson(lam_b[None, :] * (1 - crp_w + crp_w * S_b))
+        loss_cb[i0:i0 + m] = (H_b >= 1) @ c
+    loss_cb.sort()
     el, ul, var, es = util.computeRiskMeasures(M, loss_cb, alphas)
     add_row("CreditRisk+ simulação Bernoulli", el, ul, var, es,
             time.time() - t0)
@@ -288,6 +302,28 @@ def run_full_analysis(
     return results
 
 
+def _calibrar_crplus(results, pbar, rho_alvo, p, w, v, calibrar):
+    """(w, v) do CreditRisk+: calibrados ao ρ_D alvo comum (w = 1, v
+    resolvido) ou informados pelo usuário; e a intensidade da versão
+    Bernoulli que reproduz exatamente a PD de cada linha."""
+    from .crplus_csfp import (calibrar_crplus, rho_default_crplus,
+                              lambda_bernoulli)
+    if calibrar:
+        w = 1.0
+        v, rho_imp, ok = calibrar_crplus(pbar, rho_alvo, w)
+    else:
+        rho_imp, ok = rho_default_crplus(pbar, w, v), True
+    results["calibracao_crplus"] = {
+        "calibrado": bool(calibrar), "w": float(w), "v": float(v),
+        "rho_default_alvo": float(rho_alvo),
+        "rho_default_implicita": float(rho_imp), "atingivel": bool(ok),
+        "pbar": float(pbar)}
+    results.setdefault("parametros", {}).update(
+        {"crplus_w": float(w), "crplus_v": float(v),
+         "crplus_calibrado": bool(calibrar)})
+    return float(w), float(v), lambda_bernoulli(p, w, v)
+
+
 def _cr_maior_cauda(dists, sims, info_cs, Mg=50_000):
     """Entre as versões do CreditRisk+ com distribuição completa (as duas
     simulações e a clássica), leva aos gráficos a de maior VaR 99,9%."""
@@ -392,6 +428,13 @@ def results_to_excel(results: dict, port, path: str):
                            if not isinstance(v, (pd.DataFrame, list))})
         pd.DataFrame([{"parâmetro": k, "valor": str(v)} for k, v in params.items()]
                      ).to_excel(xw, sheet_name="Parâmetros", index=False)
+        from .alocacao import tabela_alocacao
+        _al, _ap, _ead, _kd = tabela_alocacao(results)
+        if _al is not None and len(_al):
+            _al.drop(columns="tipo").to_excel(
+                xw, sheet_name="Capital por modelo (R$)", index=False)
+            _ap.drop(columns="tipo").to_excel(
+                xw, sheet_name="Capital por modelo (% EAD)", index=False)
 
 
 def run_pooled_analysis(
@@ -404,6 +447,7 @@ def run_pooled_analysis(
     nu: float = 10.0,
     crp_w: float = 0.35,
     crp_v: float = 1.2,
+    crp_calibrar: bool = True,
     contrib_alpha: float = 0.99,
     seed: int | None = 42,
     progress=None,
@@ -448,10 +492,14 @@ def run_pooled_analysis(
 
     import mixtureModels as mix
     a_beta, b_beta = mix.betaCalibrate(pbar, rho_target)
+    _cal_tmp = {"parametros": {}}
+    _w0, _v0 = crp_w, crp_v
+    crp_w, crp_v, lam_b = _calibrar_crplus(_cal_tmp, pbar, rho_target, p,
+                                           crp_w, crp_v, crp_calibrar)
     res_sim = simulate_pooled(
         port, M=M, alphas=alphas, rho=rho1,
         rho_g=rho_g_m if use_mf else None, rho_s=rho_s_m if use_mf else None,
-        nu=nu, beta_ab=(a_beta, b_beta), crp=(crp_w, crp_v),
+        nu=nu, beta_ab=(a_beta, b_beta), crp=(crp_w, crp_v, lam_b, _w0, _v0),
         rho_d_alvo=rho_target,
         contrib_alpha=contrib_alpha, seed=seed, progress=progress)
 
@@ -513,6 +561,7 @@ def run_pooled_analysis(
         "parametros": {"M": M, "alphas": list(map(float, alphas)),
                        "rho_alvo": rho_target, "rho_intra": rho_intra,
                        "crplus_w": crp_w, "crplus_v": crp_v,
+                       "crplus_calibrado": bool(crp_calibrar),
                        "beta_a": float(a_beta), "beta_b": float(b_beta),
                        "rho_inter": rho_inter, "nu_t": nu, "seed": seed,
                        "cargas_por_setor": cal_setor is not None},
@@ -539,6 +588,7 @@ def run_pooled_analysis(
         "contrib_bucket": res_sim["contribuicoes_bucket"],
         "regimes_pooled": res_sim["regimes"],
         "crplus_csfp": info_cs,
+        "calibracao_crplus": _cal_tmp["calibracao_crplus"],
         "contrib_alpha": res_sim["contrib_alpha"],
         "es_total_contrib": res_sim["es_total"],
         "modelo_contrib": res_sim["modelo_contrib"],

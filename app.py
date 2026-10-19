@@ -72,10 +72,19 @@ with st.sidebar:
     rho_target = st.slider("Correlação de default alvo (ρ)", 0.01, 0.20, 0.05, 0.01)
     nu = st.slider("Graus de liberdade t-Student (ν)", 3, 50, 10)
     st.subheader("CreditRisk+")
-    st.caption("Mesmos (w, v) nas quatro versões: simulação Bernoulli e "
-               "Poisson, clássica (CSFP, 1997) e ponto de sela.")
-    crp_w = st.slider("Carga do fator (w)", 0.05, 0.95, 0.35, 0.05)
-    crp_v = st.slider("Parâmetro gama (v)", 0.2, 5.0, 1.2, 0.1)
+    crp_cal = st.toggle(
+        "Calibrar ao ρ alvo", value=True,
+        help="Carga w = 1 e v do fator gama resolvido para que a "
+             "correlação de default implícita seja o ρ alvo, como nos "
+             "demais modelos. Desligado, usa os w e v informados.")
+    if crp_cal:
+        crp_w, crp_v = 0.35, 1.2          # ignorados na calibração
+        st.caption("Mesmos (w, v) nas quatro versões (simulação Bernoulli "
+                   "e Poisson, clássica e ponto de sela), calibrados ao ρ "
+                   "alvo ao executar.")
+    else:
+        crp_w = st.slider("Carga do fator (w)", 0.05, 1.0, 0.35, 0.05)
+        crp_v = st.slider("Parâmetro gama (v)", 0.2, 5.0, 1.2, 0.1)
     st.subheader("Multifatorial setorial")
     run_mf = st.checkbox("Ativar modelo multifatorial (exige coluna setor)", value=True)
     rho_intra = st.slider("ρ default alvo intra-setor", 0.01, 0.30, 0.08, 0.01)
@@ -539,7 +548,7 @@ def _config_atual():
     return {
         "base": (fonte["tipo"], fonte["nome"], h,
                  int(max_grandes) if fonte["tipo"] == "analitica" else None),
-        "M": M, "rho_target": rho_target, "nu": nu, "crp": (crp_w, crp_v),
+        "M": M, "rho_target": rho_target, "nu": nu, "crp": (crp_cal, crp_w, crp_v),
         "mf": (run_mf, rho_intra, rho_inter),
         "rho_setor": None if rho_setor is None else
         rho_setor.round(6).to_dict(orient="records"),
@@ -587,14 +596,14 @@ if st.button("▶ Executar", type="primary", disabled=_bloqueio):
             results = run_pooled_analysis(
                 port, M=M, rho_target=rho_target,
                 rho_intra=rho_intra, rho_inter=rho_inter, nu=float(nu),
-                crp_w=crp_w, crp_v=crp_v,
+                crp_w=crp_w, crp_v=crp_v, crp_calibrar=crp_cal,
                 contrib_alpha=contrib_alpha, seed=int(seed), progress=tick,
                 rho_setor=rho_setor, escala_reais=escala_reais,
                 rel_agg=rel_agg)
         else:
             results = run_full_analysis(
                 port, M=M, rho_target=rho_target, nu=float(nu),
-                crp_w=crp_w, crp_v=crp_v,
+                crp_w=crp_w, crp_v=crp_v, crp_calibrar=crp_cal,
                 run_contributions=run_contrib, contrib_S=contrib_S,
                 contrib_alpha=contrib_alpha, seed=int(seed), progress=tick,
                 run_multifactor=run_mf and rho_inter <= rho_intra
@@ -1228,6 +1237,7 @@ with tabs[6]:
         "parametros": results["parametros"],
         "beta_binomial": results.get("calibracao_beta", {}),
         "threshold_gaussiano": results.get("calibracao_gaussiana", {}),
+        "creditrisk_plus": results.get("calibracao_crplus", {}),
         "multifatorial": results.get("multifator", {}).get("calibracao", {}),
     })
 
