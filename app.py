@@ -117,6 +117,8 @@ st.markdown("""<style>
 div[data-testid="stLayoutWrapper"]:has(> [class*="st-key-cartao_"]) {
     flex: 1 1 auto; display: flex; flex-direction: column; }
 [class*="st-key-cartao_"] { flex: 1 1 auto; }
+div[data-testid="stLayoutWrapper"]:has(> [class*="st-key-rodape_"]),
+[class*="st-key-rodape_"] { margin-top: auto; }   /* botões no pé do cartão */
 [class*="st-key-cartao_"] [data-testid="stButtonGroup"] button {
     flex: 1 1 0; min-width: 0; }   /* segmentos de mesma largura */
 </style>""", unsafe_allow_html=True)
@@ -1251,46 +1253,62 @@ with tabs[7]:
     d1, d2 = st.columns(2, gap="medium")
     with d1, st.container(border=True, key="cartao_excel"):
         st.markdown("##### :material/table_view: Resultados em Excel")
-        st.caption("Todas as tabelas da execução: medidas por modelo, "
-                   "capital IRB e padronizado, contribuições, setores, "
-                   "migração e calibração.")
+        st.caption("Todas as tabelas da execução — medidas por modelo, "
+                   "capital IRB e padronizado, exposições em default, "
+                   "contribuições, setores e calibração — e a carteira de "
+                   "modelagem efetivamente executada.")
         if "_excel" not in st.session_state:
             _bx = io.BytesIO()
             results_to_excel(results, port, _bx)
             st.session_state["_excel"] = _bx.getvalue()
-        st.download_button(
-            "Baixar Excel", st.session_state["_excel"],
-            file_name="resultados_analise.xlsx", on_click="ignore",
-            mime="application/vnd.openxmlformats-officedocument."
-                 "spreadsheetml.sheet",
-            type="primary", icon=":material/download:", key="dl_excel")
+        with st.container(key="rodape_excel"):
+            b1, b2 = st.columns(2)
+            b1.download_button(
+                "Baixar Excel", st.session_state["_excel"],
+                file_name="resultados_analise.xlsx", on_click="ignore",
+                mime="application/vnd.openxmlformats-officedocument."
+                     "spreadsheetml.sheet", width="stretch",
+                type="primary", icon=":material/download:", key="dl_excel")
+            b2.download_button(
+                "Carteira executada (.csv)",
+                port.df.to_csv(index=False).encode("utf-8"),
+                file_name="carteira_executada.csv", mime="text/csv",
+                on_click="ignore", width="stretch",
+                icon=":material/dataset:", key="dl_carteira")
+            st.caption(":material/info: Valores em reais, para auditoria.")
     with d2, st.container(border=True, key="cartao_paper"):
         st.markdown("##### :material/description: Paper de validação (PDF)")
         st.caption("Resultados por modelo com a fundamentação teórica, os "
-                   "parâmetros desta execução, as referências e o apêndice "
-                   "descritivo da base. Leva alguns segundos para compor.")
+                   "parâmetros desta execução, os diagnósticos de validação, "
+                   "as referências e o apêndice descritivo da base de "
+                   "entrada.")
         _pp = st.session_state.get("_paper")
-        if _pp is None:
-            if st.button("Gerar paper", icon=":material/play_arrow:",
-                         key="gerar_paper"):
-                with st.spinner("Compondo o paper (LaTeX)..."):
-                    st.session_state["_paper"] = _gerar_paper()
-                st.rerun()
-        else:
-            if _pp["aviso"]:
+        with st.container(key="rodape_paper"):
+            if _pp is not None and _pp["aviso"]:
                 st.info(_pp["aviso"])
             b1, b2 = st.columns(2)
-            with b1:
-                st.download_button(
+            if _pp is None:
+                if b1.button("Gerar paper", icon=":material/play_arrow:",
+                             type="primary", width="stretch",
+                             key="gerar_paper"):
+                    with st.spinner("Compondo o paper (LaTeX)..."):
+                        st.session_state["_paper"] = _gerar_paper()
+                    st.rerun()
+                b2.button("Fonte LaTeX (.zip)", icon=":material/folder_zip:",
+                          disabled=True, width="stretch", key="tex_inativo")
+                st.caption(":material/schedule: Leva alguns segundos para "
+                           "compor.")
+            else:
+                b1.download_button(
                     "Baixar PDF", _pp["pdf"], file_name="paper_validacao.pdf",
                     mime="application/pdf", on_click="ignore", type="primary",
-                    icon=":material/download:", key="dl_paper")
-            if _pp["zip"] is not None:
-                with b2:
-                    st.download_button(
-                        "Fonte LaTeX (.zip)", _pp["zip"],
-                        file_name="paper_validacao_latex.zip",
-                        mime="application/zip", on_click="ignore",
-                        icon=":material/folder_zip:", key="dl_tex")
-            st.caption(":material/check_circle: Paper pronto. Uma nova "
-                       "execução descarta este paper e pede um novo.")
+                    width="stretch", icon=":material/download:",
+                    key="dl_paper")
+                b2.download_button(
+                    "Fonte LaTeX (.zip)", _pp["zip"] or b"",
+                    file_name="paper_validacao_latex.zip",
+                    mime="application/zip", on_click="ignore",
+                    width="stretch", disabled=_pp["zip"] is None,
+                    icon=":material/folder_zip:", key="dl_tex")
+                st.caption(":material/check_circle: Pronto — vale para "
+                           "esta execução.")
