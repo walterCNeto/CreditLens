@@ -9,6 +9,7 @@ auditáveis. Construído com matplotlib (PdfPages) — sem dependências além
 das já usadas pelo aplicativo.
 """
 import datetime as dt
+import re
 import textwrap
 
 import matplotlib
@@ -88,6 +89,21 @@ REFS = [
 ]
 
 
+_FORMULA = re.compile("⟦(.*?)¦(.*?)⟧", re.S)
+
+
+def fm(tex, plano):
+    """Fórmula dentro de um texto: no paper LaTeX sai em modo matemático
+    (tex); no paper simplificado e no aplicativo, como texto (plano)."""
+    return f"⟦{tex}¦{plano}⟧"
+
+
+def plano(s):
+    """Versão em texto simples de uma string com fórmulas ⟦tex¦plano⟧."""
+    return _FORMULA.sub(lambda m: m.group(2), s) if isinstance(s, str) \
+        else s
+
+
 def mi(v, dec=2):
     """Valor monetário (entrada em reais) em R$ milhões."""
     if v is None or (isinstance(v, float) and np.isnan(v)):
@@ -146,12 +162,14 @@ class _Doc:
             self.nova(secao)
 
     def h1(self, txt):
+        txt = plano(txt)
         self.need(0.06)
         self.fig.text(0.06, self.y, txt, fontsize=14, fontweight="bold",
                       color=AZUL, va="top")
         self.y -= 0.036
 
     def h2(self, txt, secao=""):
+        txt = plano(txt)
         self.need(0.08, secao)
         self.y -= 0.010                      # respiro antes do título
         self.fig.text(0.06, self.y, txt, fontsize=10.5, fontweight="bold",
@@ -159,7 +177,7 @@ class _Doc:
         self.y -= 0.026
 
     def par(self, txt, size=8.2, width=122, secao="", color="#222"):
-        w = textwrap.fill(txt, width)
+        w = textwrap.fill(plano(txt), width)
         nl = w.count("\n") + 1
         h = 0.0145 * nl + 0.008
         self.need(h, secao)
@@ -175,6 +193,7 @@ class _Doc:
 
     def kv(self, pares, secao=""):
         for k, v in pares:
+            k, v = plano(k), plano(v)
             self.need(0.0225, secao)
             self.fig.text(0.07, self.y, k, fontsize=8.2, color=CINZA,
                           va="top")
@@ -185,6 +204,8 @@ class _Doc:
 
     def tabela(self, colunas, linhas, larguras, altura, secao="",
                esquerda=(0,)):
+        colunas = [plano(c) for c in colunas]
+        linhas = [[plano(c) for c in l] for l in linhas]
         self.need(altura + 0.02, secao)
         ax = self.fig.add_axes([0.06, self.y - altura, 0.88, altura])
         ax.axis("off")
@@ -272,10 +293,12 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
             continue                     # analíticos: diagnóstico próprio
         if "Bernoulli" in nome:
             st_ = "Esperado"
-            crit = "Bernoulli: P(H ≥ 1) = 1 − exp(−p) < p"
+            crit = "Bernoulli: " + fm(r"\Pr(H\ge 1)=1-e^{-p}<p",
+                                     "P(H ≥ 1) = 1 − e^(−p) < p")
         else:
             st_ = "OK" if abs(dev) <= tol else "Atenção"
-            crit = f"|desvio| ≤ 3σ_MC = {br(tol, 3, pct=True)}"
+            crit = (fm(r"|\mathrm{desvio}|\le 3\sigma_{\mathrm{MC}}",
+                       "|desvio| ≤ 3σ_MC") + f" = {br(tol, 3, pct=True)}")
         rows.append([f"EL simulada ({_rotulo(nome)})",
                      f"desvio {br(dev, 3, pct=True)}", crit, st_])
 
@@ -283,8 +306,11 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
     cs = results.get("crplus_csfp")
     if cs:
         rows.append(["CreditRisk+ clássico: EL preservada nas faixas",
-                     f"massa {br(cs['massa'], 6)}; L0 = R$ {br(cs['L0'] / 1e3, 2)} mil",
-                     "massa = 1; EL = Σ p·c", "OK" if abs(cs["massa"] - 1)
+                     f"massa {br(cs['massa'], 6)}; " + fm("L_0", "L0")
+                     + f" = R$ {br(cs['L0'] / 1e3, 2)} mil",
+                     "massa = 1; " + fm(r"\mathrm{EL}=\sum_n p_n c_n",
+                                        "EL = Σ p·c"),
+                     "OK" if abs(cs["massa"] - 1)
                      < 1e-6 else "Atenção"])
         _vs = (cs.get("var_sela") or {}).get("99.90%")
         _ve = (cs.get("var_exato") or {}).get("99.90%")
@@ -334,7 +360,8 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
         if prm.get("beta_a") else None)
     if ab and alvo:
         imp = 1.0 / (ab["a"] + ab["b"] + 1.0)
-        rows.append(["Calibração Beta: ρ_D = 1/(a+b+1)",
+        rows.append(["Calibração Beta: " + fm(r"\rho_D=1/(a+b+1)",
+                                              "ρ_D = 1/(a+b+1)"),
                      f"{br(imp, 3, pct=True)} (alvo {br(alvo, 3, pct=True)})",
                      "|desvio| ≤ 0,100 p.p.",
                      "OK" if abs(imp - alvo) <= 0.001 else "Atenção"])
@@ -381,7 +408,9 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
         if g and t:
             rows.append([f"Ordem de caudas ({rot}): t vs Gauss",
                          f"razão {br(t / g, 3)}",
-                         "VaR99,9 t ≥ VaR99,9 Gauss",
+                         fm(r"\mathrm{VaR}^{t}_{99{,}9\%}\ge"
+                            r"\mathrm{VaR}^{\mathrm{Gauss}}_{99{,}9\%}",
+                            "VaR99,9 t ≥ VaR99,9 Gauss"),
                          "OK" if t >= g else "Atenção"])
 
     # 4. precisão de Monte Carlo do VaR 99,9%
@@ -457,7 +486,9 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
         ps_ = cp["piso"]
         rows.append(["Piso de saída (art. 34, Res. BCB 303)",
                      f"IRB/padronizado {br(ps_['razao_irb_cpad'], 3)}",
-                     "RWA = max(IRB; 72,5% × padronizado)",
+                     fm(r"\mathrm{RWA}=\max\{\mathrm{IRB};\,0{,}725"
+                        r"\times\mathrm{padronizado}\}",
+                        "RWA = max(IRB; 72,5% × padronizado)"),
                      "Esperado" if ps_["vinculante"] else "OK"])
     ad = results.get("inadimplidos")
     if ad:
@@ -557,14 +588,17 @@ def _interpretar(drows, M):
                        "tolerado entre simulações, o que é típico de modelos "
                        "de cauda pesada.")
             acao = ("aumentar o número de simulações; como o erro do "
-                    "quantil cai com 1/√M, M ≈ "
+                    "quantil cai com " + fm(r"1/\sqrt{M}", "1/√M")
+                    + ", M ≈ "
                     f"{br(M_sug, 0)} deve reduzir a meia-amplitude para menos de 5%."
                     if M_sug else "aumentar o número de simulações M.")
         elif teste.startswith("EL simulada"):
             if st == "Esperado":
                 leitura = ("o CreditRisk+ Bernoulli declara default "
                            "quando há ao menos um evento de Poisson, o que dá "
-                           "probabilidade 1−e^(−p) < p: a EL fica levemente "
+                           "probabilidade " + fm(r"1-e^{-p}<p",
+                                                 "1 − e^(−p) < p")
+                           + ": a EL fica levemente "
                            "abaixo da analítica por construção.")
                 acao = "nenhuma."
             else:
@@ -577,7 +611,8 @@ def _interpretar(drows, M):
                        f"de ponto de sela divergem ({res}) além de 1%.")
             acao = ("a aproximação perde precisão em carteiras muito "
                     "concentradas; prevalece o valor exato, mas convém "
-                    "revisar a discretização (L0) e a carteira.")
+                    "revisar a discretização (" + fm("L_0", "L0")
+                    + ") e a carteira.")
         elif teste.startswith("Calibração"):
             leitura = (f"a correlação de default implícita ({res}) não "
                        "reproduz o alvo dentro de 0,1 p.p.")
@@ -666,7 +701,8 @@ def _parametros(results, prm, pooled, tem, mig, extra):
                       "mistura calibrada por momentos", "[11, 13]"])
     cs = results.get("crplus_csfp")
     if cs:
-        R.append(["CreditRisk+ clássico: L0 / faixas",
+        R.append(["CreditRisk+ clássico: " + fm("L_0", "L0")
+                  + " / faixas",
                   f"R$ {br(cs['L0'] / 1e3, 2)} mil / {cs['faixas']}",
                   "discretização das severidades (EL preservada)", "[8]"])
         R.append(["CreditRisk+ clássico: algoritmo",
@@ -719,8 +755,12 @@ def _parametros(results, prm, pooled, tem, mig, extra):
         R.append(["Default: prazo até a baixa",
                   f"{br(r_['prazo_baixa'], 0)} meses",
                   "ELBE = 100% no write-off", "[15]"])
-        R.append(["Default: margem k da LGD_D", br(r_["k"], 3),
-                  "LGD_D = ELBE + k(1 − ELBE); K = LGD_D − ELBE", "[3, 15]"])
+        R.append(["Default: margem " + fm("k", "k") + " da "
+                  + fm(r"\mathrm{LGD}_D", "LGD_D"), br(r_["k"], 3),
+                  fm(r"\mathrm{LGD}_D=\mathrm{ELBE}+k(1-\mathrm{ELBE})",
+                     "LGD_D = ELBE + k(1 − ELBE)") + "; "
+                  + fm(r"K=\mathrm{LGD}_D-\mathrm{ELBE}",
+                       "K = LGD_D − ELBE"), "[3, 15]"])
     if mig is not None:
         R.append(["Horizonte multiperíodo",
                   f"{ex.get('horizonte', '—')} ano(s)",

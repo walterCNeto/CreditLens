@@ -26,6 +26,7 @@ import numpy as np
 matplotlib.rcParams["pdf.fonttype"] = 42
 matplotlib.rcParams["font.family"] = "DejaVu Sans"
 
+from .report_paper import _FORMULA
 from .report_paper import (LEGENDA_STATUS, PALETA, _diagnosticos,
                            _interpretar, _parametros, _rotulo, br)
 
@@ -40,7 +41,7 @@ _ESC = {"\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$",
         "~": r"\textasciitilde{}", "^": r"\textasciicircum{}"}
 _UNI = {"10⁻⁹": r"$10^{-9}$", "≤": r"$\le$", "≥": r"$\ge$", "±": r"$\pm$", "×": r"$\times$",
         "√": r"$\surd$", "σ": r"$\sigma$", "ρ": r"$\rho$", "ν": r"$\nu$",
-        "−": "--", "→": r"$\to$", "∝": r"$\propto$", "·": r"$\cdot$",
+        "−": r"$-$", "→": r"$\to$", "∝": r"$\propto$", "·": r"$\cdot$",
         "α": r"$\alpha$", "β": r"$\beta$", "γ": r"$\gamma$",
         "δ": r"$\delta$", "λ": r"$\lambda$", "μ": r"$\mu$",
         "ξ": r"$\xi$", "Φ": r"$\Phi$", "Σ": r"$\Sigma$",
@@ -48,7 +49,22 @@ _UNI = {"10⁻⁹": r"$10^{-9}$", "≤": r"$\le$", "≥": r"$\ge$", "±": r"$\pm
 
 
 def tx(s) -> str:
-    """Escapa texto livre para LaTeX (inclui símbolos unicode usuais)."""
+    """Escapa texto livre para LaTeX (inclui símbolos unicode usuais).
+    Trechos marcados como fórmula, ⟦tex¦texto⟧ (ver report_paper.fm), saem
+    em modo matemático; o restante é escapado."""
+    s = str(s)
+    if "⟦" in s:
+        partes, pos = [], 0
+        for m in _FORMULA.finditer(s):
+            partes.append(_tx_texto(s[pos:m.start()]))
+            partes.append("$" + m.group(1) + "$")
+            pos = m.end()
+        partes.append(_tx_texto(s[pos:]))
+        return "".join(partes)
+    return _tx_texto(s)
+
+
+def _tx_texto(s) -> str:
     s = "".join(_ESC.get(ch, ch) for ch in str(s))
     for k, v in _UNI.items():
         s = s.replace(k, v)
