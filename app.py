@@ -397,6 +397,9 @@ def _descrever_base(tipo, nome, conteudo):
 if fonte is None:
     st.info("Envie o CSV da carteira ou escolha **Usar exemplo** para "
             "começar.", icon=":material/upload_file:")
+    st.subheader("2. Correlação por setor (opcional)")
+    st.caption("A tabela de correlações por setor aparece quando a carteira "
+               "estiver escolhida no passo 1 (exige a coluna `setor`).")
     st.subheader("3. Execute")
     st.caption("O botão é habilitado quando a carteira estiver escolhida "
                "no passo 1.")
@@ -476,7 +479,14 @@ def _mostrar_leitura_setores(cal, rho_intra, rho_inter):
 
 rho_setor = None
 setor_invalido = False
-if run_mf and previa["setores"] is not None:
+if not (run_mf and previa["setores"] is not None):
+    st.subheader("2. Correlação por setor (opcional)")
+    st.caption(
+        "Indisponível: a base não tem a coluna `setor`."
+        if previa["setores"] is None else
+        "Indisponível: o modelo multifatorial está desligado na barra "
+        "lateral (**Ativar modelo multifatorial**).")
+else:
     _tot = previa["setores"]
     st.subheader("2. Correlação por setor (opcional)")
     usar_setor = st.checkbox(
