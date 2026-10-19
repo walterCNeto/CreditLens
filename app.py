@@ -375,12 +375,12 @@ def _preparar_carteira(tipo, nome, conteudo, max_grandes, escala_reais=1.0):
                                           max_grandes=int(max_grandes),
                                           escala_reais=escala_reais)
         buf = io.StringIO(); df_agg.to_csv(buf, index=False); buf.seek(0)
-        return load_portfolio(buf), rel, True, df_def
+        return load_portfolio(buf), rel, True, df_def, df_perf
     buf = io.StringIO(); df_perf.to_csv(buf, index=False); buf.seek(0)
     port = load_portfolio(buf)
     pooled = "n_contratos" in port.df.columns and \
         bool((port.df["n_contratos"] > 1).any())
-    return port, None, pooled, df_def
+    return port, None, pooled, df_def, None
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -555,7 +555,7 @@ if st.button("▶ Executar", type="primary", disabled=_bloqueio):
 
     try:
         with st.spinner("Carregando e preparando a carteira..."):
-            port, rel_agg, pooled_mode, df_def = _preparar_carteira(
+            port, rel_agg, pooled_mode, df_def, df_perf = _preparar_carteira(
                 fonte["tipo"], fonte["nome"], fonte["conteudo"],
                 int(max_grandes), escala_reais)
     except ValueError as e:
@@ -619,7 +619,13 @@ if st.button("▶ Executar", type="primary", disabled=_bloqueio):
             if hasattr(mtx_src, "seek"):
                 mtx_src.seek(0)
             P_m, ratings_m = load_transition_matrix(mtx_src)
-            ecl_df, cum_m, _ = compute_ecl(port, P_m, ratings_m,
+            # ECL contrato a contrato: é linear na exposição, e os estágios
+            # dependem do atraso de cada contrato (perdido na agregação)
+            port_ecl = port
+            if df_perf is not None:
+                _b = io.StringIO(); df_perf.to_csv(_b, index=False); _b.seek(0)
+                port_ecl = load_portfolio(_b)
+            ecl_df, cum_m, _ = compute_ecl(port_ecl, P_m, ratings_m,
                                            discount_rate=taxa_desc)
             cal_mf = results.get("multifator", {}).get("calibracao")
             if cal_mf:
@@ -1151,6 +1157,20 @@ with tabs[5]:
                       f"{int((ecl_df['estagio']==2).sum())} / "
                       f"{int((ecl_df['estagio']==3).sum())}")
             c4.metric("Provisão por estágio (R$ mi)", _mi(ecl_df['provisao'].sum()))
+        if "estagio" in ecl_df.columns:
+            _est = ecl_df.groupby("estagio").agg(
+                Contratos=("exposicao", "size"), EAD=("exposicao", "sum"),
+                Provisao=("provisao", "sum")).reset_index()
+            _est["Estágio"] = _est["estagio"].map(
+                {1: "1 — ECL 12 meses", 2: "2 — ECL lifetime (atraso > 30 "
+                 "dias ou queda de rating)", 3: "3 — default: EAD × ELBE(t)"})
+            _est["Cobertura"] = _est["Provisao"] / _est["EAD"]
+            st.dataframe(_est[["Estágio", "Contratos", "EAD", "Provisao",
+                               "Cobertura"]].rename(
+                columns={"Provisao": "Provisão"}).style.format({
+                    "Contratos": "{:,}", "EAD": _FM, "Provisão": _FM,
+                    "Cobertura": "{:.2%}"}), hide_index=True,
+                width='stretch')
         st.caption(f"Multiperíodo ({sim_m['T']} anos, M={sim_m['M']:,}, blocos de "
                    f"{sim_m['block_size']:,}), em R$ milhões: EL {_mi(sim_m['EL'])} | "
                    f"VaR 99,9% {_mi(sim_m['VaR']['99.90%'])} | "

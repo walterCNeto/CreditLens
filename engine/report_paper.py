@@ -1190,6 +1190,11 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             if "provisao" in ecl_df.columns:
                 pares.append(("Provisão por estágios",
                               f"R$ {mi(float(ecl_df['provisao'].sum()))} mi"))
+                if "estagio" in ecl_df.columns:
+                    for e_, g_ in ecl_df.groupby("estagio"):
+                        pares.append((f"   Estágio {int(e_)} ({len(g_):,} "
+                                      "contratos)".replace(",", "."),
+                                      f"R$ {mi(float(g_['provisao'].sum()))} mi"))
             if sim_m and sim_m.get("T"):
                 pares += [(f"VaR 99,90% em {int(sim_m['T'])} anos",
                            mi(sim_m["VaR"].get("99.90%"))),

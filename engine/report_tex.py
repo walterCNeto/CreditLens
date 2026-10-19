@@ -743,7 +743,7 @@ em que $\mathcal{D}$ é o conjunto das exposições em \emph{default}; por ser c
     if mig is not None:
         T.append(r"""
 \subsection{Migração de ratings, ECL e capital multiperíodo}
-A matriz de transição anual $P$ fornece a estrutura a termo de PD pelas potências $P^t$; o ECL desconta as perdas marginais em 12 meses e no prazo de cada contrato (\emph{lifetime}), com estágios por deterioração de rating, conforme o IFRS 9 e a Resolução CMN 4.966. O capital multiperíodo evolui a carteira ano a ano pela matriz condicional ao fator sistemático --- generalização do deslocamento de crédito de um parâmetro de Belkin, Suchower e Forest (1998) ---, acumulando perdas descontadas."""
+A matriz de transição anual $P$ fornece a estrutura a termo de PD pelas potências $P^t$; o ECL desconta as perdas marginais em 12 meses e no prazo de cada contrato (\emph{lifetime}), com estágios conforme o IFRS 9 e a Resolução CMN 4.966: estágio 1 (ECL de 12 meses), estágio 2 (ECL \emph{lifetime}, com PD da matriz e LGD não \emph{default}) para atraso acima de 30 dias ou queda de rating desde a origem, e estágio 3 para as exposições em \emph{default} (provisão $\mathrm{EAD}\cdot\mathrm{ELBE}(t)$). Como o ECL é linear na exposição, é calculado contrato a contrato, antes da agregação. O capital multiperíodo evolui a carteira ano a ano pela matriz condicional ao fator sistemático --- generalização do deslocamento de crédito de um parâmetro de Belkin, Suchower e Forest (1998) ---, acumulando perdas descontadas."""
             + (r" Na carteira agregada, cada grupo evolui como vetor de frações por rating; nos grupos fora do limite de granularidade infinita, os \emph{defaults} de cada ano são sorteados, $D_t\mid Z_t\sim\mathrm{Binomial}(A_{t-1},q_t)$, sobre o número inteiro de contratos equivalentes vivos $A_t$ (com $A_0=n^{\mathrm{eq}}$) e a taxa de \emph{default} condicional entre os vivos $q_t$, de modo que o risco idiossincrático intragrupo entra no capital multiperíodo; as migrações entre ratings não \emph{default} seguem as frações condicionais."
                if pooled else "") + "\n")
 
@@ -942,6 +942,11 @@ A Tabela~\ref{{tab:setores}} decompõe a cauda por setor pela alocação de Eule
               ["ECL \\emph{lifetime} (R\\$ milhões)", f"{mi(eli)} ({nb(eli / e12 if e12 else 0)}$\\times$ o de 12 meses)"]]
         if "provisao" in ecl_df.columns:
             lm.append(["Provisão por estágios (R\\$ milhões)", mi(float(ecl_df["provisao"].sum()))])
+            if "estagio" in ecl_df.columns:
+                _nm = {1: "12 meses", 2: "\\emph{lifetime}", 3: "EAD$\\cdot$ELBE"}
+                for e_, g_ in ecl_df.groupby("estagio"):
+                    lm.append([f"\\quad Estágio {int(e_)} ({_nm.get(int(e_), '')}): {nb(len(g_), 0)} contratos",
+                               f"{mi(float(g_['provisao'].sum()))} ({nb(float(g_['provisao'].sum()) / float(g_['exposicao'].sum()), 3, pct=True)} da EAD)"])
         if sim_m and sim_m.get("T"):
             Tn = int(sim_m["T"])
             lm += [[f"VaR 99{{,}}90\\% em {Tn} anos", mi(sim_m["VaR"].get("99.90%"))],
