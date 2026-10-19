@@ -143,6 +143,13 @@ def run_full_analysis(
     el, ul, var, es = mix.crPlusOneFactor(N, M, crp_w, p, c, crp_v, alphas)
     add_row("CreditRisk+ (Poisson-gama 1F)", el, ul, var, es, time.time() - t0)
 
+    _tick("CreditRisk+ clássico (CSFP: faixas, FGP e Panjer)...")
+    t0 = time.time()
+    from .crplus_csfp import crplus_csfp
+    el, ul, var, es, info_cs = crplus_csfp(p, c, crp_w, crp_v, alphas)
+    add_row("CreditRisk+ clássico (CSFP)", el, ul, var, es, time.time() - t0)
+    results["crplus_csfp"] = info_cs
+
     # ---------------- Cap. 4: limiar ----------------
     _tick("Calibrando correlação de ativos...")
     rho_asset = calibrate_gaussian_rho(pbar, rho_target)
@@ -404,6 +411,17 @@ def run_pooled_analysis(
 
     medidas = res_sim["medidas"]
 
+    # ---- CreditRisk+ clássico (CSFP): FGP por faixas, Panjer/FFT ----
+    from .crplus_csfp import crplus_csfp
+    _t0 = time.time()
+    el_c, ul_c, var_c, es_c, info_cs = crplus_csfp(p, C, crp_w, crp_v,
+                                                   alphas, n=n)
+    row = {"modelo": "CreditRisk+ clássico (CSFP)", "EL": el_c, "UL": ul_c,
+           "tempo_s": time.time() - _t0}
+    for a, v_, e_ in zip(alphas, var_c, es_c):
+        row[f"VaR {a:.2%}"] = float(v_); row[f"ES {a:.2%}"] = float(e_)
+    medidas = pd.concat([medidas, pd.DataFrame([row])], ignore_index=True)
+
     # ---- ASRF e IRB (analíticos, por bucket) ----
     import thresholdModels as th
     _, _, var_asrf, es_asrf = th.asrfModel(pbar, rho1, C, alphas)
@@ -463,6 +481,7 @@ def run_pooled_analysis(
         "padronizado": _padronizado(port, irb_b, escala_reais, rel_agg),
         "contrib_bucket": res_sim["contribuicoes_bucket"],
         "regimes_pooled": res_sim["regimes"],
+        "crplus_csfp": info_cs,
         "contrib_alpha": res_sim["contrib_alpha"],
         "es_total_contrib": res_sim["es_total"],
         "modelo_contrib": res_sim["modelo_contrib"],

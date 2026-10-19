@@ -79,6 +79,8 @@ REFS = [
     "[16] BANCO CENTRAL DO BRASIL (2022). Resolução BCB no 229, de 12 de "
     "maio de 2022: abordagem padronizada (RWACPAD), arts. 36 e 46 — "
     "definições de porte SME e de exposição de varejo. Brasília: BCB.",
+    "[17] GORDY, M. B. (2002). Saddlepoint approximation of CreditRisk+. "
+    "Journal of Banking & Finance, 26(7), 1335-1353.",
 ]
 
 
@@ -216,6 +218,8 @@ def _rotulo(n):
                 " (mixture, pooled)", " (mixture)", " (Poisson-gama 1F)",
                 " (MC)", " (analítico, homog.)"]:
         n = n.replace(suf, "")
+    if n == "CreditRisk+":
+        n = "CreditRisk+ (simulação)"
     return n.replace(" multifatorial", " MF")
 
 
@@ -262,6 +266,8 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
             continue
         dev = el / el0 - 1
         tol = 3 * ul / np.sqrt(M) / el0
+        if "CSFP" in nome:
+            continue                     # analítico: diagnóstico próprio
         if "CreditRisk+" in nome and not pooled:
             st_ = "Esperado"
             crit = "aprox. Poisson: P(H≥1)=1−e^{−p}<p"
@@ -270,6 +276,43 @@ def _diagnosticos(results, prm, pooled, mig, rel_agg):
             crit = f"|desvio| ≤ 3σ_MC = {br(tol, 3, pct=True)}"
         rows.append([f"EL simulada — {_rotulo(nome)}",
                      f"desvio {br(dev, 3, pct=True)}", crit, st_])
+
+    # 1b. CreditRisk+ clássico: discretização e comparação com a simulação
+    cs = results.get("crplus_csfp")
+    if cs:
+        rows.append(["CreditRisk+ clássico: EL preservada nas faixas",
+                     f"massa {br(cs['massa'], 6)}; L0 = R$ {br(cs['L0'] / 1e3, 2)} mil",
+                     "massa = 1; EL = Σ p·c", "OK" if abs(cs["massa"] - 1)
+                     < 1e-6 else "Atenção"])
+        _vs = (cs.get("var_sela") or {}).get("99.90%")
+        _ve = (cs.get("var_exato") or {}).get("99.90%")
+        if _vs is not None and _ve:
+            if _vs == _vs:
+                _d = _vs / _ve - 1
+                rows.append(["CreditRisk+ clássico: exato × ponto de sela",
+                             f"VaR 99,9%: diferença {br(_d, 3, pct=True)}",
+                             "|dif.| ≤ 1% (Lugannani–Rice)",
+                             "OK" if abs(_d) <= 0.01 else "Atenção"])
+            else:
+                rows.append(["CreditRisk+ clássico: exato × ponto de sela",
+                             "ponto de sela não convergiu",
+                             "|dif.| ≤ 1% (Lugannani–Rice)", "Atenção"])
+        _sim = med[med["modelo"].str.startswith("CreditRisk+ (")]
+        _cls = med[med["modelo"].str.contains("CSFP")]
+        _c9 = [c for c in med.columns if c.startswith("VaR 99.90")]
+        if len(_sim) and len(_cls) and _c9:
+            vs, vc = float(_sim.iloc[0][_c9[0]]), float(_cls.iloc[0][_c9[0]])
+            dif = vc / vs - 1 if vs else np.nan
+            if pooled:
+                rows.append(["CreditRisk+: clássico × simulação (VaR 99,9%)",
+                             f"diferença {br(dif, 3, pct=True)}",
+                             "|dif.| ≤ 3% (mesma contagem Poisson)",
+                             "OK" if abs(dif) <= 0.03 else "Atenção"])
+            else:
+                rows.append(["CreditRisk+: clássico × simulação (VaR 99,9%)",
+                             f"diferença {br(dif, 3, pct=True)}",
+                             "clássico ≥ simulação (Poisson × Bernoulli)",
+                             "Esperado" if dif >= -0.03 else "Atenção"])
 
     # 2. calibração comum de dependência
     rho_a, pbar = cal.get("rho_ativos"), cal.get("pbar")
@@ -523,6 +566,12 @@ def _interpretar(drows, M):
                            "de três erros-padrão de Monte Carlo.")
                 acao = ("rodar novamente com outra semente ou M maior; se o "
                         "desvio persistir, revisar a implementação do modelo.")
+        elif teste.startswith("CreditRisk+ clássico: exato"):
+            leitura = (f"o VaR 99,9% da inversão exata e o da aproximação "
+                       f"de ponto de sela divergem ({res}) além de 1%.")
+            acao = ("a aproximação perde precisão em carteiras muito "
+                    "concentradas; prevalece o valor exato, mas convém "
+                    "revisar a discretização (L0) e a carteira.")
         elif teste.startswith("Calibração"):
             leitura = (f"a correlação de default implícita ({res}) não "
                        "reproduz o alvo dentro de 0,1 p.p.")
@@ -608,6 +657,14 @@ def _parametros(results, prm, pooled, tem, mig, extra):
             R.append(["Beta (a, b)",
                       f"{br(ab['a'], 3)} / {br(ab['b'], 3)}",
                       "mistura calibrada por momentos", "[11, 13]"])
+    cs = results.get("crplus_csfp")
+    if cs:
+        R.append(["CreditRisk+ clássico: L0 / faixas",
+                  f"R$ {br(cs['L0'] / 1e3, 2)} mil / {cs['faixas']}",
+                  "discretização das severidades (EL preservada)", "[8]"])
+        R.append(["CreditRisk+ clássico: algoritmo",
+                  "Panjer" if cs["metodo"] == "Panjer" else "FFT da FGP",
+                  "distribuição exata da FGP", "[8]"])
     if tem("CreditRisk+"):
         R.append(["CreditRisk+ (w, v)",
                   f"{br(prm.get('crplus_w'), 3)} / "
@@ -838,6 +895,26 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
             D.formula(r"$S\sim\Gamma(v,1/v),\quad H_i\,|\,S\sim"
                       r"\mathrm{Poisson}\left(p_i\,(1-w+wS)\right)$",
                       secao="Metodologia")
+            cs = results.get("crplus_csfp")
+            if cs:
+                D.par("Duas versões são reportadas. A clássica (CSFP, 1997) "
+                      "trata a contagem como Poisson, discretiza as "
+                      "severidades em faixas de L0 (aqui R$ "
+                      f"{br(cs['L0'] / 1e3, 2)} mil, {cs['faixas']} faixas, EL "
+                      "preservada) e obtém a distribuição exata da função "
+                      "geradora de probabilidade por "
+                      + ("recursão de Panjer" if cs["metodo"] == "Panjer"
+                         else "FFT (o Panjer falha quando P(L=0) é ínfima)")
+                      + ": sem ruído de simulação, mas com erro de "
+                      "discretização e superestimação em PDs altas. A "
+                      "versão por simulação usa as severidades exatas e "
+                      + ("contagem Poisson nos grupos"
+                         if pooled else "o indicador H ≥ 1 por devedor "
+                         "(Bernoulli), com EL levemente abaixo da analítica")
+                      + "; é flexível, mas tem erro amostral.")
+                D.formula(r"$G_L(z)=e^{\sum_j w_0\varepsilon_j(z^{\nu_j}-1)}"
+                          r"\left[\frac{1-\delta}{1-\delta P(z)}\right]^{\alpha}$",
+                          secao="Metodologia")
         if tem("Threshold"):
             secao("Modelos de limiar (Gaussiano e t-Student, 1 fator)")
             D.par("Na tradição estrutural de Merton [12], o default ocorre "

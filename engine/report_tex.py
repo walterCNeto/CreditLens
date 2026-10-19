@@ -175,6 +175,7 @@ REFS_TEX = [
     r"Banco Central do Brasil (2022). \emph{Resolução BCB nº 229, de 12 de maio de 2022} (RWA de risco de crédito pela abordagem padronizada --- RWA\textsubscript{CPAD}; texto consolidado). Brasília: BCB.",
     r"David, H.~A.; Nagaraja, H.~N. (2003). \emph{Order Statistics}. 3.\,ed. Hoboken: Wiley.",
     r"Glasserman, P. (2004). \emph{Monte Carlo Methods in Financial Engineering}. Nova York: Springer.",
+    r"Gordy, M.~B. (2002). Saddlepoint approximation of CreditRisk\textsuperscript{+}. \emph{Journal of Banking \& Finance}, 26(7), 1335--1353.",
 ]
 
 
@@ -229,6 +230,26 @@ def _fig_distribuicoes(dists, total, path, unidade="R$ milhões"):
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
+
+
+def _sela_txt(cs):
+    """Frase da verificação por ponto de sela (Gordy, 2002)."""
+    vs = (cs.get("var_sela") or {}).get("99.90%")
+    ve = (cs.get("var_exato") or {}).get("99.90%")
+    if vs is None or not ve:
+        return ""
+    base = (r" Como verificação independente, o VaR é recalculado pela "
+            r"aproximação de ponto de sela de Lugannani--Rice sobre a função "
+            r"geradora de cumulantes $K(t)=\ln G_L(e^t)$ (Gordy, 2002): com "
+            r"$\hat t$ tal que $K'(\hat t)=x$, "
+            r"$\Pr(L>x)\approx 1-\Phi(\hat w)+\phi(\hat w)\bigl(1/\hat u-1/\hat w\bigr)$, "
+            r"em que $\hat w=\mathrm{sgn}(\hat t)\sqrt{2[\hat t x-K(\hat t)]}$ e "
+            r"$\hat u=\hat t\sqrt{K''(\hat t)}$.")
+    if vs != vs:
+        return base + " Nesta execução, a aproximação não convergiu."
+    return base + (rf" Nesta execução, o VaR 99{{,}}9\% pelo ponto de sela "
+                   rf"é R\$~{mi(vs)}~milhões, ante R\$~{mi(ve)}~milhões pela "
+                   rf"inversão exata (diferença de {nb(vs / ve - 1, 3, pct=True)}).")
 
 
 def _fig_default(ad, path):
@@ -609,9 +630,9 @@ A probabilidade comum de default é sorteada de uma distribuição beta e, dado 
 Z\sim\mathrm{{Beta}}(a,b),\qquad D_n\mid Z\sim\mathrm{{Bernoulli}}(Z),\qquad \E[Z]=\frac{{a}}{{a+b}}=\bar p,\qquad \rho_D=\frac{{1}}{{a+b+1}},
 \end{{equation}}
 em que $a$ e $b$ são os parâmetros de forma, calibrados por momentos: $a={nm(ab['a'])}$ e $b={nm(ab['b'])}$.""" + (r" Na representação agregada, cada grupo segue os três regimes com $p_g(\cdot)=Z$." if pooled else "") + "\n")
-    if tem("CreditRisk+"):
+    if tem("CreditRisk+ ("):
         T.append(rf"""
-\subsection{{CreditRisk\textsuperscript{{+}} (Poisson-gama, um fator)}}
+\subsection{{CreditRisk\textsuperscript{{+}} por simulação (Poisson-gama, um fator)}}
 O fator sistemático $S\sim\Gamma(v,1/v)$, com $\E[S]=1$ e $\mathrm{{Var}}(S)=1/v$, escala as intensidades de default:
 \begin{{equation}}
 H_n\mid S\sim\mathrm{{Poisson}}\bigl(p_n(1-w+wS)\bigr),
@@ -619,6 +640,41 @@ H_n\mid S\sim\mathrm{{Poisson}}\bigl(p_n(1-w+wS)\bigr),
 em que $H_n$ é a contagem de defaults, $w={nm(prm.get('crplus_w'))}$ a carga do fator e $v={nm(prm.get('crplus_v'))}$ a dispersão (Credit Suisse First Boston, 1997)."""
                  + (r" Na representação agregada, a contagem do grupo agrega exatamente, pois a soma de Poissons independentes é Poisson: $H_g\mid S\sim\mathrm{Poisson}\bigl(n_g p_g(1-w+wS)\bigr)$, com perda $L_g=(C_g/n_g)\,H_g$." if pooled
                     else r" No fluxo granular, o default é declarado quando $H_n\ge1$, de modo que $\Pr(D_n)=1-e^{-p_n}<p_n$: a EL simulada fica ligeiramente abaixo da analítica.") + "\n")
+    cs = results.get("crplus_csfp")
+    if tem("CSFP") and cs:
+        _met = "pela recursão de Panjer" if cs["metodo"] == "Panjer" else \
+            r"pela inversão exata da FGP por transformada rápida de Fourier, porque $\Pr(L=0)=e^{" + nm(cs["log_p0"], 1) + r"}$ está abaixo da precisão de ponto flutuante e a recursão de Panjer não pode partir dela"
+        T.append(rf"""
+\subsection{{CreditRisk\textsuperscript{{+}} clássico (Credit Suisse First Boston, 1997)}}
+A versão original é analítica. Com a mesma intensidade estocástica, $\lambda_n(S)=p_n(w_0+wS)$, $w_0=1-w$ e $S\sim\Gamma(\alpha,1/\alpha)$ com $\alpha=v$ e $\sigma^2=1/\alpha$, a contagem de cada devedor é tratada como Poisson --- um devedor pode, em tese, inadimplir mais de uma vez --- e as severidades são discretizadas em faixas: com a unidade $L_0$, cada linha recebe $\nu_n=\max\{{1,\mathrm{{round}}(c_n/L_0)\}}$, e a intensidade de cada faixa $j$ é ajustada para preservar a perda esperada,
+\begin{{equation}}
+\varepsilon_j=\sum_{{n:\,\nu_n=\nu_j}}\frac{{p_n c_n}}{{\nu_j L_0}}.
+\end{{equation}}
+A função geradora de probabilidade (FGP) da perda, em unidades de $L_0$, tem forma fechada:
+\begin{{equation}}
+G_L(z)=\exp\Bigl\{{\sum_j w_0\varepsilon_j\bigl(z^{{\nu_j}}-1\bigr)\Bigr\}}\left[\frac{{1-\delta}}{{1-\delta P(z)}}\right]^{{\alpha}},\qquad \delta=\frac{{\sigma^2\mu_1}}{{1+\sigma^2\mu_1}},\quad P(z)=\sum_j\frac{{w\varepsilon_j}}{{\mu_1}}z^{{\nu_j}},
+\end{{equation}}
+em que $\mu_1=\sum_j w\varepsilon_j$: o setor específico é uma Poisson composta e o sistemático, uma binomial negativa composta. A distribuição sai da recursão de Panjer aplicada a cada fator,
+\begin{{equation}}
+f(n)=\sum_j\Bigl(a+b\,\frac{{\nu_j}}{{n}}\Bigr)q_j\,f(n-\nu_j),
+\end{{equation}}
+com $(a,b)=(0,\mu)$ na Poisson composta e $(a,b)=(\delta,(\alpha-1)\delta)$ na binomial negativa, e da convolução das duas. Nesta execução, $L_0=$~R\$~{nb(cs['L0'] / 1e3, 2)}~mil, com {nb(cs['faixas'], 0)} faixas e {nb(cs['defaults_esperados'], 1)} \emph{{defaults}} esperados; a distribuição foi obtida {_met}.""" + _sela_txt(cs)
+                 + (r" Na carteira agregada, cada grupo entra com intensidade $n_g p_g$ e perda por \emph{default} $C_g/n_g$, o que é exato para soma de Poissons." if pooled else "") + r"""
+
+\paragraph{As duas versões.} Os dois modelos compartilham as premissas de mistura: não há modelo para o evento de \emph{default}, a PD é estocástica e linear no fator, os \emph{defaults} são independentes dado o fator e a correlação só existe implicitamente, pelo fator comum. Diferem na contagem, na severidade e no cálculo (Tabela~\ref{tab:crplus}).
+""" + _tabela(["Aspecto", r"Clássico (CSFP)", r"Por simulação"],
+              [["Contagem", "Poisson: um devedor pode inadimplir mais de uma vez",
+                ("Poisson nos grupos; " if pooled else "") + r"indicador $\Ind\{H_n\ge1\}$ por devedor (Bernoulli)"],
+               ["Severidade", r"discretizada em faixas de $L_0$, com EL preservada", "exata, linha a linha"],
+               ["Cálculo", "FGP em forma fechada; Panjer (ou FFT)", r"Monte Carlo com $M$ cenários"],
+               ["Erro", "de discretização; instabilidade do Panjer quando $\\Pr(L=0)$ é ínfima", r"amostral, proporcional a $1/\sqrt{M}$"],
+               ["Tempo", "segundos, independente de $M$", r"proporcional a $M\times N$"],
+               ["Vantagens", "sem ruído de simulação; reprodutível; rápido; auditável pela forma fechada",
+                "flexível: LGD estocástica, contribuições por simulação, outras distribuições do fator"],
+               ["Desvantagens", "Poisson superestima a perda em PDs altas; faixas grosseiras distorcem a cauda; fatores gama independentes (correlação só positiva)",
+                "ruído de Monte Carlo; custo; no fluxo granular, EL abaixo da analítica ($1-e^{-p}<p$)"]],
+              r">{\raggedright\arraybackslash}p{2.1cm}>{\raggedright\arraybackslash}p{6.0cm}>{\raggedright\arraybackslash}p{6.0cm}",
+              r"CreditRisk\textsuperscript{+}: versão clássica e versão por simulação.", "tab:crplus", H=True))
     if tem("Threshold"):
         T.append(rf"""
 \subsection{{Modelos de limiar: Gaussiano e t-Student}}
