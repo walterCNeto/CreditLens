@@ -89,7 +89,7 @@ carteira-credito/
 ├── engine/
 │   ├── portfolio.py        # padrão de carteira + validação
 │   ├── analytics.py        # orquestração dos modelos do Bolder
-│   ├── alocacao.py         # capital por modelo (VaR/ES − EL, R$ e % da EAD)
+│   ├── alocacao.py         # capital por modelo e consolidação não default + default
 │   └── bolder/             # bibliotecas originais do livro (patcheadas*)
 ├── templates/carteira_modelo.csv         # modelo preenchido: uma linha por contraparte (R$)
 ├── templates/base_analitica_modelo.csv  # modelo preenchido: uma linha por contrato (R$)

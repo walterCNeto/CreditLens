@@ -31,7 +31,7 @@
 \large Análise Quantitativa de Carteiras de Crédito:\\
 Documentação Metodológica e Estudo de Caso}
 \author{Walter C.~Neto\\[1mm]\small Baseado em D.~J.~Bolder, \emph{Credit-Risk Modelling} (Springer, 2018)}
-\date{Outubro de 2026 --- versão 0.16}
+\date{Novembro de 2026 --- versão 0.17}
 
 \begin{document}
 \maketitle
@@ -425,6 +425,30 @@ com $k\in[0,1]$ escolhido pelo usuário ($0{,}10$ por padrão), capital $\mathrm
 \Delta L=\sum_{n\in\mathcal D}\mathrm{EAD}_n\bigl[\mathrm{ELBE}_n(t_n+12)-\mathrm{ELBE}_n(t_n)\bigr],
 \end{equation}
 em que $\mathcal D$ é o conjunto das exposições em \emph{default}. Por ser constante, $\Delta L$ soma-se ao EL, ao VaR e ao ES de qualquer modelo da carteira não \emph{default} sem alterar a perda inesperada; no multiperíodo, somam-se os incrementos anuais descontados até o horizonte. No padronizado, a exposição em \emph{default} recebe o fator do ativo problemático (art.~66 da Resolução BCB 229), e o piso de saída é calculado com as duas partes nos dois lados: $\mathrm{RWA}_{\mathrm{IRB}}$ da carteira não \emph{default} mais o das exposições em \emph{default}, contra $0{,}725$ vez o $\mathrm{RWA}_{\mathrm{CPAD}}$ de toda a carteira ativa. O tratamento é deliberadamente determinístico: a incerteza da recuperação entra apenas pela margem $k$, sem simulação.
+
+\paragraph{Consolidação da carteira total (versão 0.17).} As medidas dos modelos de simulação referem-se à carteira não \emph{default} (ND); a carteira total soma a parte em \emph{default} (D). No horizonte de um ano, essa parte contribui com $\Delta L$ na perda esperada e com $\Delta L+K_D$ no quantil, em que
+\begin{equation}
+K_D=\sum_{n\in\mathcal D}\mathrm{EAD}_n\bigl(\mathrm{LGD}_{D,n}-\mathrm{ELBE}_n\bigr)
+\label{eq:kd}
+\end{equation}
+é a perda adicional de recuperação no cenário adverso. Assim,
+\begin{equation}
+\mathrm{EL}_{\mathrm{total}}=\mathrm{EL}_{ND}+\Delta L,\qquad
+\VaR^{\alpha}_{\mathrm{total}}=\VaR^{\alpha}_{ND}+\Delta L+K_D,\qquad
+\ES^{\alpha}_{\mathrm{total}}=\ES^{\alpha}_{ND}+\Delta L+K_D,
+\label{eq:consol}
+\end{equation}
+e o capital, perda inesperada da carteira total, é
+\begin{equation}
+\mathrm{Capital}^{\alpha}=\VaR^{\alpha}_{\mathrm{total}}-\mathrm{EL}_{\mathrm{total}}=\bigl(\VaR^{\alpha}_{ND}-\mathrm{EL}_{ND}\bigr)+K_D,
+\label{eq:capital-total}
+\end{equation}
+com $\Delta L$ cancelado na diferença (idem para o ES). Três pontos merecem registro. Primeiro, o estoque já provisionado, $\sum_{n\in\mathcal D}\mathrm{EAD}_n\,\mathrm{ELBE}_n$, é perda reconhecida em exercícios anteriores e não entra na perda do ano; incluí-lo no VaR e na EL não alteraria o capital, porque também se cancelaria. Segundo, a expressão \eqref{eq:capital-total} pressupõe provisão igual à requerida. Quando a provisão constituída é menor, a diferença é perda esperada não coberta e consome capital; o CreditLens define o \emph{capital alocado} como
+\begin{equation}
+\mathrm{Capital\ alocado}=\bigl(\ES^{99{,}9\%}_{ND}-\mathrm{EL}_{ND}\bigr)+K_D+\max\Bigl\{0;\ \sum_{n\in\mathcal D}\mathrm{EAD}_n\,\mathrm{ELBE}_n-\text{provisão constituída}\Bigr\},
+\label{eq:capital-alocado}
+\end{equation}
+em linha com a dedução da insuficiência de provisão do capital principal na regra de Basileia. Terceiro, a soma simples é exata porque a perda do \emph{default} é determinística: não há diversificação entre as duas partes a capturar. Se a recuperação passar a ser simulada e condicionada ao fator sistemático, a soma vira um limite superior, e a carteira total deve ser simulada de uma só vez. Na base analítica demo (prazo de baixa de 24 meses, $k=0{,}10$), a parte em \emph{default} tem EAD de R\$~187{,}174 milhões, $\Delta L=$~R\$~34{,}807 milhões, $K_D=$~R\$~4{,}529 milhões e insuficiência de R\$~10{,}810 milhões (provisão constituída de R\$~131{,}071 milhões contra R\$~141{,}881 milhões requeridos): o capital alocado ao \emph{default} é de R\$~15{,}339 milhões. O aplicativo, o \emph{paper} e a exportação em Excel trazem a tabela consolidada por modelo.
 
 \subsection{Camada de agregação e o motor \emph{pooled}}
 \label{sec:agregacao}

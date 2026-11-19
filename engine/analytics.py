@@ -435,6 +435,26 @@ def results_to_excel(results: dict, port, path: str):
                 xw, sheet_name="Capital por modelo (R$)", index=False)
             _ap.drop(columns="tipo").to_excel(
                 xw, sheet_name="Capital por modelo (% EAD)", index=False)
+        from .alocacao import consolidacao
+        _cs, _ci = consolidacao(results)
+        if _cs is not None and len(_cs):
+            _cs.rename(columns={
+                "EL_ND": "EL não default", "VaR_ND": "VaR 99,9% não default",
+                "ES_ND": "ES 99,9% não default", "EL_total": "EL total",
+                "VaR_total": "VaR 99,9% total", "ES_total": "ES 99,9% total",
+                "capital_VaR": "capital VaR - EL", "capital_ES": "capital ES - EL",
+                "capital_alocado": "capital alocado (ES + insuficiência)"}
+            ).to_excel(xw, sheet_name="Consolidação", index=False)
+            pd.DataFrame([
+                ("EAD em default", _ci["ead_default"]),
+                ("Delta L (incremento da provisão em 12 meses)", _ci["delta_L"]),
+                ("K_D = EAD x (LGD_D - ELBE)", _ci["K_D"]),
+                ("Provisão requerida (EAD x ELBE)", _ci["provisao_requerida"]),
+                ("Provisão constituída", _ci["provisao_constituida"]),
+                ("Insuficiência de provisão", _ci["insuficiencia"])],
+                columns=["componente do default", "R$"]).to_excel(
+                xw, sheet_name="Consolidação", index=False,
+                startrow=len(_cs) + 3)
 
 
 def run_pooled_analysis(

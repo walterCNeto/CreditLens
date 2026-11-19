@@ -794,6 +794,48 @@ if _desc:
                 "lgd_media": "{:.3%}", "el_pct": "{:.3%}"}),
                 width='stretch', hide_index=True)
 
+def _mostrar_consolidacao(results):
+    """Carteira total = não default (simulada) + default (determinística)."""
+    from engine.alocacao import consolidacao
+    cs, ci = consolidacao(results)
+    if cs is None or not len(cs):
+        return
+    st.markdown("##### Carteira total: não default + default (99,9%)")
+    st.markdown(
+        "No horizonte de um ano, a parte em default entra com o incremento "
+        "da provisão em 12 meses (ΔL) na perda esperada e no quantil, e com "
+        "K_D = EAD·(LGD_D − ELBE) só no quantil:\n\n"
+        "- EL total = EL não default + ΔL\n"
+        "- VaR total = VaR não default + ΔL + K_D (idem ES)\n"
+        "- **Capital = VaR total − EL total = (VaR não default − EL não "
+        "default) + K_D**\n\n"
+        "O estoque já provisionado (EAD·ELBE) é perda reconhecida e não entra "
+        "na perda do ano. O capital alocado soma ao capital pelo ES a "
+        "insuficiência de provisão do default.")
+    ins = ci["insuficiencia"]
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("ΔL em 12 meses (R$ mi)", f"{ci['delta_L'] / 1e6:,.3f}")
+    k2.metric("K_D (R$ mi)", f"{ci['K_D'] / 1e6:,.3f}")
+    k3.metric("Provisão requerida (R$ mi)",
+              f"{ci['provisao_requerida'] / 1e6:,.3f}")
+    k4.metric("Insuficiência de provisão (R$ mi)",
+              f"{ins / 1e6:,.3f}" if ins == ins else "não informada")
+    t = cs.rename(columns={
+        "modelo": "Modelo", "EL_ND": "EL ND", "VaR_ND": "VaR ND",
+        "ES_ND": "ES ND", "EL_total": "EL total", "VaR_total": "VaR total",
+        "ES_total": "ES total", "capital_VaR": "Capital VaR−EL",
+        "capital_ES": "Capital ES−EL", "capital_alocado": "Capital alocado"})
+    num = [c for c in t.columns if c != "Modelo"]
+    t[num] = t[num] / 1e6
+    st.dataframe(t.style.format({c: "{:,.3f}" for c in num}, na_rep="—"),
+                 hide_index=True, width="stretch")
+    st.caption("Valores em R$ milhões. ND = carteira não default. Capital "
+               "alocado = capital pelo ES + insuficiência de provisão"
+               + ("" if ins == ins else " (provisão não informada: "
+                  "insuficiência tomada como nula)") + ".")
+    st.divider()
+
+
 def _mostrar_default(ad):
     if not ad:
         return
@@ -988,6 +1030,7 @@ with tabs[2]:
                 "RWACPAD também soma as duas partes.")
         st.divider()
         _mostrar_default(results.get("inadimplidos"))
+        _mostrar_consolidacao(results)
     st.markdown("##### Abordagem IRB (modelos internos) — Res. BCB 303/2023")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Capital IRB (99,90%; R$ mi)", _mi(irb_res['capital_total_999']),

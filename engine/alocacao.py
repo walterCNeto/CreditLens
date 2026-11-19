@@ -75,3 +75,53 @@ def tabela_alocacao(results):
     if ead and ead == ead:
         pct[cols] = df[cols] / ead
     return df, pct, ead, k_def
+
+
+NIVEL_CONS = "99.90%"
+
+
+def consolidacao(results, nivel=NIVEL_CONS):
+    """Carteira total = não default (simulada) + em default (determinística),
+    no horizonte de um ano.
+
+    Para cada modelo, no nível dado:
+      EL_total  = EL_ND + ΔL                       (ΔL: incremento da provisão
+                                                   do default em 12 meses)
+      VaR_total = VaR_ND + ΔL + K_D,  ES_total = ES_ND + ΔL + K_D
+      Capital   = VaR_total − EL_total = (VaR_ND − EL_ND) + K_D   (idem ES)
+      Capital alocado = capital pelo ES + insuficiência de provisão do default
+    O estoque já provisionado (EAD·ELBE) é perda reconhecida: não entra na
+    perda do ano; só a parte não provisionada (insuficiência) consome capital.
+    Retorna (df, info) ou (None, None) sem exposições em default."""
+    med = results.get("medidas")
+    ad = results.get("inadimplidos") or {}
+    rd = ad.get("resumo") or {}
+    if med is None or not len(med) or not rd:
+        return None, None
+    dl = _f(rd.get("perda_incremental_12m"))
+    dl = 0.0 if dl != dl else dl
+    kd = _f(rd.get("capital_irb"))
+    kd = 0.0 if kd != kd else kd
+    insuf = _f(rd.get("insuficiencia_provisao"))
+    info = {"ead_default": _f(rd.get("ead")), "delta_L": dl, "K_D": kd,
+            "provisao_requerida": _f(rd.get("provisao_elbe")),
+            "provisao_constituida": _f(rd.get("provisao_informada")),
+            "insuficiencia": insuf, "nivel": nivel,
+            "ead_nao_default": _f(results.get("resumo", {}).get("ead_total"))}
+    ins = 0.0 if insuf != insuf else insuf
+    L = []
+    for _, r in med.iterrows():
+        nome = str(r["modelo"])
+        if nome.startswith("IRB"):
+            continue
+        el, var, es = (_f(r.get("EL")), _f(r.get(f"VaR {nivel}")),
+                       _f(r.get(f"ES {nivel}")))
+        L.append({"modelo": nome, "EL_ND": el, "VaR_ND": var, "ES_ND": es,
+                  "EL_total": el + dl, "VaR_total": var + dl + kd,
+                  "ES_total": es + dl + kd,
+                  "capital_VaR": var - el + kd, "capital_ES": es - el + kd,
+                  "capital_alocado": es - el + kd + ins})
+    df = pd.DataFrame(L)
+    df = df.sort_values("capital_ES", ascending=False, na_position="last",
+                        kind="stable").reset_index(drop=True)
+    return df, info

@@ -527,6 +527,42 @@ O maior contribuinte para a perda esperada é {tx(str(maior[c]))}, com {nb(maior
     return "".join(T), figs
 
 
+def _consolidacao_tex(results):
+    """Tabela da carteira total (não default + default) no apêndice."""
+    from .alocacao import consolidacao
+    df, info = consolidacao(results)
+    if df is None or not len(df):
+        return ""
+    ins = info["insuficiencia"]
+    ins_txt = (rf"a insuficiência de provisão do \emph{{default}}, R\$~{mi(ins)}~milhões (provisão constituída de R\$~{mi(info['provisao_constituida'])}~milhões contra R\$~{mi(info['provisao_requerida'])}~milhões requeridos pela ELBE)"
+               if ins == ins else
+               r"a insuficiência de provisão, que não pôde ser medida porque a provisão constituída não foi informada (tomada como nula)")
+    lin = [[tx(r.modelo), mi(r.EL_ND), mi(r.VaR_ND), mi(r.ES_ND),
+            mi(r.EL_total), mi(r.VaR_total), mi(r.ES_total),
+            mi(r.capital_VaR), mi(r.capital_ES), mi(r.capital_alocado)]
+           for r in df.itertuples(index=False)]
+    corpo = "\n".join(" & ".join(l) + r" \\" for l in lin)
+    return rf"""
+\subsection*{{Consolidação: carteira não \emph{{default}} e em \emph{{default}}}}
+A Tabela~\ref{{tab:consolidacao}} reúne as duas partes da carteira a 99{{,}}9\%, pelas expressões da Seção~\ref{{sec:teoria-default}}. A parte em \emph{{default}} (EAD de R\$~{mi(info['ead_default'])}~milhões) entra com o incremento da provisão em 12 meses, $\Delta L=$~R\$~{mi(info['delta_L'])}~milhões, na EL e no quantil, e com $K_D=$~R\$~{mi(info['K_D'])}~milhões apenas no quantil; assim, $\mathrm{{Capital}}=(\mathrm{{VaR}}_{{ND}}-\mathrm{{EL}}_{{ND}})+K_D$. O capital alocado soma ao capital pelo ES {ins_txt}.
+\begin{{table}}[H]
+\centering\footnotesize
+\caption{{Carteira total a 99{{,}}9\% (R\$ milhões): não \emph{{default}} (ND), total e capital.}}
+\label{{tab:consolidacao}}
+\setlength{{\tabcolsep}}{{2.5pt}}
+\begin{{tabular}}{{>{{\raggedright\arraybackslash}}p{{3.6cm}}rrrrrrrrr}}
+\toprule
+& \multicolumn{{3}}{{c}}{{Não \emph{{default}}}} & \multicolumn{{3}}{{c}}{{Carteira total}} & \multicolumn{{3}}{{c}}{{Capital}} \\
+\cmidrule(lr){{2-4}}\cmidrule(lr){{5-7}}\cmidrule(lr){{8-10}}
+Modelo & EL & VaR & ES & EL & VaR & ES & VaR$-$EL & ES$-$EL & Alocado \\
+\midrule
+{corpo}
+\bottomrule
+\end{{tabular}}
+\end{{table}}
+"""
+
+
 def _apendice_alocacao(results, primeiro, letra):
     """Apêndice com o capital por modelo (R$ milhões e % da EAD total)."""
     from .alocacao import tabela_alocacao, ALPHAS
@@ -579,7 +615,8 @@ Este apêndice resume o capital que cada modelo atribuiria à carteira em cada n
           "tab:aloc-rs")
             + tab(pct, lambda v: nb(v, 2, pct=True),
                   r"Capital por modelo e nível de confiança, em percentual da EAD total.",
-                  "tab:aloc-pct"))
+                  "tab:aloc-pct")
+            + _consolidacao_tex(results))
 
 
 def montar_tex(port, results, mig=None, nome_base="", extra=None,
@@ -872,6 +909,7 @@ calculados sobre as mesmas exposições. O requerimento de capital é $F=8\%$ do
         r_ = ad["resumo"]
         T.append(r"""
 \subsection{Exposições em default na carteira ativa (sem \emph{write-off})}
+\label{sec:teoria-default}
 Contratos com 90 dias ou mais de atraso, marcados como ativo problemático ou com tempo em \emph{default} informado saem dos modelos de simulação: o evento de \emph{default} já ocorreu, e o risco remanescente é o da recuperação. Seja $t$ o tempo em \emph{default}, em meses. A melhor estimativa da perda, $\mathrm{ELBE}(t)$, é a curva de LGD em \emph{default}, não decrescente em $t$ e igual a 100\% no prazo de baixa $T_b$; """
                  + (r"nesta execução, usou-se a proxy linear a partir da LGD não \emph{default} do contrato, $\mathrm{LGD}_0$,"
                     if r_["curva"] != "informada" else r"nesta execução, a curva foi informada por categoria IRB, com interpolação linear entre os pontos; para categorias sem curva, usou-se a proxy linear")
@@ -888,6 +926,17 @@ com capital $\mathrm{EAD}\cdot K$ e RWA $=12{,}5\cdot\mathrm{EAD}\cdot K$: máxi
 \Delta L=\sum_{n\in\mathcal{D}}\mathrm{EAD}_n\bigl[\mathrm{ELBE}_n(t_n+12)-\mathrm{ELBE}_n(t_n)\bigr],
 \end{equation}
 em que $\mathcal{D}$ é o conjunto das exposições em \emph{default}; por ser constante, $\Delta L$ soma-se ao EL, ao VaR e ao ES de qualquer modelo sem alterar a perda inesperada. No padronizado, essas exposições recebem o fator do ativo problemático (art.~66 da Resolução BCB 229/2022), e no piso de saída entram dos dois lados. Contratos em atraso abaixo de 90 dias seguem na carteira não \emph{default}, com a LGD não \emph{default}; acima de 30 dias, passam ao estágio 2 do ECL.
+
+\paragraph{Consolidação da carteira total.} As medidas dos modelos de simulação referem-se à carteira não \emph{default} (ND). A carteira total soma a parte em \emph{default} (D), que no horizonte de um ano contribui com o incremento da provisão $\Delta L$ na perda esperada e com $\Delta L+K_D$ no quantil, em que $K_D=\sum_{n\in\mathcal D}\mathrm{EAD}_n(\mathrm{LGD}_{D,n}-\mathrm{ELBE}_n)$ é a perda adicional de recuperação no cenário adverso:
+\begin{equation}
+\mathrm{EL}_{\mathrm{total}}=\mathrm{EL}_{ND}+\Delta L,\qquad
+\mathrm{VaR}^{\alpha}_{\mathrm{total}}=\mathrm{VaR}^{\alpha}_{ND}+\Delta L+K_D,
+\end{equation}
+e o mesmo para o ES. O capital é a perda inesperada da carteira total, na qual $\Delta L$ se cancela:
+\begin{equation}
+\mathrm{Capital}^{\alpha}=\mathrm{VaR}^{\alpha}_{\mathrm{total}}-\mathrm{EL}_{\mathrm{total}}=\bigl(\mathrm{VaR}^{\alpha}_{ND}-\mathrm{EL}_{ND}\bigr)+K_D.
+\end{equation}
+O estoque já provisionado, $\sum_{n\in\mathcal D}\mathrm{EAD}_n\,\mathrm{ELBE}_n$, é perda reconhecida em exercícios anteriores e não entra na perda do ano; contá-lo no VaR e na EL não mudaria o capital, porque se cancelaria na diferença. O que consome capital é a parte da perda esperada \emph{não} provisionada: o capital alocado soma ao capital pelo ES a insuficiência de provisão, $\max\{0;\,\mathrm{EAD}\cdot\mathrm{ELBE}-\text{provisão constituída}\}$, que na regra de Basileia é deduzida do capital principal. A soma simples é exata porque a perda do \emph{default} é determinística: não há diversificação entre as duas partes a capturar.
 """)
     if mig is not None:
         T.append(r"""
@@ -1046,7 +1095,7 @@ Pela abordagem padronizada, o RWA da carteira é R\$~{mi(ps_['rwa_cpad'])}~milh�
                    nb(r.K, 3, pct=True), mi(r.provisao_elbe), mi(r.capital_irb)]
                   for r in pf.itertuples(index=False)]
             T.append(rf"""
-\paragraph{{Exposições em \emph{{default}}.}} A Tabela~\ref{{tab:default}} resume o tratamento das exposições em \emph{{default}} e a Tabela~\ref{{tab:defaultfaixa}} mostra, por tempo em \emph{{default}}, a passagem do capital para a provisão; a Figura~\ref{{fig:default}} traz a curva usada. A perda incremental de R\$~{mi(r_['perda_incremental_12m'])}~milhões em 12 meses soma-se às medidas da Tabela~\ref{{tab:medidas}}, que se referem à carteira não \emph{{default}}.
+\paragraph{{Exposições em \emph{{default}}.}} A Tabela~\ref{{tab:default}} resume o tratamento das exposições em \emph{{default}} e a Tabela~\ref{{tab:defaultfaixa}} mostra, por tempo em \emph{{default}}, a passagem do capital para a provisão; a Figura~\ref{{fig:default}} traz a curva usada. A perda incremental de R\$~{mi(r_['perda_incremental_12m'])}~milhões em 12 meses soma-se às medidas da Tabela~\ref{{tab:medidas}}, que se referem à carteira não \emph{{default}}; a consolidação da carteira total, com o capital alocado, está na Tabela~\ref{{tab:consolidacao}}.
 """ + _tabela(["Indicador", "Valor"], ld, "lr",
               "Exposições em \\emph{default} (sem \\emph{write-off}).", "tab:default", H=True)
               + _tabela(["Meses em \\emph{default}", "Contratos", "EAD", "ELBE", "$K$",

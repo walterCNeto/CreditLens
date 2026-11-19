@@ -1481,4 +1481,44 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                     D.tabela(["Modelo"] + niv, lin,
                              [0.44, 0.14, 0.14, 0.14, 0.14],
                              0.022 * (len(lin) + 1), sec_b)
+            from .alocacao import consolidacao
+            _cs, _ci = consolidacao(results)
+            if _cs is not None and len(_cs):
+                D.h2("Consolidação: carteira não default e em default "
+                     "(99,9%)", secao=sec_b)
+                D.par("A parte em default entra com o incremento da provisão "
+                      "em 12 meses (ΔL) na EL e no quantil, e com K_D = "
+                      "EAD·(LGD_D − ELBE) só no quantil: EL total = EL_ND + "
+                      "ΔL; VaR total = VaR_ND + ΔL + K_D (idem ES). Capital = "
+                      "VaR total − EL total = (VaR_ND − EL_ND) + K_D. O "
+                      "estoque já provisionado é perda reconhecida e não "
+                      "entra na perda do ano; o capital alocado soma ao "
+                      "capital pelo ES a insuficiência de provisão do "
+                      "default.", secao=sec_b)
+                _ins = _ci["insuficiencia"]
+                D.kv([("EAD em default (R$ mi)", mi(_ci["ead_default"])),
+                      ("ΔL, incremento da provisão em 12 meses (R$ mi)",
+                       mi(_ci["delta_L"])),
+                      ("K_D, capital da recuperação (R$ mi)", mi(_ci["K_D"])),
+                      ("Provisão requerida pela ELBE (R$ mi)",
+                       mi(_ci["provisao_requerida"])),
+                      ("Provisão constituída (R$ mi)",
+                       mi(_ci["provisao_constituida"])
+                       if _ins == _ins else "não informada"),
+                      ("Insuficiência de provisão (R$ mi)",
+                       mi(_ins) if _ins == _ins else "não medida (nula)")],
+                     secao=sec_b)
+                _nm = [str(m).replace(" (pooled)", "") for m in _cs["modelo"]]
+                D.tabela(["Modelo", "EL total", "VaR total", "ES total"],
+                         [[n, mi(r.EL_total), mi(r.VaR_total), mi(r.ES_total)]
+                          for n, r in zip(_nm, _cs.itertuples(index=False))],
+                         [0.46, 0.18, 0.18, 0.18],
+                         0.022 * (len(_cs) + 1), sec_b)
+                D.tabela(["Modelo", "Capital VaR−EL", "Capital ES−EL",
+                          "Capital alocado"],
+                         [[n, mi(r.capital_VaR), mi(r.capital_ES),
+                           mi(r.capital_alocado)]
+                          for n, r in zip(_nm, _cs.itertuples(index=False))],
+                         [0.46, 0.18, 0.18, 0.18],
+                         0.022 * (len(_cs) + 1), sec_b)
         D.fecha()
