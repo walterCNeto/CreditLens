@@ -122,7 +122,9 @@ def main():
     ap.add_argument("--modelo-estresse", default="Threshold Gaussiano 1F",
                     help="modelo do estresse: 'Threshold Gaussiano 1F', "
                          "'Threshold t-Student 1F', 'ASRF (analítico)', "
-                         "'Beta-binomial' ou 'CreditRisk+ (Poisson)'")
+                         "'Beta-binomial', 'CreditRisk+ (Poisson)', "
+                         "'CreditRisk+ clássico (CSFP)' ou "
+                         "'CreditRisk+ ponto de sela'")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)

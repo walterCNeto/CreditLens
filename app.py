@@ -290,7 +290,10 @@ with st.container(border=True, key="cartao_estresse"):
         est_modelo = e1.selectbox(
             "Modelo do estresse", _MOD_EST, index=0,
             help="O estresse roda o modelo escolhido em cada cenário, com "
-                 "os mesmos parâmetros de dependência da execução principal.")
+                 "os mesmos parâmetros de dependência da execução principal. "
+                 "O CreditRisk+ clássico (CSFP) e o ponto de sela não têm "
+                 "erro de simulação, mas em bases grandes levam alguns "
+                 "minutos.")
         est_M = e2.select_slider(
             "Simulações por cenário", [5_000, 10_000, 20_000, 50_000],
             value=20_000,

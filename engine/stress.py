@@ -28,7 +28,10 @@ from .pooled import _bucket_losses, regimes
 from .inadimplidos import elbe as _elbe
 
 MODELOS = ["Threshold Gaussiano 1F", "Threshold t-Student 1F",
-           "ASRF (analítico)", "Beta-binomial", "CreditRisk+ (Poisson)"]
+           "ASRF (analítico)", "Beta-binomial", "CreditRisk+ (Poisson)",
+           "CreditRisk+ clássico (CSFP)", "CreditRisk+ ponto de sela"]
+_CRP = ("CreditRisk+ (Poisson)", "CreditRisk+ clássico (CSFP)",
+        "CreditRisk+ ponto de sela")
 ALFAS = np.array([0.95, 0.99, 0.999, 0.9997])
 COLS_TEMPLATE = ["cenario", "tipo", "ano", "setor", "z", "mult_pd",
                  "choque_lgd_pp", "mult_k_default", "pib_pct",
@@ -187,7 +190,7 @@ class Motor:
             import mixtureModels as mix
             pbar = float(np.dot(C / C.sum(), p))
             a, b = mix.betaCalibrate(pbar, self.rho_d)
-        if self.modelo == "CreditRisk+ (Poisson)":
+        if self.modelo in _CRP:
             # (w, v) recalibrados ao ρ_D alvo na PD média estressada, como
             # na execução principal (w = 1, v resolvido)
             from .crplus_csfp import calibrar_crplus
@@ -197,6 +200,8 @@ class Motor:
                 crp_wv = (1.0, float(v_))
             except Exception:
                 crp_wv = self.crp
+        if self.modelo in _CRP[1:]:
+            return self._csfp(p, C, crp_wv)
         Kg = norm.ppf(np.clip(p, 1e-10, 1 - 1e-10))
         Kt = student_t.ppf(np.clip(p, 1e-10, 1 - 1e-10), self.nu)
         for i0 in range(0, M, B):
@@ -226,6 +231,22 @@ class Motor:
         var = np.quantile(loss, ALFAS)
         es = np.array([loss[loss >= v].mean() for v in var])
         return el, var, es
+
+    def _csfp(self, p, C, crp_wv):
+        """CreditRisk+ clássico: distribuição exata por faixas (Panjer ou
+        FFT) ou aproximação de ponto de sela sobre as severidades exatas."""
+        from .crplus_csfp import crplus_csfp
+        w, v = crp_wv
+        el, _, var, es, info = crplus_csfp(p, C, w, v, ALFAS, n=self.n_eff)
+        if self.modelo == "CreditRisk+ ponto de sela":
+            s = info.get("sela") or {}
+            vs, es_s = np.asarray(s.get("VaR", []), float), \
+                np.asarray(s.get("ES", []), float)
+            if len(vs) == len(ALFAS) and np.all(np.isfinite(vs)):
+                var = vs
+                es = np.where(np.isfinite(es_s), es_s, es)
+            el = float(s.get("EL", el))
+        return float(el), np.asarray(var, float), np.asarray(es, float)
 
     def _asrf(self, p, C):
         # mesma forma da execução principal: carteira homogênea com a PD
@@ -387,7 +408,7 @@ def executar(port, results, cenarios, modelo="Threshold Gaussiano 1F",
         if cea_z(lo) < 0:
             zr = np.nan
         else:
-            zr = brentq(cea_z, lo, hi, xtol=1e-3)
+            zr = brentq(cea_z, lo, hi, xtol=5e-3)
     except Exception:
         zr = np.nan
     pd_r = np.nan
@@ -409,7 +430,9 @@ _PREFIXO = {"Threshold Gaussiano 1F": "Threshold Gaussiano 1F",
             "Threshold t-Student 1F": "Threshold t-Student 1F",
             "ASRF (analítico)": "ASRF",
             "Beta-binomial": "Beta-binomial",
-            "CreditRisk+ (Poisson)": "CreditRisk+ simulação Poisson"}
+            "CreditRisk+ (Poisson)": "CreditRisk+ simulação Poisson",
+            "CreditRisk+ clássico (CSFP)": "CreditRisk+ clássico (CSFP)",
+            "CreditRisk+ ponto de sela": "CreditRisk+ ponto de sela"}
 
 
 def reproducao(results):
