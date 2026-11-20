@@ -117,6 +117,31 @@ CURVA = [
 ]
 
 
+CENARIOS = [
+    ("cenario", "sim", "texto", "Nome do cenário ou da sensibilidade; as "
+     "linhas com o mesmo nome formam um cenário. O nome 'Base' é a "
+     "referência das variações."),
+    ("tipo", "não", "'cenario' ou 'sensibilidade'", "Cenário plurianual "
+     "(análise de cenários) ou choque de um parâmetro em 1 ano (análise de "
+     "sensibilidade). Vazio = 'cenario'."),
+    ("ano", "sim", "inteiro de 1 a 5", "Ano da projeção."),
+    ("setor", "não", "nome do setor ou 'todos'", "Setor da carteira a que "
+     "o choque se aplica; 'todos' vale para a carteira inteira."),
+    ("z", "não", "número; negativo = adverso", "Índice de crédito do ano: "
+     "PD(z) = Φ(Φ⁻¹(PD) − z·√(ρ/(1 − ρ))); z = 0 reproduz a PD de 12 meses."),
+    ("mult_pd", "não", "multiplicador > 0", "Multiplica a PD depois do "
+     "choque em z (padrão 1)."),
+    ("choque_lgd_pp", "não", "pontos percentuais", "Somado à LGD da "
+     "carteira não default e à LGD de entrada do estoque em default."),
+    ("mult_k_default", "não", "multiplicador > 0", "Multiplica a margem k "
+     "da LGD em default (recuperação mais incerta)."),
+    ("pib_pct, desemprego_pct, selic_pct, ipca_pct", "não", "percentuais",
+     "Narrativa macroeconômica do cenário; documentação, sem uso no "
+     "cálculo."),
+    ("descricao", "não", "texto", "Descrição do cenário."),
+]
+
+
 def dicionario(itens):
     return pd.DataFrame(itens, columns=["Coluna", "Obrigatória",
                                         "Formato / unidade", "Descrição"])

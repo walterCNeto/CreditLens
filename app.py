@@ -260,6 +260,49 @@ with st.container(border=True, key="cartao_default"):
                  "em default é EAD·(LGD_D − ELBE) = EAD·k·(1 − ELBE): maior "
                  "logo após o default e nulo na baixa.")
 
+# --- cartão: testes de estresse ---
+from engine.stress import MODELOS as _MOD_EST
+with st.container(border=True, key="cartao_estresse"):
+    st.markdown("##### :material/thunderstorm: Testes de estresse "
+                "*(opcional)*")
+    est_sel = st.segmented_control(
+        "Cenários de estresse", [_ORIG_ARQ, _ORIG_EX], default=None,
+        key="orig_est", selection_mode="single", width="stretch",
+        help="Opcional. Clique de novo na opção escolhida para desmarcar.")
+    est_up = None
+    if est_sel == _ORIG_ARQ:
+        est_up = st.file_uploader("CSV de cenários de estresse",
+                                  type=["csv"], key="est")
+    if est_sel is None:
+        st.caption("Programa de testes de estresse da Res. CMN 4.557 "
+                   "(arts. 11 a 18): análise de sensibilidade, cenários "
+                   "plurianuais (base, adverso e severo) e estresse reverso, "
+                   "com o modelo de portfólio escolhido. Os resultados têm "
+                   "aba própria e um capítulo no paper.")
+        est_modelo, est_M, est_alvo = _MOD_EST[0], 20_000, 1.5
+    else:
+        if est_sel == _ORIG_EX:
+            st.caption(":material/thunderstorm: Cenários ilustrativos: base, "
+                       "adverso e severo em 3 anos, com choque adicional em "
+                       "Construção, Varejo e Agro, e cinco sensibilidades. "
+                       "Os números são hipotéticos.")
+        e1, e2, e3 = st.columns(3, gap="medium")
+        est_modelo = e1.selectbox(
+            "Modelo do estresse", _MOD_EST, index=0,
+            help="O estresse roda o modelo escolhido em cada cenário, com "
+                 "os mesmos parâmetros de dependência da execução principal.")
+        est_M = e2.select_slider(
+            "Simulações por cenário", [5_000, 10_000, 20_000, 50_000],
+            value=20_000,
+            help="Cada cenário e ano roda o modelo de novo; 20 mil equilibra "
+                 "precisão e tempo. Todos usam a mesma semente.")
+        est_alvo = e3.slider(
+            "Estresse reverso: CEA alvo (× base)", 1.1, 3.0, 1.5, 0.1,
+            help="O estresse reverso busca o índice de crédito z que leva o "
+                 "CEA do ano 1 a este múltiplo do CEA do cenário base.")
+    _baixar_modelo("cenarios_estresse_modelo.csv",
+                   "Baixar modelo de cenários", "dl_mod_cen")
+
 with st.expander("Layouts dos arquivos de entrada — dicionário de "
                  "colunas e exemplos preenchidos", icon=":material/description:"):
     from engine.layouts import (dicionario, dicionario_analitica, CARTEIRA,
@@ -269,10 +312,11 @@ with st.expander("Layouts dos arquivos de entrada — dicionário de "
                "exceto colunas terminadas em `_mi` (R$ milhões). Taxas e "
                "frações em decimal (5% = 0.05). Os resultados são "
                "apresentados em R$ milhões.")
-    _lt1, _lt2, _lt3, _lt4 = st.tabs(["Carteira (por contraparte)",
-                                      "Base analítica (por contrato)",
-                                      "Matriz de transição anual",
-                                      "Curva de LGD em default"])
+    _lt1, _lt2, _lt3, _lt4, _lt5 = st.tabs(["Carteira (por contraparte)",
+                                            "Base analítica (por contrato)",
+                                            "Matriz de transição anual",
+                                            "Curva de LGD em default",
+                                            "Cenários de estresse"])
     with _lt1:
         st.markdown("Uma linha por **contraparte**. Para carteiras de até "
                     "alguns milhares de nomes; os modelos rodam nome a nome. "
@@ -340,6 +384,26 @@ with st.expander("Layouts dos arquivos de entrada — dicionário de "
             "{:.0%}", na_rep="—"), width='stretch')
         st.markdown("**Regras do layout**")
         st.dataframe(dicionario(CURVA), hide_index=True, width='stretch')
+    with _lt5:
+        from engine.layouts import CENARIOS
+        st.markdown(
+            "Uma linha por **cenário × ano × setor**. Cenários (`tipo` = "
+            "`cenario`) podem ter até 5 anos; sensibilidades (`tipo` = "
+            "`sensibilidade`) usam só o ano 1 e devem mudar um parâmetro. "
+            "A linha `todos` vale para a carteira inteira; a linha de um "
+            "setor tem precedência e herda o que ficar vazio. As variáveis "
+            "macroeconômicas documentam a narrativa do cenário (Res. CMN "
+            "4.557, art. 12) e não entram no cálculo: a ponte para a "
+            "carteira é o índice de crédito `z`, que vem de modelos "
+            "satélite ou do julgamento da área.")
+        _f = os.path.join(_TDIR, "cenarios_estresse_modelo.csv")
+        st.download_button("⬇ Baixar modelo de cenários",
+                           open(_f, "rb").read(),
+                           file_name="cenarios_estresse_modelo.csv",
+                           mime="text/csv")
+        st.dataframe(pd.read_csv(_f), hide_index=True, width='stretch')
+        st.markdown("**Dicionário de colunas**")
+        st.dataframe(dicionario(CENARIOS), hide_index=True, width='stretch')
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -560,6 +624,8 @@ def _config_atual():
                     hashlib.md5(curva_up.getvalue()).hexdigest()
                     if curva_up else None, prazo_baixa, k_lgd_d),
         "escala_reais": escala_reais,
+        "estresse": (est_sel, hashlib.md5(est_up.getvalue()).hexdigest()
+                     if est_up else None, est_modelo, est_M, est_alvo),
     }
 
 
@@ -612,7 +678,7 @@ if st.button("▶ Executar", type="primary", disabled=_bloqueio):
                 rho_setor=rho_setor, escala_reais=escala_reais,
             )
     # --- exposições em default (determinístico) ---
-    aval_def = None
+    aval_def, curva = None, None
     if len(df_def):
         from engine.inadimplidos import avaliar, integrar, ler_curva
         try:
@@ -627,6 +693,24 @@ if st.button("▶ Executar", type="primary", disabled=_bloqueio):
         except ValueError as e:
             st.error(f"Exposições em default: {e}")
     tick("Exposições em default avaliadas")
+
+    # --- testes de estresse (Res. CMN 4.557, arts. 11 a 18) ---
+    if est_sel is not None:
+        from engine.stress import executar, cenarios_exemplo, ler_cenarios
+        try:
+            cen_df = (ler_cenarios(est_up.getvalue()) if est_up is not None
+                      else cenarios_exemplo())
+            with st.spinner("Rodando os testes de estresse..."):
+                results["estresse"] = executar(
+                    port, results, cen_df, modelo=est_modelo, M=est_M,
+                    seed=int(seed), ad=aval_def, curva=curva,
+                    prazo_baixa=prazo_baixa, k_base=k_lgd_d,
+                    alvo_reverso=est_alvo, progress=tick)
+                results["estresse"]["origem"] = (
+                    "cenários ilustrativos do CreditLens" if est_up is None
+                    else f"arquivo {getattr(est_up, 'name', 'enviado')}")
+        except ValueError as e:
+            st.error(f"Testes de estresse: {e}")
 
     # --- migração & ECL ---
     mtx_src = mtx_up if mtx_up is not None else (
@@ -794,6 +878,87 @@ if _desc:
                 "lgd_media": "{:.3%}", "el_pct": "{:.3%}"}),
                 width='stretch', hide_index=True)
 
+def _mostrar_estresse(results):
+    """Aba de testes de estresse: cenários, sensibilidades e reverso."""
+    from engine.stress import (tabela_cenarios, tabela_sensibilidades,
+                               reproducao)
+    est = results.get("estresse")
+    if not est:
+        st.info("Os testes de estresse são opcionais. Escolha cenários no "
+                "cartão **Testes de estresse** (passo 1) e execute de novo.")
+        return
+    _m3 = "{:,.3f}"
+    st.markdown(
+        f"**Modelo:** {est['modelo']}  ·  **Simulações por cenário:** "
+        f"{est['M']:,}".replace(",", ".") + "  ·  **ρ de ativos:** "
+        f"{est['rho_ativos']:.3f}".replace(".", ",") + "  ·  **Cenários:** "
+        f"{est.get('origem', '')}")
+    st.caption(
+        "Programa de testes de estresse da Res. CMN 4.557 (arts. 11 a 18): "
+        "análise de sensibilidade, análise de cenários e estresse reverso. "
+        "CEA = PE + PI no horizonte de um ano, a cada ano da projeção, com "
+        "balanço constante. Os cenários e choques são premissas assumidas; "
+        "sua aprovação cabe ao conselho (art. 18).")
+    if est.get("setores_sem_carteira"):
+        st.warning("Setores dos cenários que não existem na carteira (choque "
+                   "sem efeito): " + ", ".join(est["setores_sem_carteira"])
+                   + ".")
+    rp = reproducao(results)
+    if rp:
+        st.caption(
+            f"Reprodução da base: CEA do ano 1 sem choque R$ "
+            f"{rp['cea_estresse'] / 1e6:,.3f} mi contra R$ "
+            f"{rp['cea_principal'] / 1e6:,.3f} mi na execução principal "
+            f"({rp['modelo_principal']}), diferença de {rp['dif']:+.3%}.")
+    tc = tabela_cenarios(est)
+    if tc is not None:
+        st.markdown("##### Análise de cenários")
+        t = pd.DataFrame({
+            "Cenário": tc["cenario"], "Ano": tc["ano"],
+            "PD média": tc["pd_media"], "PE (R$ mi)": tc["PE"] / 1e6,
+            "PI (R$ mi)": tc["PI"] / 1e6, "CEA (R$ mi)": tc["CEA"] / 1e6,
+            "CEA % EAD": tc["CEA_pct_ead"], "Δ CEA vs base": tc["dCEA_pct"],
+            "PE acumulada (R$ mi)": tc["PE_acum"] / 1e6,
+            "IRB + default (R$ mi)": tc["IRB_total"] / 1e6})
+        st.dataframe(t.style.format({
+            "PD média": "{:.3%}", "PE (R$ mi)": _m3, "PI (R$ mi)": _m3,
+            "CEA (R$ mi)": _m3, "CEA % EAD": "{:.3%}",
+            "Δ CEA vs base": "{:+.3%}", "PE acumulada (R$ mi)": _m3,
+            "IRB + default (R$ mi)": _m3}), hide_index=True, width="stretch")
+        g = tc.pivot(index="ano", columns="cenario", values="CEA") / 1e6
+        g.index = [f"Ano {a}" for a in g.index]
+        st.line_chart(g, x_label="Ano da projeção", y_label="CEA (R$ mi)")
+    ts = tabela_sensibilidades(est)
+    if ts is not None:
+        st.markdown("##### Análise de sensibilidade (ano 1)")
+        t = pd.DataFrame({
+            "Choque": ts["cenario"], "PD média": ts["pd_media"],
+            "PE (R$ mi)": ts["PE"] / 1e6, "PI (R$ mi)": ts["PI"] / 1e6,
+            "CEA (R$ mi)": ts["CEA"] / 1e6, "Δ CEA (R$ mi)": ts["dCEA"] / 1e6,
+            "Δ CEA": ts["dCEA_pct"]})
+        st.dataframe(t.style.format({
+            "PD média": "{:.3%}", "PE (R$ mi)": _m3, "PI (R$ mi)": _m3,
+            "CEA (R$ mi)": _m3, "Δ CEA (R$ mi)": _m3, "Δ CEA": "{:+.3%}"}),
+            hide_index=True, width="stretch")
+        st.bar_chart(ts.set_index("cenario")["dCEA"] / 1e6, horizontal=True,
+                     x_label="Δ CEA contra o base (R$ mi)", y_label="")
+    rv = est.get("reverso") or {}
+    st.markdown("##### Estresse reverso")
+    if rv.get("z") == rv.get("z") and rv.get("z") is not None:
+        r1, r2, r3 = st.columns(3)
+        r1.metric("Índice de crédito z*", f"{rv['z']:.3f}")
+        r2.metric("Probabilidade de um ano tão adverso", f"{rv['prob']:.3%}")
+        r3.metric("PD média no ponto de ruptura", f"{rv['pd_media']:.3%}",
+                  f"{rv['pd_media'] - rv['pd_media_base']:+.3%} vs base")
+        st.caption(
+            f"Choque uniforme no índice de crédito que leva o CEA do ano 1 a "
+            f"{rv['alvo_mult']:.1f} × o do cenário base (R$ "
+            f"{rv['alvo'] / 1e6:,.3f} mi). A Res. CMN 4.557 dispensa o "
+            "estresse reverso no S2 (art. 58).")
+    else:
+        st.caption("O alvo não foi atingido com z entre −6 e 0.")
+
+
 def _mostrar_consolidacao(results):
     """Carteira total = não default (simulada) + default (determinística)."""
     from engine.alocacao import consolidacao
@@ -907,7 +1072,7 @@ total = results["resumo"]["exposicao_liquida_total"]
 
 tabs = st.tabs(["Medidas de risco", "Distribuições", "Capital regulatório",
                 "Contribuições", "Setores", "Migração & ECL",
-                "Calibração", "Download"],
+                "Estresse", "Calibração", "Download"],
             key="aba_resultados", on_change="rerun")   # mantém a aba ativa
 
 # --- Medidas ---
@@ -1276,6 +1441,9 @@ with tabs[5]:
 
 # --- Calibração ---
 with tabs[6]:
+    _mostrar_estresse(results)
+
+with tabs[7]:
     st.json({
         "parametros": results["parametros"],
         "beta_binomial": results.get("calibracao_beta", {}),
@@ -1285,7 +1453,7 @@ with tabs[6]:
     })
 
 # --- Download ---
-with tabs[7]:
+with tabs[8]:
     _exec = st.session_state.get("executado_em", "")
     if st.session_state.get("_dl_exec") != _exec:      # nova execução: refaz
         st.session_state.pop("_paper", None)

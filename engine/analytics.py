@@ -469,6 +469,26 @@ def results_to_excel(results: dict, port, path: str, rel_agg=None,
                 "PI_D": "PI default (K_D)", "PI": "PI total",
                 "CEA": "CEA = PE + PI"}).to_excel(
                 xw, sheet_name=f"CEA ({_m} 99,9%)", index=False)
+        _est = results.get("estresse")
+        if _est:
+            from .stress import tabela_cenarios, tabela_sensibilidades
+            _tc = tabela_cenarios(_est)
+            if _tc is not None:
+                _tc.to_excel(xw, sheet_name="Estresse cenários", index=False)
+            _ts = tabela_sensibilidades(_est)
+            if _ts is not None:
+                _ts.to_excel(xw, sheet_name="Estresse sensibilidades",
+                             index=False)
+            _est["cenarios_def"].to_excel(xw, sheet_name="Estresse definição",
+                                          index=False)
+            pd.DataFrame([{"modelo": _est["modelo"], "M": _est["M"],
+                           "rho_ativos": _est["rho_ativos"],
+                           "rho_d": _est["rho_d"],
+                           "origem": _est.get("origem", ""),
+                           **{f"reverso_{k}": v for k, v in
+                              (_est.get("reverso") or {}).items()}}]).T \
+                .rename(columns={0: "valor"}).to_excel(
+                    xw, sheet_name="Estresse reverso e parâmetros")
         _cc, _ = conciliacao(results, rel_agg, descritiva)
         from .report_paper import plano as _plano
         _cc["observacao"] = _cc["observacao"].map(_plano)

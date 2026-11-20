@@ -1,0 +1,33 @@
+cenario,tipo,ano,setor,z,mult_pd,choque_lgd_pp,mult_k_default,pib_pct,desemprego_pct,selic_pct,ipca_pct,descricao
+Base,cenario,1,todos,,1.0,0.0,1.0,2.0,7.0,10.5,4.0,Cenário de referência (ilustrativo)
+Base,cenario,2,todos,,1.0,0.0,1.0,2.2,6.8,9.75,3.8,Cenário de referência (ilustrativo)
+Base,cenario,3,todos,,1.0,0.0,1.0,2.3,6.6,9.25,3.5,Cenário de referência (ilustrativo)
+Adverso,cenario,1,todos,-0.5,1.0,5.0,1.5,-1.5,9.5,14.25,6.5,Recessão moderada com juros altos por mais tempo (ilustrativo)
+Adverso,cenario,1,Construção,-0.5,1.125,,,-1.5,9.5,14.25,6.5,Choque adicional no setor Construção
+Adverso,cenario,1,Varejo,-0.5,1.075,,,-1.5,9.5,14.25,6.5,Choque adicional no setor Varejo
+Adverso,cenario,1,Agro,-0.5,1.05,,,-1.5,9.5,14.25,6.5,Choque adicional no setor Agro
+Adverso,cenario,2,todos,-0.35,1.0,5.0,1.5,-0.5,10.5,13.5,5.8,Recessão moderada com juros altos por mais tempo (ilustrativo)
+Adverso,cenario,2,Construção,-0.35,1.125,,,-0.5,10.5,13.5,5.8,Choque adicional no setor Construção
+Adverso,cenario,2,Varejo,-0.35,1.075,,,-0.5,10.5,13.5,5.8,Choque adicional no setor Varejo
+Adverso,cenario,2,Agro,-0.35,1.05,,,-0.5,10.5,13.5,5.8,Choque adicional no setor Agro
+Adverso,cenario,3,todos,-0.15,1.0,5.0,1.5,1.0,9.8,12.0,4.8,Recessão moderada com juros altos por mais tempo (ilustrativo)
+Adverso,cenario,3,Construção,-0.15,1.125,,,1.0,9.8,12.0,4.8,Choque adicional no setor Construção
+Adverso,cenario,3,Varejo,-0.15,1.075,,,1.0,9.8,12.0,4.8,Choque adicional no setor Varejo
+Adverso,cenario,3,Agro,-0.15,1.05,,,1.0,9.8,12.0,4.8,Choque adicional no setor Agro
+Severo,cenario,1,todos,-1.0,1.0,10.0,2.0,-4.0,12.5,17.75,9.0,Recessão profunda com choque de juros e de crédito (ilustrativo)
+Severo,cenario,1,Construção,-1.0,1.25,,,-4.0,12.5,17.75,9.0,Choque adicional no setor Construção
+Severo,cenario,1,Varejo,-1.0,1.15,,,-4.0,12.5,17.75,9.0,Choque adicional no setor Varejo
+Severo,cenario,1,Agro,-1.0,1.1,,,-4.0,12.5,17.75,9.0,Choque adicional no setor Agro
+Severo,cenario,2,todos,-0.7,1.0,10.0,2.0,-2.0,13.5,16.5,7.5,Recessão profunda com choque de juros e de crédito (ilustrativo)
+Severo,cenario,2,Construção,-0.7,1.25,,,-2.0,13.5,16.5,7.5,Choque adicional no setor Construção
+Severo,cenario,2,Varejo,-0.7,1.15,,,-2.0,13.5,16.5,7.5,Choque adicional no setor Varejo
+Severo,cenario,2,Agro,-0.7,1.1,,,-2.0,13.5,16.5,7.5,Choque adicional no setor Agro
+Severo,cenario,3,todos,-0.35,1.0,10.0,2.0,0.5,12.0,14.0,5.5,Recessão profunda com choque de juros e de crédito (ilustrativo)
+Severo,cenario,3,Construção,-0.35,1.25,,,0.5,12.0,14.0,5.5,Choque adicional no setor Construção
+Severo,cenario,3,Varejo,-0.35,1.15,,,0.5,12.0,14.0,5.5,Choque adicional no setor Varejo
+Severo,cenario,3,Agro,-0.35,1.1,,,0.5,12.0,14.0,5.5,Choque adicional no setor Agro
+"PD × 1,5",sensibilidade,1,todos,,1.5,0.0,1.0,,,,,Análise de sensibilidade de um parâmetro
+"PD × 2,0",sensibilidade,1,todos,,2.0,0.0,1.0,,,,,Análise de sensibilidade de um parâmetro
+LGD + 10 p.p.,sensibilidade,1,todos,,1.0,10.0,1.0,,,,,Análise de sensibilidade de um parâmetro
+Índice de crédito z = −1,sensibilidade,1,todos,-1.0,1.0,0.0,1.0,,,,,Análise de sensibilidade de um parâmetro
+Recuperação do default (k × 2),sensibilidade,1,todos,,1.0,0.0,2.0,,,,,Análise de sensibilidade de um parâmetro

@@ -192,6 +192,8 @@ REFS_TEX = [
     r"David, H.~A.; Nagaraja, H.~N. (2003). \emph{Order Statistics}. 3.\,ed. Hoboken: Wiley.",
     r"Glasserman, P. (2004). \emph{Monte Carlo Methods in Financial Engineering}. Nova York: Springer.",
     r"Gordy, M.~B. (2002). Saddlepoint approximation of CreditRisk\textsuperscript{+}. \emph{Journal of Banking \& Finance}, 26(7), 1335--1353.",
+    r"Basel Committee on Banking Supervision (2018). \emph{Stress testing principles}. Basileia: BIS.",
+    r"Conselho Monetário Nacional (2025). \emph{Resolução CMN nº 5.226, de 26 de junho de 2025} (altera a Resolução nº 4.557 quanto a testes de estresse com cenários definidos pelo Banco Central do Brasil e ao envio estruturado dos resultados). Brasília: BCB.",
 ]
 
 
@@ -561,6 +563,173 @@ Modelo & EL & VaR & ES & EL & VaR & ES & VaR$-$EL & ES$-$EL & Alocado \\
 \end{{tabular}}
 \end{{table}}
 """
+
+
+def _fig_estresse(tc, ts, path_c, path_s):
+    """Figuras monocromáticas do capítulo de estresse: CEA por cenário e
+    ano; variação do CEA nas sensibilidades."""
+    estilos = ["-", "--", ":", "-."]
+    marcas = ["o", "s", "^", "D", "v"]
+    if tc is not None and len(tc):
+        fig, ax = plt.subplots(figsize=(6.0, 3.0))
+        for i, (nome, g) in enumerate(tc.groupby("cenario", sort=False)):
+            ax.plot(g["ano"], g["CEA"] / MI, color="black",
+                    ls=estilos[i % 4], marker=marcas[i % 5], ms=4, lw=1.1,
+                    label=nome)
+        ax.set_xlabel("Ano da projeção", fontsize=8)
+        ax.set_ylabel("CEA (R\\$ milhões)", fontsize=8)
+        ax.set_xticks(sorted(tc["ano"].unique()))
+        ax.tick_params(labelsize=7)
+        ax.grid(alpha=0.25, color="0.6")
+        ax.legend(fontsize=7, frameon=False)
+        fig.tight_layout()
+        fig.savefig(path_c)
+        plt.close(fig)
+    if ts is not None and len(ts):
+        fig, ax = plt.subplots(figsize=(6.0, 0.45 * len(ts) + 0.9))
+        y = np.arange(len(ts))[::-1]
+        ax.barh(y, ts["dCEA"] / MI, color="0.55", edgecolor="black", lw=0.6)
+        ax.set_yticks(y)
+        ax.set_yticklabels(ts["cenario"], fontsize=7)
+        ax.axvline(0, color="black", lw=0.8)
+        ax.set_xlabel("Variação do CEA contra o cenário base, ano 1 "
+                      "(R\\$ milhões)", fontsize=8)
+        ax.tick_params(labelsize=7)
+        ax.grid(axis="x", alpha=0.25, color="0.6")
+        fig.tight_layout()
+        fig.savefig(path_s)
+        plt.close(fig)
+
+
+def _capitulo_estresse(results, figdir):
+    """Capítulo de testes de estresse (Res. CMN 4.557, arts. 11 a 18)."""
+    from .stress import tabela_cenarios, tabela_sensibilidades, reproducao
+    est = results.get("estresse")
+    if not est:
+        return "", []
+    r_cmn = REFS_TEX.index(next(r for r in REFS_TEX if "4.557" in r)) + 1
+    r_966 = REFS_TEX.index(next(r for r in REFS_TEX if "4.966" in r)) + 1
+    r_bcbs = REFS_TEX.index(next(r for r in REFS_TEX if "Stress testing" in r)) + 1
+    r_5226 = REFS_TEX.index(next(r for r in REFS_TEX if "5.226" in r)) + 1
+    tc, ts = tabela_cenarios(est), tabela_sensibilidades(est)
+    figs = []
+    _fig_estresse(tc, ts, os.path.join(figdir, "estresse_cea.pdf"),
+                  os.path.join(figdir, "estresse_sens.pdf"))
+    if tc is not None and len(tc):
+        figs.append("estresse_cea.pdf")
+    if ts is not None and len(ts):
+        figs.append("estresse_sens.pdf")
+
+    req = [
+        ["Programa com metodologias, documentação e governança próprias", "art.~11, I", "capítulo e template de cenários documentam finalidade, choques e metodologia"],
+        ["Análise de sensibilidade", "arts.~11, III, e 12, III", "choques de um parâmetro (PD, LGD, índice de crédito, recuperação do \\emph{default})"],
+        ["Análise de cenários", "arts.~11, IV, e 12, III", "cenários plurianuais com variações simultâneas e coerentes de PD, LGD e recuperação"],
+        ["Teste de estresse reverso", "arts.~11, V, e 12, III; S2 dispensado (art.~58)", "busca do índice de crédito que leva o CEA ao nível predefinido"],
+        ["Premissas adequadamente severas", "art.~12, IV", "severidade medida pelo índice de crédito $z$ e pela probabilidade associada"],
+        ["Elementos históricos e hipotéticos, não linearidades", "art.~15", "a PD responde de forma não linear a $z$; cenários podem trazer narrativa macroeconômica"],
+        ["Integração com a avaliação de capital", "arts.~17, V e VI, e 40, III", "PE, PI e CEA por ano, comparados ao capital IRB, para o ICAAP e o plano de capital"],
+        ["Aprovação dos cenários e do programa pelo conselho", "arts.~18 e 48, II, ``c''", "fora do escopo da ferramenta; os cenários entram como premissas assumidas"],
+        ["Cenários definidos pelo Banco Central e envio estruturado", f"Res. CMN 5.226/2025 [{r_5226}]", "o template aceita os cenários fornecidos pelo regulador"],
+    ]
+    req_tab = _tabela(["Requisito", "Dispositivo (Res. CMN 4.557)", "Como o CreditLens atende"],
+                      [[a, b, c] for a, b, c in req],
+                      r">{\raggedright\arraybackslash}p{4.4cm}>{\raggedright\arraybackslash}p{3.6cm}>{\raggedright\arraybackslash}p{6.6cm}",
+                      "Requisitos regulatórios do programa de testes de estresse e como esta execução os atende.",
+                      "tab:est-req", H=True)
+
+    cd = est["cenarios_def"]
+    cd_t = cd[cd["setor"].str.lower() == "todos"]
+
+    def fz(v, d=2):
+        return nb(v, d) if v == v and v is not None else "---"
+    lcd = [[tx(r.cenario), tx(r.tipo), str(int(r.ano)), fz(r.z),
+            fz(r.mult_pd, 2), fz(r.choque_lgd_pp, 1), fz(r.mult_k_default, 2),
+            fz(r.pib_pct, 1), fz(r.desemprego_pct, 1), fz(r.selic_pct, 2),
+            fz(r.ipca_pct, 1)] for r in cd_t.itertuples(index=False)]
+    n_set = int((cd["setor"].str.lower() != "todos").sum())
+    cd_tab = _tabela(["Cenário", "Tipo", "Ano", "$z$", "PD$\\times$", "LGD (p.p.)",
+                      "$k\\times$", "PIB", "Desemp.", "Selic", "IPCA"], lcd,
+                     r">{\raggedright\arraybackslash}p{3.0cm}lrrrrrrrrr",
+                     "Definição dos cenários e das sensibilidades (choques para a carteira inteira; variáveis macroeconômicas em \\%).",
+                     "tab:est-def", small=True, H=True)
+
+    T = [rf"""
+\section{{Testes de estresse}}
+\label{{sec:estresse}}
+Este capítulo apresenta o programa de testes de estresse de crédito da carteira, nos termos da Resolução CMN 4.557 [{r_cmn}], arts.~11 a 18, que define o teste de estresse como exercício de avaliação prospectiva dos potenciais impactos de eventos adversos e exige três metodologias: a análise de sensibilidade, que varia um parâmetro relevante; a análise de cenários, que varia de forma simultânea e coerente um conjunto de parâmetros ao longo de um período; e o teste de estresse reverso, que parte de um nível predefinido de resultado ou de capital e identifica os eventos que o produzem. Os resultados devem alimentar a avaliação da adequação de capital (art.~40, III), que no segmento S1 é o ICAAP, e os planos de contingência (art.~17); os cenários e o programa são aprovados pelo conselho de administração, com revisão ao menos anual (arts.~18 e 48). A Resolução CMN 5.226/2025 [{r_5226}] tornou explícita a possibilidade de o Banco Central exigir testes periódicos com cenários por ele definidos e o envio estruturado dos resultados. Os princípios do Comitê de Basileia [{r_bcbs}] orientam o desenho, e a Resolução CMN 4.966 [{r_966}] requer informação prospectiva também na perda esperada contábil. A Tabela~\ref{{tab:est-req}} relaciona os requisitos ao que esta execução entrega.
+""" + req_tab + rf"""
+\subsection{{Metodologia}}
+O estresse usa um único modelo de portfólio, escolhido pelo usuário: \textbf{{{tx(est['modelo'])}}}, com {nb(est['M'], 0)} simulações por cenário e ano e a mesma semente em todos, de modo que as diferenças entre cenários venham dos choques, não do erro de simulação. Os parâmetros de dependência são os da execução principal, na métrica natural de cada família: a correlação de ativos $\rho={nb(est['rho_ativos'], 3)}$ nos modelos \emph{{threshold}} e no ASRF; a correlação de \emph{{default}} alvo $\rho_D={nb(est['rho_d'], 3)}$ na beta-binomial e no CreditRisk\textsuperscript{{+}}, recalibrados à PD média estressada.
+
+\paragraph{{Ponte entre o cenário e a carteira.}} Cada ano de cenário traz um índice de crédito $z$, normal padrão, em que valores negativos são adversos. A PD do cenário desloca o limiar do modelo de Vasicek, recentrado para que $z=0$ reproduza a PD de 12 meses da carteira:
+\begin{{equation}}
+\mathrm{{PD}}_t=\Phi\Bigl(\Phi^{{-1}}(\mathrm{{PD}})-z_t\sqrt{{\rho/(1-\rho)}}\Bigr)\cdot m_t,
+\end{{equation}}
+com $m_t$ um multiplicador opcional por setor. A LGD recebe um choque aditivo em pontos percentuais, aplicado também à LGD de entrada do estoque em \emph{{default}}, e a margem $k$ da LGD em \emph{{default}} pode ser multiplicada, o que representa recuperações mais incertas. As variáveis macroeconômicas do template documentam a narrativa do cenário (art.~12, V) e não entram no cálculo: a tradução da macroeconomia em $z_t$ cabe a modelos satélite ou ao julgamento da área e é premissa assumida desta análise.
+
+\paragraph{{Projeção e capital.}} Adota-se balanço constante: a carteira não \emph{{default}} é reposta a cada ano com o mesmo perfil, e os \emph{{defaults}} de cada ano formam uma coorte que envelhece na curva de \emph{{workout}}. Em cada ano $t$,
+\begin{{equation}}
+\mathrm{{PE}}_t=\sum_n \mathrm{{PD}}_{{t,n}}\,\mathrm{{LGD}}_{{t,n}}\,\mathrm{{EAD}}_n+\Delta L_t,\qquad
+\mathrm{{PI}}_t=\bigl(\mathrm{{VaR}}^{{99{{,}}9\%}}_t-\mathrm{{EL}}_t\bigr)+K_{{D,t}},\qquad
+\mathrm{{CEA}}_t=\mathrm{{PE}}_t+\mathrm{{PI}}_t,
+\end{{equation}}
+em que $\Delta L_t$ é o incremento da provisão do estoque em \emph{{default}} e das coortes anteriores, $K_{{D,t}}$ a margem de recuperação adversa desse estoque, e o VaR e a EL vêm do modelo escolhido com os parâmetros estressados. O capital IRB é recalculado com a PD estressada, para comparação. No ano~1 sem choque, a PE e a PI coincidem com a consolidação da Seção~\ref{{ap:cea}}.
+"""]
+    rp = reproducao(results)
+    if rp:
+        st_ = "dentro" if abs(rp["dif"]) <= 0.05 else "fora"
+        T.append(rf"""
+\paragraph{{Reprodução da base.}} O ano~1 do cenário sem choque dá CEA de R\$~{mi(rp['cea_estresse'])}~milhões, contra R\$~{mi(rp['cea_principal'])}~milhões na execução principal ({tx(rp['modelo_principal'])}): diferença de {nb(rp['dif'], 3, pct=True)}, {st_} da tolerância de 5\%, que acomoda o erro de simulação com menos cenários.
+""")
+    T.append(rf"""
+\paragraph{{Definição dos cenários.}} Os cenários desta execução vêm de {tx(est.get('origem', ''))}.{(' Os setores ' + tx(', '.join(est['setores_sem_carteira'])) + ' constam dos cenários mas não da carteira, e seus choques não têm efeito.') if est.get('setores_sem_carteira') else ''} A Tabela~\ref{{tab:est-def}} mostra os choques aplicados à carteira inteira{(f'; {n_set} linhas adicionais trazem choques específicos por setor, listados na exportação em Excel' if n_set else '')}.
+""" + cd_tab)
+    T.append(r"""
+\subsection{Resultados}
+""")
+    if tc is not None and len(tc):
+        lc = [[tx(r.cenario), str(int(r.ano)), nb(r.pd_media, 3, pct=True),
+               mi(r.PE), mi(r.PI), mi(r.CEA), nb(r.CEA_pct_ead, 3, pct=True),
+               nb(r.dCEA_pct, 3, pct=True), mi(r.PE_acum), mi(r.IRB_total)]
+              for r in tc.itertuples(index=False)]
+        pior = tc.loc[tc["CEA"].idxmax()]
+        T.append(rf"""
+A Tabela~\ref{{tab:est-cen}} traz a projeção de cada cenário. O maior CEA ocorre no cenário {tx(pior['cenario'])}, ano~{int(pior['ano'])}: R\$~{mi(pior['CEA'])}~milhões, {nb(pior['CEA_pct_ead'], 3, pct=True)} da EAD total e {nb(pior['dCEA_pct'], 3, pct=True)} acima do base no mesmo ano. A PE acumulada mede a perda que transitaria pelo resultado ao longo do cenário; a PI, o capital requerido ao fim de cada ano.
+""" + _tabela(["Cenário", "Ano", "PD média", "PE", "PI", "CEA", "CEA/EAD", "$\\Delta$ vs base", "PE acum.", "IRB + D"],
+              lc, r">{\raggedright\arraybackslash}p{2.0cm}rrrrrrrrr",
+              "Análise de cenários: PE, PI e CEA por ano (R\\$ milhões).", "tab:est-cen", small=True, H=True)
+            + r"""
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{estresse_cea.pdf}
+\caption{CEA por cenário ao longo da projeção.}
+\end{figure}
+""")
+    if ts is not None and len(ts):
+        ls = [[tx(r.cenario), nb(r.pd_media, 3, pct=True), mi(r.PE), mi(r.PI),
+               mi(r.CEA), mi(r.dCEA), nb(r.dCEA_pct, 3, pct=True)]
+              for r in ts.itertuples(index=False)]
+        T.append(rf"""
+\paragraph{{Análise de sensibilidade.}} A Tabela~\ref{{tab:est-sens}} varia um parâmetro de cada vez no ano~1, a partir do cenário base. A maior variação vem de {tx(ts.iloc[0]['cenario'])}, com {nb(ts.iloc[0]['dCEA_pct'], 3, pct=True)} no CEA.
+""" + _tabela(["Choque", "PD média", "PE", "PI", "CEA", "$\\Delta$ CEA", "$\\Delta$ \\%"],
+              ls, r">{\raggedright\arraybackslash}p{4.4cm}rrrrrr",
+              "Análise de sensibilidade no ano 1 (R\\$ milhões).", "tab:est-sens", small=True, H=True)
+            + r"""
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\textwidth]{estresse_sens.pdf}
+\caption{Variação do CEA por choque, contra o cenário base.}
+\end{figure}
+""")
+    rv = est.get("reverso") or {}
+    if rv.get("z") == rv.get("z") and rv.get("z") is not None:
+        T.append(rf"""
+\paragraph{{Teste de estresse reverso.}} O nível predefinido é um CEA de {nb(rv['alvo_mult'], 1)} vez o do cenário base no ano~1, R\$~{mi(rv['alvo'])}~milhões. Esse nível é atingido com índice de crédito $z^\ast={nb(rv['z'], 3)}$, que leva a PD média de {nb(rv['pd_media_base'], 3, pct=True)} para {nb(rv['pd_media'], 3, pct=True)}. A probabilidade de um ano tão ou mais adverso, $\Phi(z^\ast)$, é de {nb(rv['prob'], 3, pct=True)}. Quanto mais provável o evento que consome o capital, menor a folga da instituição; o resultado deve ser confrontado com o apetite a risco. A Resolução CMN 4.557 dispensa o estresse reverso no segmento S2 (art.~58).
+""")
+    T.append(r"""
+\paragraph{Uso e limitações.} Os resultados servem à avaliação da adequação de capital, ao plano de capital, que projeta ao menos três anos (art.~41), e à calibração do apetite a risco. São premissas assumidas, a validar caso a caso: o índice de crédito de cada cenário, que dispensa aqui um modelo satélite estimado; o balanço constante; os choques uniformes de LGD; a estabilidade das correlações sob estresse, que tende a subestimar a cauda em crises; e a escolha de um único modelo, cujo risco de modelo pode ser medido repetindo o exercício com outra família.
+""")
+    return "".join(T), figs
 
 
 def _apendice_cea(results, figdir, rel_agg=None, descritiva=None):
@@ -1249,6 +1418,11 @@ A Tabela~\ref{{tab:setores}} decompõe a cauda por setor pela alocação de Eule
 \caption{Distribuição das perdas descontadas acumuladas no horizonte multiperíodo, com o VaR 99{,}9\%.}
 \end{figure}
 """)
+
+    _te, _fe = _capitulo_estresse(results, figdir)
+    if _te:
+        T.append(_te)
+        figs += _fe
 
     # ---------------- 8. limitações e referências ----------------
     T.append(r"""

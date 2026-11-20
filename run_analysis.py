@@ -116,6 +116,13 @@ def main():
                     help="exposições em default: meses até a baixa (ELBE = 100%%)")
     ap.add_argument("--k-lgd", type=float, default=0.10,
                     help="exposições em default: margem k de LGD_D = ELBE + k(1 - ELBE)")
+    ap.add_argument("--estresse", default=None,
+                    help="testes de estresse: CSV de cenários (template em "
+                         "templates/) ou 'exemplo' para os cenários ilustrativos")
+    ap.add_argument("--modelo-estresse", default="Threshold Gaussiano 1F",
+                    help="modelo do estresse: 'Threshold Gaussiano 1F', "
+                         "'Threshold t-Student 1F', 'ASRF (analítico)', "
+                         "'Beta-binomial' ou 'CreditRisk+ (Poisson)'")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -176,6 +183,25 @@ def main():
         print(f"EAD {r_['ead']:,.0f} | provisão ELBE {r_['provisao_elbe']:,.0f} "
               f"| capital IRB {r_['capital_irb']:,.0f} | perda 12m "
               f"{r_['perda_incremental_12m']:,.0f}")
+
+    if args.estresse:
+        from engine.stress import (executar, cenarios_exemplo, ler_cenarios,
+                                   tabela_cenarios)
+        cen = (cenarios_exemplo() if args.estresse == "exemplo"
+               else ler_cenarios(args.estresse))
+        results["estresse"] = executar(
+            port, results, cen, modelo=args.modelo_estresse,
+            M=min(args.M, 20_000), seed=42, ad=aval_def,
+            prazo_baixa=args.prazo_baixa, k_base=args.k_lgd,
+            progress=lambda m: print(f"  -> {m}"))
+        results["estresse"]["origem"] = ("cenários ilustrativos do CreditLens"
+                                         if args.estresse == "exemplo"
+                                         else f"arquivo {args.estresse}")
+        tc_ = tabela_cenarios(results["estresse"])
+        if tc_ is not None:
+            print("\n=== Testes de estresse: CEA por cenário (R$ mi) ===")
+            print((tc_.pivot(index="ano", columns="cenario", values="CEA")
+                   / 1e6).round(3).to_string())
 
     print("\n=== Medidas de risco por modelo ===")
     with np.printoptions(precision=1):
