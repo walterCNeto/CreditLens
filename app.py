@@ -1327,7 +1327,9 @@ with tabs[7]:
                    "modelagem efetivamente executada.")
         if "_excel" not in st.session_state:
             _bx = io.BytesIO()
-            results_to_excel(results, port, _bx)
+            results_to_excel(results, port, _bx,
+                             rel_agg=st.session_state.get("rel_agg"),
+                             descritiva=st.session_state.get("descritiva"))
             st.session_state["_excel"] = _bx.getvalue()
         with st.container(key="rodape_excel"):
             b1, b2 = st.columns(2)

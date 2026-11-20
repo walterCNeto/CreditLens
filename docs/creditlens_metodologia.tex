@@ -31,7 +31,7 @@
 \large Análise Quantitativa de Carteiras de Crédito:\\
 Documentação Metodológica e Estudo de Caso}
 \author{Walter C.~Neto\\[1mm]\small Baseado em D.~J.~Bolder, \emph{Credit-Risk Modelling} (Springer, 2018)}
-\date{Novembro de 2026 --- versão 0.17}
+\date{Novembro de 2026 --- versão 0.18}
 
 \begin{document}
 \maketitle
@@ -449,6 +449,13 @@ com $\Delta L$ cancelado na diferença (idem para o ES). Três pontos merecem re
 \label{eq:capital-alocado}
 \end{equation}
 em linha com a dedução da insuficiência de provisão do capital principal na regra de Basileia. Terceiro, a soma simples é exata porque a perda do \emph{default} é determinística: não há diversificação entre as duas partes a capturar. Se a recuperação passar a ser simulada e condicionada ao fator sistemático, a soma vira um limite superior, e a carteira total deve ser simulada de uma só vez. Na base analítica demo (prazo de baixa de 24 meses, $k=0{,}10$), a parte em \emph{default} tem EAD de R\$~187{,}174 milhões, $\Delta L=$~R\$~34{,}807 milhões, $K_D=$~R\$~4{,}529 milhões e insuficiência de R\$~10{,}810 milhões (provisão constituída de R\$~131{,}071 milhões contra R\$~141{,}881 milhões requeridos): o capital alocado ao \emph{default} é de R\$~15{,}339 milhões. O aplicativo, o \emph{paper} e a exportação em Excel trazem a tabela consolidada por modelo.
+
+\paragraph{Da base de entrada ao CEA (versão 0.18).} Na convenção usual dos bancos, o VaR de crédito é tratado como a soma da perda esperada, coberta pela provisão, com a perda inesperada, coberta pelo capital. Com \eqref{eq:consol} e \eqref{eq:capital-total}, o capital econômico alocado (CEA) de cada modelo fica
+\begin{equation}
+\mathrm{CEA}=\mathrm{PE}+\mathrm{PI},\qquad \mathrm{PE}=\mathrm{EL}_{ND}+\Delta L,\qquad \mathrm{PI}=\bigl(\VaR^{99{,}9\%}_{ND}-\mathrm{EL}_{ND}\bigr)+K_D,
+\label{eq:cea}
+\end{equation}
+que coincide com o VaR da carteira total; o capital propriamente dito é a PI. O \emph{paper} de validação traz um apêndice que percorre a execução de ponta a ponta: um fluxograma com os números da execução (base de entrada, separação entre \emph{default} e não \emph{default}, agregação, calibração e modelos, medidas da carteira não \emph{default}, perda do ano no \emph{default} e consolidação), a descrição do que cada etapa faz, a conciliação de linhas, EAD e PE ao longo do caminho, que deve fechar com a base de entrada, e a decomposição de \eqref{eq:cea} para todos os modelos do portfólio, com a PI medida pelo VaR (convenção usual) e pelo ES (sensibilidade), em R\$ milhões e em percentual da EAD total. Como todos os modelos partem da mesma PD, a PE varia pouco entre eles; a dispersão do CEA vem da PI, isto é, da forma da cauda. A exportação em Excel traz as mesmas tabelas.
 
 \subsection{Camada de agregação e o motor \emph{pooled}}
 \label{sec:agregacao}

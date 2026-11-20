@@ -44,7 +44,7 @@ _UNI = {"10⁻⁹": r"$10^{-9}$", "≤": r"$\le$", "≥": r"$\ge$", "±": r"$\pm
         "−": r"$-$", "→": r"$\to$", "∝": r"$\propto$", "·": r"$\cdot$",
         "α": r"$\alpha$", "β": r"$\beta$", "γ": r"$\gamma$",
         "δ": r"$\delta$", "λ": r"$\lambda$", "μ": r"$\mu$",
-        "ξ": r"$\xi$", "Φ": r"$\Phi$", "Σ": r"$\Sigma$",
+        "ξ": r"$\xi$", "Φ": r"$\Phi$", "Σ": r"$\Sigma$", "Δ": r"$\Delta$",
         "χ": r"$\chi$", "²": r"$^2$", "≈": r"$\approx$"}
 
 
@@ -561,6 +561,90 @@ Modelo & EL & VaR & ES & EL & VaR & ES & VaR$-$EL & ES$-$EL & Alocado \\
 \end{{tabular}}
 \end{{table}}
 """
+
+
+def _apendice_cea(results, figdir, rel_agg=None, descritiva=None):
+    """Apêndice: da base de entrada ao CEA = PE + PI, para todos os modelos."""
+    from .fluxo_cea import (tabela_cea, conciliacao, fig_fluxo, ETAPAS,
+                            ead_total)
+    tv, pv = tabela_cea(results, "VaR")
+    if tv is None or not len(tv):
+        return "", []
+    te, pe_ = tabela_cea(results, "ES")
+    fig_fluxo(os.path.join(figdir, "fluxo_cea.pdf"), results, rel_agg,
+              descritiva)
+    conc, dif = conciliacao(results, rel_agg, descritiva)
+    ead = ead_total(results)
+    tem_def = bool((results.get("inadimplidos") or {}).get("resumo"))
+
+    et = [[tx(a), tx(b), tx(c)] for a, b, c in ETAPAS]
+    lc = [[tx(r.etapa), nb(r.linhas, 0), mi(r.ead),
+           mi(r.pe) if r.pe == r.pe else "---", tx(r.observacao)]
+          for r in conc.itertuples(index=False)]
+
+    def cea_tab(d, p, med, rot):
+        q = r"\mathrm{VaR}" if med == "VaR" else r"\mathrm{ES}"
+        corpo = "\n".join(
+            " & ".join([tx(r.modelo), mi(r.PE_ND), mi(r.PE_D), mi(r.PE),
+                        mi(r.PI_ND), mi(r.PI_D), mi(r.PI), mi(r.CEA),
+                        nb(rp.CEA, 3, pct=True)]) + r" \\"
+            for r, rp in zip(d.itertuples(index=False),
+                             p.itertuples(index=False)))
+        return rf"""
+\begin{{table}}[H]
+\centering\footnotesize
+\caption{{Formação do CEA por modelo, com a PI medida pelo ${q}_{{99{{,}}9\%}}$ (R\$ milhões).}}
+\label{{{rot}}}
+\setlength{{\tabcolsep}}{{2.6pt}}
+\begin{{tabular}}{{>{{\raggedright\arraybackslash}}p{{3.7cm}}rrrrrrrr}}
+\toprule
+& \multicolumn{{3}}{{c}}{{PE}} & \multicolumn{{3}}{{c}}{{PI}} & \multicolumn{{2}}{{c}}{{CEA $=$ PE $+$ PI}} \\
+\cmidrule(lr){{2-4}}\cmidrule(lr){{5-7}}\cmidrule(lr){{8-9}}
+Modelo & ND & D & Total & ND & D & Total & R\$ mi & \% EAD \\
+\midrule
+{corpo}
+\bottomrule
+\end{{tabular}}
+\end{{table}}
+"""
+
+    dif_txt = ("A EAD consolidada coincide com a da base de entrada."
+               if abs(dif) < 1.0 else
+               rf"A EAD consolidada difere da base de entrada em R\$~{mi(dif)}~milhões, que corresponde a linhas descartadas na leitura e deve ser explicada.")
+    d_txt = (r" Na parte em \emph{default}, a PE é o incremento da provisão em 12 meses, $\Delta L$, e a PI é a margem de recuperação no cenário adverso, $K_D=\sum\mathrm{EAD}\,(\mathrm{LGD}_D-\mathrm{ELBE})$; ambas são determinísticas e iguais em todos os modelos."
+             if tem_def else
+             r" Esta carteira não tem exposições em \emph{default}; a PE e a PI vêm apenas da carteira não \emph{default}.")
+    a, b = tv.iloc[0], tv.dropna(subset=["CEA"]).iloc[-1]
+    txt = rf"""
+\clearpage
+\section{{Da base de entrada ao capital econômico alocado}}
+\label{{ap:cea}}
+Este apêndice percorre a execução de ponta a ponta, da base de entrada ao capital econômico alocado (CEA), para todos os modelos do portfólio. Segue-se a convenção usual dos bancos para o VaR de crédito, tratado como a soma da perda esperada (PE), coberta pela provisão, com a perda inesperada (PI), coberta pelo capital:
+\begin{{equation}}
+\mathrm{{CEA}}=\mathrm{{PE}}+\mathrm{{PI}},\qquad
+\mathrm{{PE}}=\mathrm{{EL}}_{{ND}}+\Delta L,\qquad
+\mathrm{{PI}}=\bigl(\mathrm{{VaR}}_{{ND}}-\mathrm{{EL}}_{{ND}}\bigr)+K_D,
+\end{{equation}}
+em que ND indica a carteira não \emph{{default}}, simulada por cada modelo, e D a carteira em \emph{{default}}.{d_txt} Assim, o CEA coincide com o VaR da carteira total, e o capital propriamente dito é a PI. A Figura~\ref{{fig:fluxo-cea}} mostra o fluxo com os números desta execução, a Tabela~\ref{{tab:etapas}} descreve cada etapa e a Tabela~\ref{{tab:conciliacao}} concilia a base ao longo do caminho.
+
+\begin{{figure}}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{{fluxo_cea.pdf}}
+\caption{{Fluxo da base de entrada ao CEA, com os números desta execução.}}
+\label{{fig:fluxo-cea}}
+\end{{figure}}
+""" + _tabela(["Etapa", "O que faz", "Saída"], et,
+              r">{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{8.4cm}>{\raggedright\arraybackslash}p{3.6cm}",
+              "Etapas da execução, da base de entrada ao CEA.", "tab:etapas",
+              H=True) + rf"""
+A conciliação acompanha linhas, EAD e PE em cada etapa. {dif_txt}
+""" + _tabela(["Etapa", "Linhas", "EAD", "PE", "Observação"], lc,
+              r">{\raggedright\arraybackslash}p{4.4cm}rrr>{\raggedright\arraybackslash}p{5.0cm}",
+              r"Conciliação da base ao longo da execução (R\$ milhões).",
+              "tab:conciliacao", H=True) + rf"""
+A Tabela~\ref{{tab:cea-var}} decompõe o CEA de cada modelo com a PI medida pelo VaR a 99{{,}}9\%, que é a convenção usual; a Tabela~\ref{{tab:cea-es}} repete a decomposição com o ES, como sensibilidade. Os modelos estão ordenados do maior para o menor CEA, e o percentual é sobre a EAD total da carteira (R\$~{mi(ead)}~milhões). Como todos os modelos partem da mesma PD, a PE varia pouco entre eles e reflete apenas o erro de simulação; a dispersão do CEA vem da PI, isto é, da forma da cauda de cada modelo. Pelo VaR, o CEA vai de R\$~{mi(b.CEA)}~milhões ({tx(b.modelo)}) a R\$~{mi(a.CEA)}~milhões ({tx(a.modelo)}).
+""" + cea_tab(tv, pv, "VaR", "tab:cea-var") + cea_tab(te, pe_, "ES", "tab:cea-es")
+    return txt, ["fluxo_cea.pdf"]
 
 
 def _apendice_alocacao(results, primeiro, letra):
@@ -1191,6 +1275,9 @@ A Tabela~\ref{{tab:setores}} decompõe a cauda por setor pela alocação de Eule
         figs += _fa
     T.append(_apendice_alocacao(results, primeiro=not descritiva,
                                 letra="B" if descritiva else "A"))
+    _tc, _fc = _apendice_cea(results, figdir, rel_agg, descritiva)
+    T.append(_tc)
+    figs += _fc
     T.append(r"""
 \end{document}
 """)

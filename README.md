@@ -90,6 +90,7 @@ carteira-credito/
 │   ├── portfolio.py        # padrão de carteira + validação
 │   ├── analytics.py        # orquestração dos modelos do Bolder
 │   ├── alocacao.py         # capital por modelo e consolidação não default + default
+│   ├── fluxo_cea.py        # da base de entrada ao CEA = PE + PI (apêndice)
 │   └── bolder/             # bibliotecas originais do livro (patcheadas*)
 ├── templates/carteira_modelo.csv         # modelo preenchido: uma linha por contraparte (R$)
 ├── templates/base_analitica_modelo.csv  # modelo preenchido: uma linha por contrato (R$)

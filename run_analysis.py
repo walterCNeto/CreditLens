@@ -257,7 +257,11 @@ def main():
                   " ".join(f"{d:.2%}" for d in sim['defaults_por_ano']))
 
     xlsx = os.path.join(args.out, "resultados_analise.xlsx")
-    results_to_excel(results, port, xlsx)
+    results_to_excel(results, port, xlsx,
+                     rel_agg=rel if args.analitica else None,
+                     descritiva={"geral": {"linhas": len(df_in),
+                                           "ead_total": float(df_in["ead"].sum())}}
+                     if "ead" in df_in.columns else None)
     if mig_out is not None:
         import pandas as _pd
         from openpyxl import load_workbook

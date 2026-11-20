@@ -1521,4 +1521,64 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                           for n, r in zip(_nm, _cs.itertuples(index=False))],
                          [0.46, 0.18, 0.18, 0.18],
                          0.022 * (len(_cs) + 1), sec_b)
+
+        # ============ apêndice: da base de entrada ao CEA = PE + PI ============
+        from .fluxo_cea import (tabela_cea, conciliacao, fig_fluxo, ETAPAS,
+                                ead_total)
+        _tv, _pv = tabela_cea(results, "VaR")
+        if _tv is not None and len(_tv):
+            import tempfile as _tf
+            import os as _os
+            letra = "C" if descritiva else "B"
+            sec_c = f"Apêndice {letra}"
+            D.nova(sec_c)
+            D.h1(f"Apêndice {letra}: da base de entrada ao capital "
+                 "econômico alocado")
+            D.par("Percurso de ponta a ponta da execução, para todos os "
+                  "modelos do portfólio, na convenção usual dos bancos: "
+                  "CEA = PE + PI, com PE = EL_ND + ΔL (perda esperada, "
+                  "coberta pela provisão) e PI = (VaR_ND − EL_ND) + K_D "
+                  "(perda inesperada, coberta pelo capital). ND é a carteira "
+                  "não default, simulada por cada modelo; ΔL e K_D vêm das "
+                  "exposições em default e são iguais em todos os modelos. "
+                  "O CEA coincide com o VaR da carteira total.", secao=sec_c)
+            with _tf.TemporaryDirectory() as _td:
+                _fp = _os.path.join(_td, "fluxo.png")
+                fig_fluxo(_fp, results, rel_agg, descritiva)
+                _img = plt.imread(_fp)
+                _ax = D.eixo(0.52, sec_c, left=0.14)
+                _ax.imshow(_img)
+                _ax.axis("off")
+            D.h2("O que cada etapa faz", secao=sec_c)
+            for _e, _o, _s in ETAPAS:
+                D.par(f"• {_e}: {_o} Saída: {_s}.", secao=sec_c)
+            _cc, _dif = conciliacao(results, rel_agg, descritiva)
+            D.h2("Conciliação da base (R$ mi)", secao=sec_c)
+            D.tabela(["Etapa", "Linhas", "EAD", "PE", "Observação"],
+                     [[r.etapa, br(r.linhas, 0), mi(r.ead),
+                       mi(r.pe) if r.pe == r.pe else "—", r.observacao]
+                      for r in _cc.itertuples(index=False)],
+                     [0.30, 0.10, 0.13, 0.11, 0.36],
+                     0.022 * (len(_cc) + 1), sec_c)
+            D.par("A EAD consolidada coincide com a da base de entrada."
+                  if abs(_dif) < 1.0 else
+                  f"A EAD consolidada difere da base de entrada em "
+                  f"R$ {mi(_dif)} mi.", secao=sec_c)
+            _te, _pe = tabela_cea(results, "ES")
+            for _d, _p, _m in ((_tv, _pv, "VaR"), (_te, _pe, "ES")):
+                D.need(0.022 * (len(_d) + 1) + 0.09, sec_c)
+                D.h2(f"CEA por modelo, PI pelo {_m} 99,9% (R$ mi)",
+                     secao=sec_c)
+                D.tabela(["Modelo", "PE", "PI", "CEA = PE + PI", "% EAD"],
+                         [[str(r.modelo).replace(" (pooled)", ""),
+                           mi(r.PE), mi(r.PI), mi(r.CEA),
+                           br(rp.CEA, 3, pct=True)]
+                          for r, rp in zip(_d.itertuples(index=False),
+                                           _p.itertuples(index=False))],
+                         [0.44, 0.13, 0.13, 0.17, 0.13],
+                         0.022 * (len(_d) + 1), sec_c)
+            D.par(f"PE = PE_ND + ΔL e PI = PI_ND + K_D, com ΔL = R$ "
+                  f"{mi(_tv['PE_D'].iloc[0])} mi e K_D = R$ "
+                  f"{mi(_tv['PI_D'].iloc[0])} mi. EAD total: R$ "
+                  f"{mi(ead_total(results))} mi.", secao=sec_c)
         D.fecha()

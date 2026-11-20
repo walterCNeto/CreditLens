@@ -341,7 +341,8 @@ def _cr_maior_cauda(dists, sims, info_cs, Mg=50_000):
     return nome
 
 
-def results_to_excel(results: dict, port, path: str):
+def results_to_excel(results: dict, port, path: str, rel_agg=None,
+                     descritiva=None):
     """Exporta resultados para Excel (dados calculados, sem fórmulas)."""
     with pd.ExcelWriter(path, engine="openpyxl") as xw:
         # carteira
@@ -455,6 +456,25 @@ def results_to_excel(results: dict, port, path: str):
                 columns=["componente do default", "R$"]).to_excel(
                 xw, sheet_name="Consolidação", index=False,
                 startrow=len(_cs) + 3)
+        from .fluxo_cea import tabela_cea, conciliacao
+        for _m in ("VaR", "ES"):
+            _t, _p = tabela_cea(results, _m)
+            if _t is None or not len(_t):
+                continue
+            _t = _t.copy()
+            _t["CEA % EAD"] = _p["CEA"].values
+            _t.rename(columns={
+                "PE_ND": "PE não default (EL_ND)", "PE_D": "PE default (ΔL)",
+                "PE": "PE total", "PI_ND": f"PI não default ({_m}_ND - EL_ND)",
+                "PI_D": "PI default (K_D)", "PI": "PI total",
+                "CEA": "CEA = PE + PI"}).to_excel(
+                xw, sheet_name=f"CEA ({_m} 99,9%)", index=False)
+        _cc, _ = conciliacao(results, rel_agg, descritiva)
+        from .report_paper import plano as _plano
+        _cc["observacao"] = _cc["observacao"].map(_plano)
+        _cc.rename(columns={"linhas": "linhas", "ead": "EAD", "pe": "PE",
+                            "observacao": "observação"}).to_excel(
+            xw, sheet_name="Conciliação da base", index=False)
 
 
 def run_pooled_analysis(
