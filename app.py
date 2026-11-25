@@ -888,9 +888,8 @@ if go_reg or go_cus:
 if _runs:
     q1, q2 = st.columns([4, 1], vertical_alignment="center")
     q1.caption(f"{len(_runs)} execução(ões) de estresse guardada(s) para o "
-               "capital atual. O paper e o Excel trazem o programa "
-               "regulatório da última execução, a comparação entre modelos e "
-               "cada estresse customizado.")
+               "capital atual. O relatório de testes de estresse, separado "
+               "do paper de validação, fica na aba **Download**.")
     if q2.button("Limpar", key="limpar_est", width="stretch"):
         _runs.clear()
         st.session_state.pop("est_run_sel", None)
@@ -1736,3 +1735,83 @@ with tabs[8]:
                     icon=":material/folder_zip:", key="dl_tex")
                 st.caption(":material/check_circle: Pronto — vale para "
                            "esta execução.")
+
+    # --- relatório de testes de estresse (separado do paper) ---
+    from engine.stress import runs as _runs_dl
+    _Rdl = _runs_dl(results)
+    _sig = "|".join(r_.get("executado_em", "") for r_ in _Rdl)
+    if st.session_state.get("_est_sig") != _sig:
+        st.session_state.pop("_est_rel", None)
+        st.session_state.pop("_est_xls", None)
+        st.session_state["_est_sig"] = _sig
+    with st.container(border=True, key="cartao_estresse_dl"):
+        st.markdown("##### :material/thunderstorm: Relatório de testes de "
+                    "estresse")
+        if not _Rdl:
+            st.caption("Documento próprio, separado do paper de validação: "
+                       "programa regulatório, comparação entre modelos e "
+                       "exercícios customizados. Rode o estresse em **4. "
+                       "Testes de estresse** para habilitá-lo.")
+        else:
+            st.caption(f"{len(_Rdl)} execução(ões) sobre o capital de "
+                       f"{st.session_state.get('executado_em', '')}. "
+                       "Documento próprio, com governança separada da "
+                       "validação do capital: objeto e vínculo com o capital, "
+                       "sumário, programa regulatório, comparação entre "
+                       "modelos, exercícios customizados e definição "
+                       "completa dos cenários.")
+            if "_est_xls" not in st.session_state:
+                from engine.analytics import estresse_to_excel
+                _bx = io.BytesIO()
+                estresse_to_excel(results, _bx)
+                st.session_state["_est_xls"] = _bx.getvalue()
+            _er = st.session_state.get("_est_rel")
+            if _er is not None and _er.get("erro"):
+                st.warning(_er["erro"])
+            e1, e2, e3 = st.columns(3)
+            if _er is None or _er.get("pdf") is None:
+                from engine.report_tex import latex_disponivel
+                _lx = latex_disponivel()
+                if e1.button("Gerar relatório", icon=":material/play_arrow:",
+                             type="primary", width="stretch",
+                             key="gerar_est_rel", disabled=not _lx,
+                             help=None if _lx else
+                             "Requer LaTeX no ambiente; o Excel do estresse "
+                             "está disponível ao lado."):
+                    from engine.report_tex import gerar_relatorio_estresse
+                    with st.spinner("Compondo o relatório de estresse..."):
+                        try:
+                            pdf_, zip_ = gerar_relatorio_estresse(
+                                port, results,
+                                nome_base=st.session_state.get("nome_base",
+                                                               ""),
+                                capital_de=st.session_state.get(
+                                    "executado_em", ""))
+                            st.session_state["_est_rel"] = {"pdf": pdf_,
+                                                            "zip": zip_}
+                        except Exception as e:
+                            st.session_state["_est_rel"] = {
+                                "pdf": None, "erro": "A compilação falhou: "
+                                + str(e)[:300]}
+                    st.rerun()
+                e2.button("Fonte LaTeX (.zip)", icon=":material/folder_zip:",
+                          disabled=True, width="stretch", key="est_tex_in")
+            else:
+                e1.download_button(
+                    "Baixar PDF", _er["pdf"],
+                    file_name="relatorio_testes_estresse.pdf",
+                    mime="application/pdf", on_click="ignore", type="primary",
+                    width="stretch", icon=":material/download:",
+                    key="dl_est_pdf")
+                e2.download_button(
+                    "Fonte LaTeX (.zip)", _er["zip"],
+                    file_name="relatorio_testes_estresse_latex.zip",
+                    mime="application/zip", on_click="ignore",
+                    width="stretch", icon=":material/folder_zip:",
+                    key="dl_est_tex")
+            e3.download_button(
+                "Excel do estresse", st.session_state["_est_xls"],
+                file_name="resultados_estresse.xlsx", on_click="ignore",
+                mime="application/vnd.openxmlformats-officedocument."
+                     "spreadsheetml.sheet", width="stretch",
+                icon=":material/table_view:", key="dl_est_xls")

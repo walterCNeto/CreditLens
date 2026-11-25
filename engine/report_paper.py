@@ -1363,154 +1363,21 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                 ax.tick_params(labelsize=7)
                 ax.spines[["top", "right"]].set_visible(False)
 
-        # ================= testes de estresse =================
-        from .stress import runs as _runs_est, ultimas as _ult_est
-        _reg = [r for r in _runs_est(results)
-                if r.get("tipo", "regulatorio") == "regulatorio"]
-        est = _reg[-1] if _reg else None
-        if est:
-            from .stress import (tabela_cenarios, tabela_sensibilidades,
-                                 reproducao, comparacao_modelos)
-            sec_e = "Testes de estresse"
-            D.nova(sec_e)
+        # ================= testes de estresse: remissão =================
+        from .stress import runs as _runs_est
+        _R = _runs_est(results)
+        if _R:
+            _nr = sum(r.get("tipo", "regulatorio") == "regulatorio"
+                      for r in _R)
+            D.nova("Testes de estresse")
             D.h1("Testes de estresse")
-            D.par("Programa de testes de estresse nos termos da Res. CMN "
-                  "4.557, arts. 11 a 18: análise de sensibilidade (um "
-                  "parâmetro), análise de cenários (variações simultâneas e "
-                  "coerentes ao longo de um período) e teste de estresse "
-                  "reverso (eventos que levam a um nível predefinido de "
-                  "capital), com premissas adequadamente severas (art. 12), "
-                  "resultados integrados à avaliação de capital e ao ICAAP "
-                  "(arts. 17 e 40, III) e cenários aprovados pelo conselho "
-                  "(arts. 18 e 48). A Res. CMN 5.226/2025 permite ao Banco "
-                  "Central exigir testes com cenários por ele definidos.",
-                  secao=sec_e)
-            D.par(f"Modelo: {est['modelo']}; {br(est['M'], 0)} simulações por "
-                  f"cenário e ano, mesma semente; ρ de ativos "
-                  f"{br(est['rho_ativos'], 3)}. PD do cenário: "
-                  "PD(z) = Φ(Φ⁻¹(PD) − z·√(ρ/(1 − ρ))), com z = 0 "
-                  "reproduzindo a PD de 12 meses e z < 0 adverso; choque "
-                  "aditivo na LGD e multiplicador da margem k do default. "
-                  "Balanço constante; PE_t = Σ PD·LGD·EAD + ΔL_t, PI_t = "
-                  "(VaR_t − EL_t) + K_D,t, CEA_t = PE_t + PI_t. Cenários: "
-                  f"{est.get('origem', '')}.",
-                  secao=sec_e)
-            rp = reproducao(results, est)
-            if rp:
-                D.par(f"Reprodução da base: CEA do ano 1 sem choque R\\$ "
-                      f"{mi(rp['cea_estresse'])} mi contra R\\$ "
-                      f"{mi(rp['cea_principal'])} mi na execução principal "
-                      f"(diferença de {br(rp['dif'], 3, pct=True)}).",
-                      secao=sec_e)
-            tc, ts = tabela_cenarios(est), tabela_sensibilidades(est)
-            if tc is not None and len(tc):
-                D.need(0.022 * (len(tc) + 1) + 0.09, sec_e)
-                D.h2("Análise de cenários (R$ mi)", secao=sec_e)
-                D.tabela(["Cenário", "Ano", "PD média", "PE", "PI", "CEA",
-                          "CEA/EAD", "Δ vs base"],
-                         [[r.cenario, str(int(r.ano)),
-                           br(r.pd_media, 3, pct=True), mi(r.PE), mi(r.PI),
-                           mi(r.CEA), br(r.CEA_pct_ead, 3, pct=True),
-                           br(r.dCEA_pct, 3, pct=True)]
-                          for r in tc.itertuples(index=False)],
-                         [0.16, 0.06, 0.12, 0.12, 0.13, 0.13, 0.13, 0.15],
-                         0.022 * (len(tc) + 1), sec_e)
-                ax = D.eixo(0.20, sec_e)
-                for i, (nome, g) in enumerate(tc.groupby("cenario",
-                                                         sort=False)):
-                    ax.plot(g["ano"], g["CEA"] / 1e6, marker="os^Dv"[i % 5],
-                            ls=["-", "--", ":", "-."][i % 4], color=AZUL,
-                            lw=1.2, label=nome)
-                ax.set_xticks(sorted(tc["ano"].unique()))
-                ax.set_xlabel("Ano da projeção", fontsize=7.5)
-                ax.set_ylabel("CEA (R$ mi)", fontsize=7.5)
-                ax.tick_params(labelsize=7)
-                ax.legend(fontsize=7, frameon=False)
-                ax.spines[["top", "right"]].set_visible(False)
-            if ts is not None and len(ts):
-                D.need(0.022 * (len(ts) + 1) + 0.09, sec_e)
-                D.h2("Análise de sensibilidade, ano 1 (R$ mi)", secao=sec_e)
-                D.tabela(["Choque", "PD média", "PE", "PI", "CEA", "Δ CEA",
-                          "Δ %"],
-                         [[r.cenario, br(r.pd_media, 3, pct=True), mi(r.PE),
-                           mi(r.PI), mi(r.CEA), mi(r.dCEA),
-                           br(r.dCEA_pct, 3, pct=True)]
-                          for r in ts.itertuples(index=False)],
-                         [0.30, 0.11, 0.11, 0.12, 0.12, 0.12, 0.12],
-                         0.022 * (len(ts) + 1), sec_e)
-            rv = est.get("reverso") or {}
-            if rv.get("z") == rv.get("z") and rv.get("z") is not None:
-                D.h2("Teste de estresse reverso", secao=sec_e)
-                D.par(f"Nível predefinido: CEA de {br(rv['alvo_mult'], 1)} × "
-                      f"o do base no ano 1 (R\\$ {mi(rv['alvo'])} mi). Atingido "
-                      f"com z* = {br(rv['z'], 3)}: PD média de "
-                      f"{br(rv['pd_media_base'], 3, pct=True)} para "
-                      f"{br(rv['pd_media'], 3, pct=True)}; probabilidade de "
-                      f"um ano tão adverso Φ(z*) = "
-                      f"{br(rv['prob'], 3, pct=True)}. O S2 é dispensado do "
-                      "estresse reverso (art. 58).", secao=sec_e)
-            D.par("Premissas assumidas: índice de crédito de cada cenário "
-                  "(sem modelo satélite estimado), balanço constante, choques "
-                  "uniformes de LGD, correlações estáveis sob estresse e um "
-                  "único modelo de portfólio.", secao=sec_e)
-
-            cm = comparacao_modelos(results)
-            if cm is not None and cm["modelo"].nunique() > 1:
-                mods = list(dict.fromkeys(cm["modelo"]))
-                pv = cm.pivot_table(index=["cenario", "ano"], columns="modelo",
-                                    values="CEA", sort=False)[mods]
-                D.need(0.022 * (len(pv) + 1) + 0.09, sec_e)
-                D.h2("Risco de modelo: CEA por modelo (R$ mi)", secao=sec_e)
-                w_ = 0.72 / len(mods)
-                D.tabela(["Cenário", "Ano"] + mods,
-                         [[c, str(int(a))] + [mi(v) for v in row]
-                          for (c, a), row in zip(pv.index, pv.to_numpy())],
-                         [0.2, 0.08] + [w_] * len(mods),
-                         0.022 * (len(pv) + 1), sec_e)
-
-        # ================= estresse customizado =================
-        _cus = _ult_est(results, "customizado")
-        if _cus:
-            sec_c = "Estresse customizado"
-            D.nova(sec_c)
-            D.h1("Estresse customizado")
-            D.par("Exercícios internos (Pilar 2), com choques livres por "
-                  "setor, país, região, categoria IRB ou rating, em choque "
-                  "instantâneo ou projeção. Uso típico: riscos climáticos de "
-                  "transição e físico (Res. CMN 4.557, arts. 38-C e 38-D, VII, "
-                  "incluídos pela Res. CMN 4.943/2021), com narrativas do "
-                  "NGFS. A linha mais específica do arquivo prevalece.",
-                  secao=sec_c)
-            for e_ in _cus:
-                t_ = e_["resultados"]
-                d0 = next(iter((e_.get("documentacao") or {}).values()), {})
-                D.h2(f"{e_.get('nome', '')} ({e_['modelo']})", secao=sec_c)
-                for c_, lab in (("objetivo", "Objetivo"),
-                                ("fonte", "Fonte"),
-                                ("metodo_depara", "Método do de-para"),
-                                ("premissas", "Premissas")):
-                    if d0.get(c_):
-                        D.par(f"{lab}: {d0[c_]}", secao=sec_c)
-                if e_.get("seletores_ausentes"):
-                    D.par("Seletores sem correspondência na carteira: "
-                          + "; ".join(e_["seletores_ausentes"]) + ".",
-                          secao=sec_c)
-                D.par(f"Sem choque: CEA R$ {mi(e_['base']['CEA'])} mi.",
-                      secao=sec_c)
-                D.need(0.022 * (len(t_) + 1) + 0.02, sec_c)
-                D.tabela(["Cenário", "Horiz.", "PD média", "PE", "PI", "CEA",
-                          "CEA/EAD", "Δ vs base"],
-                         [[r.cenario, str(r.horizonte),
-                           br(r.pd_media, 3, pct=True), mi(r.PE), mi(r.PI),
-                           mi(r.CEA), br(r.CEA / e_["ead_total"], 3, pct=True),
-                           br(r.dCEA_pct, 3, pct=True)]
-                          for r in t_.itertuples(index=False)],
-                         [0.22, 0.08, 0.11, 0.11, 0.12, 0.12, 0.11, 0.13],
-                         0.022 * (len(t_) + 1), sec_c)
-            D.par("Multiplicadores e choques são premissas assumidas; a "
-                  "tradução das variáveis dos cenários em parâmetros de "
-                  "risco deve ser documentada e validada à parte.",
-                  secao=sec_c)
+            D.par(f"Sobre o capital desta execução foram rodados {len(_R)} "
+                  f"testes de estresse ({_nr} do programa regulatório e "
+                  f"{len(_R) - _nr} customizados). Por terem governança "
+                  "própria (Res. CMN 4.557, arts. 17, 18 e 40), eles são "
+                  "reportados em documento próprio, o Relatório de Testes de "
+                  "Estresse de Crédito, gerado pelo aplicativo na mesma "
+                  "sessão.", secao="Testes de estresse")
 
         # ================= limitações + referências =================
         D.nova("Limitações")

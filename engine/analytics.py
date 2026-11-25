@@ -469,46 +469,6 @@ def results_to_excel(results: dict, port, path: str, rel_agg=None,
                 "PI_D": "PI default (K_D)", "PI": "PI total",
                 "CEA": "CEA = PE + PI"}).to_excel(
                 xw, sheet_name=f"CEA ({_m} 99,9%)", index=False)
-        from .stress import (runs as _runs_e, ultimas as _ult_e,
-                             tabela_cenarios, tabela_sensibilidades,
-                             comparacao_modelos)
-        _reg = [r for r in _runs_e(results)
-                if r.get("tipo", "regulatorio") == "regulatorio"]
-        _est = _reg[-1] if _reg else None
-        if _est:
-            _tc = tabela_cenarios(_est)
-            if _tc is not None:
-                _tc.to_excel(xw, sheet_name="Estresse cenários", index=False)
-            _ts = tabela_sensibilidades(_est)
-            if _ts is not None:
-                _ts.to_excel(xw, sheet_name="Estresse sensibilidades",
-                             index=False)
-            _est["cenarios_def"].to_excel(xw, sheet_name="Estresse definição",
-                                          index=False)
-            pd.DataFrame([{"modelo": _est["modelo"], "M": _est["M"],
-                           "rho_ativos": _est["rho_ativos"],
-                           "rho_d": _est["rho_d"],
-                           "origem": _est.get("origem", ""),
-                           "executado_em": _est.get("executado_em", ""),
-                           "capital_de": _est.get("capital_de", ""),
-                           **{f"reverso_{k}": v for k, v in
-                              (_est.get("reverso") or {}).items()}}]).T \
-                .rename(columns={0: "valor"}).to_excel(
-                    xw, sheet_name="Estresse reverso e parâmetros")
-            _cm = comparacao_modelos(results)
-            if _cm is not None:
-                _cm.to_excel(xw, sheet_name="Estresse por modelo", index=False)
-        for _k, _e in enumerate(_ult_e(results, "customizado")):
-            _nm = f"Custom {_k + 1}"
-            _r = _e["resultados"].copy()
-            _r.insert(0, "exercicio", _e.get("nome", ""))
-            _r.insert(1, "modelo", _e["modelo"])
-            _r.to_excel(xw, sheet_name=f"{_nm} resultados", index=False)
-            if _e.get("por_setor") is not None and len(_e["por_setor"]):
-                _e["por_setor"].to_excel(xw, sheet_name=f"{_nm} PE por setor",
-                                         index=False)
-            _e["cenarios_def"].to_excel(xw, sheet_name=f"{_nm} definição",
-                                        index=False)
         _cc, _ = conciliacao(results, rel_agg, descritiva)
         from .report_paper import plano as _plano
         _cc["observacao"] = _cc["observacao"].map(_plano)
@@ -703,3 +663,60 @@ def run_pooled_analysis(
             "distribuicoes": {},
         }
     return results
+
+
+def estresse_to_excel(results: dict, path):
+    """Excel do relatório de estresse (etapa 2): programa regulatório da
+    última execução, comparação entre modelos e exercícios customizados."""
+    with pd.ExcelWriter(path, engine="openpyxl") as xw:
+        from .stress import runs as _runs_e
+        _L = []
+        for r in _runs_e(results):
+            _L.append({"executado_em": r.get("executado_em", ""),
+                       "capital_de": r.get("capital_de", ""),
+                       "tipo": r.get("tipo", "regulatorio"),
+                       "exercicio": r.get("nome", "Programa regulatório"),
+                       "modelo": r["modelo"], "M": r["M"],
+                       "CEA_base": r["base"]["CEA"],
+                       "origem": r.get("origem", "")})
+        pd.DataFrame(_L).to_excel(xw, sheet_name="Execuções", index=False)
+        from .stress import (runs as _runs_e, ultimas as _ult_e,
+                             tabela_cenarios, tabela_sensibilidades,
+                             comparacao_modelos)
+        _reg = [r for r in _runs_e(results)
+                if r.get("tipo", "regulatorio") == "regulatorio"]
+        _est = _reg[-1] if _reg else None
+        if _est:
+            _tc = tabela_cenarios(_est)
+            if _tc is not None:
+                _tc.to_excel(xw, sheet_name="Estresse cenários", index=False)
+            _ts = tabela_sensibilidades(_est)
+            if _ts is not None:
+                _ts.to_excel(xw, sheet_name="Estresse sensibilidades",
+                             index=False)
+            _est["cenarios_def"].to_excel(xw, sheet_name="Estresse definição",
+                                          index=False)
+            pd.DataFrame([{"modelo": _est["modelo"], "M": _est["M"],
+                           "rho_ativos": _est["rho_ativos"],
+                           "rho_d": _est["rho_d"],
+                           "origem": _est.get("origem", ""),
+                           "executado_em": _est.get("executado_em", ""),
+                           "capital_de": _est.get("capital_de", ""),
+                           **{f"reverso_{k}": v for k, v in
+                              (_est.get("reverso") or {}).items()}}]).T \
+                .rename(columns={0: "valor"}).to_excel(
+                    xw, sheet_name="Estresse reverso e parâmetros")
+            _cm = comparacao_modelos(results)
+            if _cm is not None:
+                _cm.to_excel(xw, sheet_name="Estresse por modelo", index=False)
+        for _k, _e in enumerate(_ult_e(results, "customizado")):
+            _nm = f"Custom {_k + 1}"
+            _r = _e["resultados"].copy()
+            _r.insert(0, "exercicio", _e.get("nome", ""))
+            _r.insert(1, "modelo", _e["modelo"])
+            _r.to_excel(xw, sheet_name=f"{_nm} resultados", index=False)
+            if _e.get("por_setor") is not None and len(_e["por_setor"]):
+                _e["por_setor"].to_excel(xw, sheet_name=f"{_nm} PE por setor",
+                                         index=False)
+            _e["cenarios_def"].to_excel(xw, sheet_name=f"{_nm} definição",
+                                        index=False)

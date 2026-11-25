@@ -603,7 +603,11 @@ def _fig_estresse(tc, ts, path_c, path_s):
         plt.close(fig)
 
 
-def _capitulo_estresse(results, figdir):
+def _ref(refs, chave):
+    return refs.index(next(r for r in refs if chave in r)) + 1
+
+
+def _capitulo_estresse(results, figdir, refs=None):
     """Capítulo de testes de estresse (Res. CMN 4.557, arts. 11 a 18)."""
     from .stress import (tabela_cenarios, tabela_sensibilidades, reproducao,
                          ultimas, runs, comparacao_modelos)
@@ -612,10 +616,9 @@ def _capitulo_estresse(results, figdir):
     if not reg:
         return "", []
     est = reg[-1]
-    r_cmn = REFS_TEX.index(next(r for r in REFS_TEX if "4.557" in r)) + 1
-    r_966 = REFS_TEX.index(next(r for r in REFS_TEX if "4.966" in r)) + 1
-    r_bcbs = REFS_TEX.index(next(r for r in REFS_TEX if "Stress testing" in r)) + 1
-    r_5226 = REFS_TEX.index(next(r for r in REFS_TEX if "5.226" in r)) + 1
+    refs = refs or REFS_TEX
+    r_cmn, r_966 = _ref(refs, "4.557"), _ref(refs, "4.966")
+    r_bcbs, r_5226 = _ref(refs, "Stress testing"), _ref(refs, "5.226")
     tc, ts = tabela_cenarios(est), tabela_sensibilidades(est)
     figs = []
     _fig_estresse(tc, ts, os.path.join(figdir, "estresse_cea.pdf"),
@@ -678,7 +681,7 @@ com $m_t$ um multiplicador opcional por setor. A LGD recebe um choque aditivo em
 \mathrm{{PI}}_t=\bigl(\mathrm{{VaR}}^{{99{{,}}9\%}}_t-\mathrm{{EL}}_t\bigr)+K_{{D,t}},\qquad
 \mathrm{{CEA}}_t=\mathrm{{PE}}_t+\mathrm{{PI}}_t,
 \end{{equation}}
-em que $\Delta L_t$ é o incremento da provisão do estoque em \emph{{default}} e das coortes anteriores, $K_{{D,t}}$ a margem de recuperação adversa desse estoque, e o VaR e a EL vêm do modelo escolhido com os parâmetros estressados. O capital IRB é recalculado com a PD estressada, para comparação. No ano~1 sem choque, a PE e a PI coincidem com a consolidação da Seção~\ref{{ap:cea}}.
+em que $\Delta L_t$ é o incremento da provisão do estoque em \emph{{default}} e das coortes anteriores, $K_{{D,t}}$ a margem de recuperação adversa desse estoque, e o VaR e a EL vêm do modelo escolhido com os parâmetros estressados. O capital IRB é recalculado com a PD estressada, para comparação. No ano~1 sem choque, a PE e a PI coincidem com a consolidação do CEA no relatório de validação do capital.
 """]
     rp = reproducao(results, est)
     if rp:
@@ -750,21 +753,21 @@ A Tabela~\ref{{tab:est-cen}} traz a projeção de cada cenário. O maior CEA oco
     return "".join(T), figs
 
 
-def _capitulo_customizado(results, figdir):
+def _capitulo_customizado(results, figdir, refs=None):
     """Estresse customizado (p.ex. climático): um bloco por exercício."""
     from .stress import ultimas
     E = ultimas(results, "customizado")
     if not E:
         return "", []
-    r_cmn = REFS_TEX.index(next(r for r in REFS_TEX if "4.557" in r)) + 1
-    r_ngfs = REFS_TEX.index(next(r for r in REFS_TEX if "NGFS" in r)) + 1
-    r_4943 = REFS_TEX.index(next(r for r in REFS_TEX if "4.943" in r)) + 1
+    refs = refs or REFS_TEX
+    r_cmn, r_ngfs, r_4943 = (_ref(refs, "4.557"), _ref(refs, "NGFS"),
+                             _ref(refs, "4.943"))
     T = [rf"""
 \section{{Estresse customizado}}
 \label{{sec:estresse-custom}}
 Além do programa regulatório, a instituição pode propor exercícios próprios, com choques definidos livremente por setor, país, região, categoria IRB ou rating. São exercícios internos, de Pilar 2, cujos resultados informam a avaliação da adequação de capital e o apetite a risco, sem substituir o programa regulatório. Um uso típico é o risco climático: a Resolução CMN 4.557 [{r_cmn}] define os riscos climáticos de transição e físico (art.~38-C) e exige que o programa de testes de estresse inclua análise de cenários que os considere (art.~38-D, VII), dispositivos incluídos pela Resolução CMN 4.943 [{r_4943}] e observados a partir de 1º de dezembro de 2022 no S1 e no S2. Os cenários do NGFS [{r_ngfs}] são a referência usual para as narrativas.
 
-Cada linha do arquivo de cenários seleciona uma fatia da carteira pelas colunas preenchidas, e a linha mais específica prevalece, herdando o que deixar vazio. Os choques possíveis são o índice de crédito $z$ e o multiplicador de PD, o choque aditivo de LGD, o choque percentual de EAD e o multiplicador da margem $k$ da LGD em \emph{{default}}. No modo \emph{{instantâneo}}, cada horizonte é um choque sobre a carteira atual, o que convém a horizontes longos como 2030 ou 2050; no modo de \emph{{projeção}}, os anos se sucedem com balanço constante, como no programa regulatório. O capital de cada horizonte é o CEA do modelo escolhido, como na Seção~\ref{{sec:estresse}}.
+Cada linha do arquivo de cenários seleciona uma fatia da carteira pelas colunas preenchidas, e a linha mais específica prevalece, herdando o que deixar vazio. Os choques possíveis são o índice de crédito $z$ e o multiplicador de PD, o choque aditivo de LGD, o choque percentual de EAD e o multiplicador da margem $k$ da LGD em \emph{{default}}. No modo \emph{{instantâneo}}, cada horizonte é um choque sobre a carteira atual, o que convém a horizontes longos como 2030 ou 2050; no modo de \emph{{projeção}}, os anos se sucedem com balanço constante, como no programa regulatório. O capital de cada horizonte é o CEA do modelo escolhido, com a mesma decomposição em PE e PI do programa regulatório.
 """]
     figs = []
     for k, est in enumerate(E):
@@ -1537,14 +1540,15 @@ A Tabela~\ref{{tab:setores}} decompõe a cauda por setor pela alocação de Eule
 \end{figure}
 """)
 
-    _te, _fe = _capitulo_estresse(results, figdir)
-    if _te:
-        T.append(_te)
-        figs += _fe
-    _tc2, _fc2 = _capitulo_customizado(results, figdir)
-    if _tc2:
-        T.append(_tc2)
-        figs += _fc2
+    from .stress import runs as _runs_e
+    _R = _runs_e(results)
+    if _R:
+        _nr = sum(r.get("tipo", "regulatorio") == "regulatorio" for r in _R)
+        T.append(rf"""
+\section{{Testes de estresse}}
+\label{{sec:estresse-remissao}}
+Sobre o capital desta execução foram rodados {len(_R)} testes de estresse ({_nr} do programa regulatório e {len(_R) - _nr} customizados). Por terem governança própria, com cenários aprovados pelo conselho e resultados destinados à avaliação da adequação de capital e ao plano de capital (Resolução CMN 4.557, arts.~17, 18 e 40), eles são reportados em documento próprio, o \emph{{Relatório de Testes de Estresse de Crédito}}, gerado pelo aplicativo na mesma sessão e vinculado a esta execução pela data e hora da etapa de capital.
+""")
 
     # ---------------- 8. limitações e referências ----------------
     T.append(r"""
@@ -1601,6 +1605,171 @@ def gerar_paper_latex(port, results, mig=None, nome_base="", extra=None,
         zbuf = io.BytesIO()
         with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as z:
             z.writestr("paper.tex", tex)
+            for fg in figs:
+                z.write(os.path.join(tmp, fg), fg)
+        return pdf, zbuf.getvalue()
+
+
+REFS_EST_CHAVES = ["Vasicek", "Belkin", "Bolder", "4.557",
+                   "4.966", "303, de 16", "Stress testing", "4.943", "NGFS",
+                   "5.226"]
+
+
+def montar_tex_estresse(port, results, nome_base="", figdir=".",
+                        capital_de=""):
+    """Relatório de testes de estresse, separado do paper de validação."""
+    from .stress import runs, tabela_cenarios, reproducao
+    from .fluxo_cea import tabela_cea
+    R = runs(results)
+    refs = [next(r for r in REFS_TEX if k in r) for k in REFS_EST_CHAVES
+            if any(k in r for r in REFS_TEX)]
+    agora = dt.datetime.now().strftime("%d/%m/%Y %H:%M")
+    reg = [r for r in R if r.get("tipo", "regulatorio") == "regulatorio"]
+    cus = [r for r in R if r.get("tipo") == "customizado"]
+    tv, _ = tabela_cea(results, "VaR")
+    ead = R[0].get("ead_total") if R else float("nan")
+
+    # sumário das execuções
+    lin, piores = [], []
+    for r in R:
+        if r.get("tipo", "regulatorio") == "regulatorio":
+            t = tabela_cenarios(r)
+            nome, base = "Programa regulatório", r["base"]["CEA"]
+            p_ = t.loc[t["CEA"].idxmax()] if t is not None else None
+            onde = f"{p_['cenario']}, ano {int(p_['ano'])}" if p_ is not None else "---"
+        else:
+            t = r["resultados"]
+            nome, base = r.get("nome", "Customizado"), r["base"]["CEA"]
+            p_ = t.loc[t["CEA"].idxmax()]
+            onde = f"{p_['cenario']}, {p_['horizonte']}"
+        cea_p = float(p_["CEA"]) if p_ is not None else float("nan")
+        rv = (r.get("reverso") or {}).get("z")
+        lin.append([tx(r.get("executado_em", "")), tx(nome), tx(r["modelo"]),
+                    mi(base), mi(cea_p), tx(onde),
+                    nb(cea_p / base - 1, 3, pct=True),
+                    nb(rv, 3) if rv == rv and rv is not None else "---"])
+        piores.append((cea_p / base - 1, nome, r["modelo"], onde))
+    pior = max(piores) if piores else None
+
+    # capital de referência
+    lref = []
+    mods = list(dict.fromkeys(r["modelo"] for r in R))
+    from .stress import _PREFIXO
+    for m in mods:
+        pref = _PREFIXO.get(m, m)
+        sel = tv[tv["modelo"].str.startswith(pref)] if tv is not None else []
+        if len(sel):
+            x = sel.iloc[0]
+            lref.append([tx(x["modelo"]), mi(x["PE"]), mi(x["PI"]),
+                         mi(x["CEA"]), nb(x["CEA"] / ead, 3, pct=True)])
+
+    T = [PREAMBULO, rf"""
+\title{{\textbf{{Relatório de Testes de Estresse de Crédito}}\\[3mm]
+\Large Programa de testes de estresse e exercícios customizados\\[4mm]
+\normalsize De acordo com a Resolução CMN nº~4.557/2017, arts.~11 a 18 (programa de testes de estresse) e arts.~38-C e 38-D (riscos climáticos), com as alterações das Resoluções CMN nº~4.943/2021 e nº~5.226/2025\\[6mm]
+\normalsize CreditLens --- emitido em {agora}}}
+\author{{}}
+\date{{}}
+\begin{{document}}
+\maketitle
+\begin{{abstract}}
+\noindent Este relatório reporta {len(R)} execuções de teste de estresse ({len(reg)} do programa regulatório e {len(cus)} customizadas) sobre a carteira \emph{{{tx(nome_base) or 'informada pelo usuário'}}}, com EAD total de R\$~{mi(ead)}~milhões, a partir do capital calculado em {tx(capital_de) or 'execução de referência'}. O capital é medido como capital econômico alocado, $\mathrm{{CEA}}=\mathrm{{PE}}+\mathrm{{PI}}$, no horizonte de um ano.{(rf" O choque mais severo, {tx(pior[1])} com o modelo {tx(pior[2])} ({tx(pior[3])}), eleva o CEA em {nb(pior[0], 3, pct=True)} contra o cenário sem choque." if pior else "")} Os cenários são premissas assumidas; o documento não substitui a aprovação dos cenários pelo conselho nem a validação independente.
+\end{{abstract}}
+\tableofcontents
+
+\section{{Objeto, governança e vínculo com o capital}}
+\label{{sec:objeto}}
+O programa de testes de estresse avalia, de forma prospectiva, o impacto de eventos adversos sobre a carteira de crédito. Este relatório cobre a parte quantitativa: os cenários executados, a metodologia, os resultados e as premissas. Cabem à instituição a aprovação do programa e dos cenários pelo conselho de administração, com revisão ao menos anual (Resolução CMN 4.557, arts.~18 e 48, II, ``c''), o uso dos resultados na avaliação da adequação de capital e no plano de capital (arts.~40, III, e 41) e a definição de ações de contingência (art.~17).
+
+Os testes partem do capital calculado na etapa~1 do CreditLens, em {tx(capital_de) or 'execução de referência'}, sem recalculá-lo. A Tabela~\ref{{tab:est-ref}} traz o capital de referência de cada modelo usado no estresse, que é o ponto de partida dos cenários sem choque.
+""" + (_tabela(["Modelo", "PE", "PI", "CEA", "CEA/EAD"], lref,
+               r">{\raggedright\arraybackslash}p{5.6cm}rrrr",
+               "Capital de referência da etapa 1 (R\\$ milhões, VaR 99{,}9\\%).",
+               "tab:est-ref", H=True) if lref else "") + r"""
+\section{Sumário dos resultados}
+A Tabela~\ref{tab:est-sumario} resume cada execução: o CEA sem choque, o maior CEA entre os cenários e a variação correspondente. No programa regulatório, a última coluna traz o índice de crédito do estresse reverso, quando executado.
+""" + _tabela(["Executado em", "Exercício", "Modelo", "CEA base", "CEA máx.",
+               "Onde", "$\\Delta$", "$z^\\ast$"], lin,
+              r">{\raggedright\arraybackslash}p{1.7cm}>{\raggedright\arraybackslash}p{2.4cm}>{\raggedright\arraybackslash}p{2.6cm}rr>{\raggedright\arraybackslash}p{2.2cm}rr",
+              "Execuções de estresse (CEA em R\\$ milhões).", "tab:est-sumario",
+              small=True, H=True)]
+    figs = []
+    _te, _fe = _capitulo_estresse(results, figdir, refs)
+    if _te:
+        T.append(_te)
+        figs += _fe
+    _tc, _fc = _capitulo_customizado(results, figdir, refs)
+    if _tc:
+        T.append(_tc)
+        figs += _fc
+    T.append(r"""
+\section*{Referências}
+\addcontentsline{toc}{section}{Referências}
+\begin{itemize}\setlength\itemsep{1pt}
+""" + "\n".join(rf"\item[] [{i}] {r}" for i, r in enumerate(refs, 1)) + r"""
+\end{itemize}
+""")
+    # apêndice: definição completa dos cenários
+    T.append(r"""
+\clearpage
+\appendix
+\section{Definição completa dos cenários}
+As tabelas a seguir reproduzem os arquivos de cenários de cada execução, inclusive as linhas específicas por setor, país ou região. Campos vazios herdam o valor da linha mais geral.
+""")
+
+    def fz(v, d=2):
+        return nb(v, d) if v == v and v is not None else ""
+    for k, r in enumerate(R):
+        cd = r["cenarios_def"]
+        sels = [c for c in ("setor", "pais", "regiao", "segmento_irb", "rating")
+                if c in cd.columns and (cd[c].astype(str).str.lower()
+                                        != "todos").any()]
+        cab = ["Cenário", "Ano"] + [tx(c.replace("_", " ")) for c in sels] + \
+            ["$z$", "PD$\\times$", "LGD p.p.", "EAD \\%", "$k\\times$"]
+        L = []
+        for x in cd.itertuples(index=False):
+            d = x._asdict()
+            L.append([tx(d["cenario"]), str(int(d["ano"]))]
+                     + [tx(d[c]) if str(d[c]).lower() != "todos" else ""
+                        for c in sels]
+                     + [fz(d.get("z")), fz(d.get("mult_pd")),
+                        fz(d.get("choque_lgd_pp"), 1),
+                        fz(d.get("choque_ead_pct"), 1),
+                        fz(d.get("mult_k_default"))])
+        titulo = ("Programa regulatório" if r.get("tipo", "regulatorio")
+                  == "regulatorio" else r.get("nome", "Customizado"))
+        spec = (r">{\raggedright\arraybackslash}p{2.6cm}r"
+                + r">{\raggedright\arraybackslash}p{1.9cm}" * len(sels) + "rrrrr")
+        T.append(rf"\subsection{{{tx(titulo)} --- {tx(r['modelo'])}, {tx(r.get('executado_em', ''))}}}" + "\n"
+                 + _tabela_longa(cab, L, spec,
+                                 f"Definição dos cenários: {tx(titulo)}.",
+                                 f"tab:def-{k}"))
+    T.append(r"\end{document}")
+    return "".join(T), figs
+
+
+def gerar_relatorio_estresse(port, results, nome_base="", capital_de="",
+                             timeout=180):
+    """Compila o relatório de estresse. Devolve (pdf_bytes, zip_fonte)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tex, figs = montar_tex_estresse(port, results, nome_base, tmp,
+                                        capital_de)
+        with open(os.path.join(tmp, "estresse.tex"), "w",
+                  encoding="utf-8") as f:
+            f.write(tex)
+        for _ in range(2):
+            r = subprocess.run(
+                ["pdflatex", "-interaction=nonstopmode", "-halt-on-error",
+                 "estresse.tex"], cwd=tmp, capture_output=True,
+                timeout=timeout)
+        pdf_path = os.path.join(tmp, "estresse.pdf")
+        if r.returncode != 0 or not os.path.exists(pdf_path):
+            log = r.stdout.decode("latin-1", "ignore")[-1500:]
+            raise RuntimeError(f"Falha na compilação LaTeX:\n{log}")
+        pdf = open(pdf_path, "rb").read()
+        zbuf = io.BytesIO()
+        with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("estresse.tex", tex)
             for fg in figs:
                 z.write(os.path.join(tmp, fg), fg)
         return pdf, zbuf.getvalue()

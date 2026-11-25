@@ -318,6 +318,17 @@ def main():
                      descritiva={"geral": {"linhas": len(df_in),
                                            "ead_total": float(df_in["ead"].sum())}}
                      if "ead" in df_in.columns else None)
+    if results.get("estresse_runs"):
+        from engine.analytics import estresse_to_excel
+        from engine.report_tex import latex_disponivel, gerar_relatorio_estresse
+        estresse_to_excel(results, os.path.join(args.out,
+                                                "resultados_estresse.xlsx"))
+        if latex_disponivel():
+            pdf_, _ = gerar_relatorio_estresse(port, results,
+                                               nome_base=os.path.basename(args.carteira))
+            open(os.path.join(args.out, "relatorio_testes_estresse.pdf"),
+                 "wb").write(pdf_)
+            print("  -> relatório de testes de estresse gerado")
     if mig_out is not None:
         import pandas as _pd
         from openpyxl import load_workbook
