@@ -120,37 +120,60 @@ def pd_cenario(p, rho, z):
     return norm.cdf(norm.ppf(p) - np.asarray(z, float) * np.sqrt(rho / (1 - rho)))
 
 
-def _choques_linha(cen_ano, setores):
-    """Para cada linha da carteira, (z, mult_pd, choque_lgd, mult_k): a
-    linha do setor tem precedência sobre 'todos'; campos vazios herdam."""
-    G = len(setores)
-    z = np.full(G, np.nan)
-    mult = np.ones(G)
-    lgd = np.zeros(G)
-    k = np.ones(G)
-    geral = cen_ano[cen_ano["setor"].str.lower() == "todos"]
-    for df_ in (geral, cen_ano[cen_ano["setor"].str.lower() != "todos"]):
-        for r in df_.itertuples(index=False):
-            m = np.ones(G, bool) if str(r.setor).lower() == "todos" \
-                else (setores == str(r.setor))
-            if r.z == r.z and r.z is not None:
-                z[m] = float(r.z)
-            if r.mult_pd == r.mult_pd and r.mult_pd is not None:
-                mult[m] = float(r.mult_pd)
-            if r.choque_lgd_pp == r.choque_lgd_pp and r.choque_lgd_pp is not None:
-                lgd[m] = float(r.choque_lgd_pp) / 100
-            if r.mult_k_default == r.mult_k_default and r.mult_k_default is not None:
-                k[m] = float(r.mult_k_default)
-    return z, mult, lgd, k
+SELETORES = ["setor", "pais", "regiao", "segmento_irb", "rating"]
+_CHOQUES = [("z", "z", None), ("mult_pd", "mult", None),
+            ("choque_lgd_pp", "lgd", 0.01), ("choque_ead_pct", "ead", 0.01),
+            ("mult_k_default", "k", None)]
 
 
-def aplicar(p, lgd, setores, cen_ano, rho):
-    """PD e LGD estressadas de um ano de cenário (vetores por linha)."""
-    z, mult, dl, k = _choques_linha(cen_ano, setores)
+def _vazio(v):
+    return v is None or (isinstance(v, float) and v != v) or \
+        str(v).strip().lower() in ("", "todos", "nan", "none")
+
+
+def _choques_linha(cen_ano, df):
+    """Choques por linha da carteira. Cada linha do cenário seleciona a
+    fatia da carteira pelas colunas de SELETORES preenchidas (vazio ou
+    'todos' = qualquer valor); a linha mais específica, com mais seletores,
+    prevalece e herda os campos que deixar vazios. Devolve um dicionário
+    de vetores (z, mult, lgd, ead, k)."""
+    G = len(df)
+    out = {"z": np.full(G, np.nan), "mult": np.ones(G), "lgd": np.zeros(G),
+           "ead": np.zeros(G), "k": np.ones(G)}
+    sel = [c for c in SELETORES if c in cen_ano.columns]
+    linhas = list(cen_ano.itertuples(index=False))
+    linhas.sort(key=lambda r: sum(not _vazio(getattr(r, c)) for c in sel))
+    for r in linhas:
+        m = np.ones(G, bool)
+        for c in sel:
+            v = getattr(r, c)
+            if _vazio(v):
+                continue
+            if c not in df.columns:
+                m[:] = False
+                break
+            m &= df[c].astype(str).str.strip().str.lower().to_numpy() == \
+                str(v).strip().lower()
+        if not m.any():
+            continue
+        for col, chave, esc in _CHOQUES:
+            v = getattr(r, col, None)
+            if v is None or v != v:
+                continue
+            out[chave][m] = float(v) * (esc or 1.0)
+    return out
+
+
+def aplicar(port, cen_ano, rho):
+    """PD, LGD e EAD estressadas de um ano de cenário (vetores por linha)."""
+    ch = _choques_linha(cen_ano, port.df)
+    z = ch["z"]
+    p = port.p
     p_s = np.where(np.isnan(z), p, pd_cenario(p, rho, np.nan_to_num(z)))
-    p_s = np.clip(p_s * mult, 1e-8, 0.999)
-    lgd_s = np.clip(lgd + dl, 0.0, 1.0)
-    return p_s, lgd_s, float(np.nanmean(k)) if len(k) else 1.0, z
+    p_s = np.clip(p_s * ch["mult"], 1e-8, 0.999)
+    lgd_s = np.clip(port.lgd + ch["lgd"], 0.0, 1.0)
+    ead_s = port.ead * np.clip(1.0 + ch["ead"], 0.0, None)
+    return p_s, lgd_s, ead_s, float(np.mean(ch["k"])) if len(z) else 1.0, z
 
 
 # ----------------------------------------------------------- modelos
@@ -175,9 +198,9 @@ class Motor:
         self.crp = (float(prm.get("crplus_w", 1.0)),
                     float(prm.get("crplus_v", 0.5)))
 
-    def medidas(self, p, lgd):
+    def medidas(self, p, lgd, ead=None):
         """(EL, VaR[alfas], ES[alfas])."""
-        C = self.ead * lgd
+        C = (self.ead if ead is None else ead) * lgd
         if self.modelo == "ASRF (analítico)":
             return self._asrf(p, C)
         rng = np.random.default_rng(self.seed)
@@ -294,24 +317,22 @@ def projetar(motor, port, cen, rho, ad=None, curva=None, prazo_baixa=24.0,
     from .irb_bcb import coeficiente_k, segmentos_da_carteira, \
         receita_da_carteira
     df = port.df
-    setores = df["setor"].astype(str).to_numpy() if "setor" in df.columns \
-        else np.array(["todos"] * port.N)
-    p0, lgd0, ead = port.p, port.lgd, port.ead
+    p0, lgd0 = port.p, port.lgd
     anos = int(cen["ano"].max())
     seg_irb = segmentos_da_carteira(df)
     rec = receita_da_carteira(df)
     tab = (ad or {}).get("tabela")
-    choques = [aplicar(p0, lgd0, setores, cen[cen["ano"] == y + 1], rho)
+    choques = [aplicar(port, cen[cen["ano"] == y + 1], rho)
                for y in range(anos)]
-    mult_k = [c[2] for c in choques]
+    mult_k = [c[3] for c in choques]
     dlg = float(np.mean(choques[0][1] - lgd0)) if anos else 0.0
     dl_ex, kd_ex = _default_existente(tab, k_base, mult_k, dlg, anos, curva,
                                       prazo_baixa)
     coortes = []          # (ano de entrada, ead, lgd0 por linha)
     out = []
     for y in range(anos):
-        p_s, lgd_s, _, z = choques[y]
-        el, var, es = motor.medidas(p_s, lgd_s)
+        p_s, lgd_s, ead, _, z = choques[y]
+        el, var, es = motor.medidas(p_s, lgd_s, ead)
         novos = p_s * ead
         pe_nd = float(np.dot(novos, lgd_s))
         # coortes de anos anteriores: incremento da provisão e K_D
@@ -332,6 +353,7 @@ def projetar(motor, port, cen, rho, ad=None, curva=None, prazo_baixa=24.0,
         out.append({
             "ano": y + 1, "pd_media": float(np.dot(ead, p_s) / ead.sum()),
             "lgd_media": float(np.dot(ead, lgd_s) / ead.sum()),
+            "ead_nd": float(ead.sum()),
             "z_medio": float(np.nanmean(z)) if np.isfinite(z).any() else np.nan,
             "novos_defaults_ead": float(novos.sum()),
             "PE_ND": pe_nd, "PE_D": dl_ex[y] + dl_c, "PE": pe,
@@ -359,11 +381,7 @@ def executar(port, results, cenarios, modelo="Threshold Gaussiano 1F",
     res = {"modelo": modelo, "M": int(M), "rho_ativos": rho,
            "rho_d": motor.rho_d, "cenarios_def": cen,
            "origem": "cenários informados pelo usuário"}
-    set_cart = set(port.df["setor"].astype(str)) if "setor" in port.df.columns \
-        else set()
-    res["setores_sem_carteira"] = sorted(
-        s for s in cen["setor"].astype(str).unique()
-        if s.lower() != "todos" and s not in set_cart)
+    res["setores_sem_carteira"] = seletores_ausentes(cen, port.df)
     # reprodução da base (sem choque, 1 ano)
     tick("Estresse: cenário base...")
     base_1 = pd.DataFrame([{"cenario": "_base", "tipo": "cenario", "ano": 1,
@@ -394,6 +412,12 @@ def executar(port, results, cenarios, modelo="Threshold Gaussiano 1F",
         r["cenario"] = nome
         sens.append(r)
     res["sensibilidades"] = pd.DataFrame(sens) if sens else None
+    res["tipo"] = "regulatorio"
+    res["ead_total"] = float(port.ead.sum()) + float(
+        (((ad or {}).get("resumo")) or {}).get("ead", 0.0) or 0.0)
+    if alvo_reverso is None:
+        res["reverso"] = {}
+        return res
     # estresse reverso: z uniforme que leva o CEA a alvo × CEA base
     tick("Estresse reverso...")
     alvo = alvo_reverso * res["base"]["CEA"]
@@ -426,6 +450,217 @@ def executar(port, results, cenarios, modelo="Threshold Gaussiano 1F",
     return res
 
 
+
+# ----------------------------------------------------------- verificação
+def seletores_ausentes(cen, df):
+    """Valores de seletores do cenário que não existem na carteira (o choque
+    não tem efeito) e colunas de seletor ausentes da carteira."""
+    out = []
+    for c in SELETORES:
+        if c not in cen.columns:
+            continue
+        vals = {str(v).strip() for v in cen[c] if not _vazio(v)}
+        if not vals:
+            continue
+        if c not in df.columns:
+            out.append(f"coluna '{c}' ausente da carteira agregada")
+            continue
+        cart = {str(v).strip().lower() for v in df[c].astype(str)}
+        out += [f"{c} = {v}" for v in sorted(vals) if v.lower() not in cart]
+    return out
+
+
+# ----------------------------------------------------------- customizado
+COLS_CUSTOM = ["cenario", "modo", "ano", "setor", "pais", "regiao",
+               "segmento_irb", "rating", "z", "mult_pd", "choque_lgd_pp",
+               "choque_ead_pct", "mult_k_default", "objetivo", "fonte",
+               "metodo_depara", "premissas", "descricao"]
+_DOC = ["objetivo", "fonte", "metodo_depara", "premissas", "descricao"]
+
+
+def ler_customizado(fonte):
+    """Lê o template de estresse customizado. 'modo' = 'instantaneo' (cada
+    horizonte é um choque sobre a carteira atual; 'ano' pode ser o ano do
+    horizonte, p.ex. 2030) ou 'projecao' (anos 1 a 5 em sequência, com
+    balanço constante, como no programa regulatório)."""
+    if isinstance(fonte, (bytes, bytearray)):
+        fonte = io.BytesIO(fonte)
+    df = pd.read_csv(fonte, sep=None, engine="python") \
+        if not isinstance(fonte, pd.DataFrame) else fonte.copy()
+    df.columns = [c.strip().lower() for c in df.columns]
+    falta = {"cenario", "ano"} - set(df.columns)
+    if falta:
+        raise ValueError(f"Template customizado sem as colunas: {sorted(falta)}")
+    for c in COLS_CUSTOM:
+        if c not in df.columns:
+            df[c] = np.nan
+    df["modo"] = df["modo"].fillna("instantaneo").astype(str).str.lower() \
+        .str.replace("â", "a").str.replace("ç", "c").str.replace("ã", "a")
+    if not df["modo"].isin(["instantaneo", "projecao"]).all():
+        raise ValueError("A coluna 'modo' aceita 'instantaneo' ou 'projecao'.")
+    df["ano"] = df["ano"].astype(int)
+    proj = df["modo"] == "projecao"
+    if ((df.loc[proj, "ano"] < 1) | (df.loc[proj, "ano"] > 5)).any():
+        raise ValueError("No modo 'projecao', o ano vai de 1 a 5.")
+    for c in SELETORES:
+        df[c] = df[c].where(df[c].notna(), "todos").astype(str)
+    return df[COLS_CUSTOM]
+
+
+def _pe_por(port, p_s, lgd_s, ead_s, chave="setor"):
+    if chave not in port.df.columns:
+        return {}
+    g = pd.Series(p_s * lgd_s * ead_s).groupby(
+        port.df[chave].astype(str).to_numpy()).sum()
+    return g.to_dict()
+
+
+def executar_customizado(port, results, cenarios, nome="Estresse customizado",
+                         modelo="Threshold Gaussiano 1F", M=20_000, seed=42,
+                         ad=None, curva=None, prazo_baixa=24.0, k_base=0.10,
+                         progress=None):
+    """Estresse customizado (p.ex. climático): choques por seletores livres,
+    em modo instantâneo (cada horizonte sobre a carteira atual) ou de
+    projeção. Devolve tabelas de resultado e a documentação do exercício."""
+    motor = Motor(modelo, port, results, M=M, seed=seed)
+    rho = motor.rho
+
+    def tick(m):
+        if progress:
+            progress(m)
+
+    cen = ler_customizado(cenarios)
+    res = {"tipo": "customizado", "nome": nome, "modelo": modelo,
+           "M": int(M), "rho_ativos": rho, "rho_d": motor.rho_d,
+           "cenarios_def": cen, "origem": "cenários informados pelo usuário",
+           "seletores_ausentes": seletores_ausentes(cen, port.df)}
+    tick("Estresse customizado: base...")
+    vazio = pd.DataFrame([{c: np.nan for c in COLS_CUSTOM}])
+    vazio["ano"] = 1
+    for c in SELETORES:
+        vazio[c] = "todos"
+    b = projetar(motor, port, vazio, rho, ad, curva, prazo_baixa, k_base)
+    res["base"] = b.iloc[0].to_dict()
+    pe_base = _pe_por(port, port.p, port.lgd, port.ead)
+    linhas, setor = [], []
+    doc = {}
+    for nome_c in cen["cenario"].unique():
+        c = cen[cen["cenario"] == nome_c]
+        doc[nome_c] = {k: next((str(v) for v in c[k] if not _vazio(v)), "")
+                       for k in _DOC}
+        modo = c["modo"].iloc[0]
+        tick(f"Estresse customizado: {nome_c}...")
+        if modo == "projecao":
+            d = projetar(motor, port, c, rho, ad, curva, prazo_baixa, k_base)
+            d.insert(0, "horizonte", d["ano"])
+        else:
+            partes = []
+            for h in sorted(c["ano"].unique()):
+                ch = c[c["ano"] == h].copy()
+                ch["ano"] = 1
+                r1 = projetar(motor, port, ch, rho, ad, curva, prazo_baixa,
+                              k_base).iloc[0].to_dict()
+                r1["horizonte"] = int(h)
+                partes.append(r1)
+                p_s, lgd_s, ead_s, _, _ = aplicar(port, ch, rho)
+                for s_, v in _pe_por(port, p_s, lgd_s, ead_s).items():
+                    setor.append({"cenario": nome_c, "horizonte": int(h),
+                                  "setor": s_, "PE": v,
+                                  "PE_base": pe_base.get(s_, np.nan)})
+            d = pd.DataFrame(partes)
+        d.insert(0, "modo", modo)
+        d.insert(0, "cenario", nome_c)
+        linhas.append(d)
+    t = pd.concat(linhas, ignore_index=True)
+    t["dCEA"] = t["CEA"] - res["base"]["CEA"]
+    t["dCEA_pct"] = t["CEA"] / res["base"]["CEA"] - 1
+    res["resultados"] = t
+    res["por_setor"] = pd.DataFrame(setor)
+    res["documentacao"] = doc
+    res["ead_total"] = float(port.ead.sum()) + float(
+        (((ad or {}).get("resumo")) or {}).get("ead", 0.0) or 0.0)
+    return res
+
+
+def cenarios_climaticos_exemplo():
+    """Exemplo ilustrativo de estresse climático no formato NGFS: três
+    narrativas (Net Zero 2050, Delayed Transition, Current Policies) em
+    choque instantâneo nos horizontes 2030, 2040 e 2050. Transição: PD por
+    setor e país; físico: PD e LGD por região e setor. Multiplicadores
+    hipotéticos, para demonstração; não são cenários oficiais do NGFS."""
+    obj = ("Avaliar a sensibilidade do capital de crédito aos riscos "
+           "climáticos de transição e físico (Res. CMN 4.557, arts. 38-C e "
+           "38-D, VII).")
+    fonte = ("Narrativas inspiradas nos cenários do NGFS; multiplicadores "
+             "hipotéticos e ilustrativos, sem relação com valores oficiais.")
+    met = ("Transição: multiplicador de PD por setor e país, crescente com a "
+           "intensidade de carbono do setor. Físico: multiplicador de PD e "
+           "choque de LGD por região e setor. Em produção, derivar de modelos "
+           "satélite sobre as variáveis do NGFS (preço de carbono, valor "
+           "adicionado setorial, PIB).")
+    prem = ("Choque instantâneo sobre a carteira atual em cada horizonte; "
+            "balanço estático; correlações e curva de recuperação do default "
+            "inalteradas.")
+    L = []
+
+    def add(cen, h, setor="todos", pais="todos", regiao="todos", z=None,
+            mult=None, lgd=None, desc=""):
+        L.append({"cenario": cen, "modo": "instantaneo", "ano": h,
+                  "setor": setor, "pais": pais, "regiao": regiao,
+                  "segmento_irb": "todos", "rating": "todos", "z": z,
+                  "mult_pd": mult, "choque_lgd_pp": lgd,
+                  "choque_ead_pct": None, "mult_k_default": None,
+                  "objetivo": obj, "fonte": fonte, "metodo_depara": met,
+                  "premissas": prem, "descricao": desc})
+    trans = {  # setor: multiplicadores por horizonte (2030, 2040, 2050)
+        "Net Zero 2050": {"Petroquímica": (1.60, 1.40, 1.20),
+                          "Energia": (1.45, 1.25, 1.10),
+                          "Indústria": (1.20, 1.10, 1.05),
+                          "Logística": (1.15, 1.08, 1.03),
+                          "Construção": (1.10, 1.05, 1.00)},
+        "Delayed Transition": {"Petroquímica": (1.00, 2.20, 1.60),
+                               "Energia": (1.00, 1.90, 1.40),
+                               "Indústria": (1.00, 1.35, 1.15),
+                               "Logística": (1.00, 1.30, 1.10),
+                               "Construção": (1.00, 1.20, 1.05)}}
+    desc = {"Net Zero 2050": "Transição ordenada: preço de carbono alto e "
+            "imediato; choque concentrado em 2030 e decrescente.",
+            "Delayed Transition": "Transição desordenada: políticas só a "
+            "partir de 2030, com choque abrupto em 2040 e efeito "
+            "macroeconômico.",
+            "Current Policies": "Sem transição adicional: o risco físico "
+            "cresce ao longo do tempo (secas, cheias, calor extremo)."}
+    for cen, tab in trans.items():
+        for i, h in enumerate((2030, 2040, 2050)):
+            add(cen, h, z=(-0.30 if cen == "Delayed Transition" and h == 2040
+                           else None), desc=desc[cen])
+            for s, mult in tab.items():
+                if mult[i] != 1.0:
+                    add(cen, h, setor=s, mult=mult[i], desc=desc[cen])
+            if cen == "Delayed Transition" and h == 2040:
+                add(cen, h, setor="Energia", pais="Argentina", mult=2.40,
+                    desc="Exposição de energia na Argentina, mais dependente "
+                    "de fósseis")
+                add(cen, h, setor="Petroquímica", pais="México", mult=2.50,
+                    desc="Petroquímica no México, maior intensidade de carbono")
+        add(cen, 2050, setor="Agro", regiao="Centro-Oeste", mult=1.05,
+            desc="Risco físico residual")
+    fis = {2030: (1.10, 3.0, 2.0), 2040: (1.30, 6.0, 5.0),
+           2050: (1.60, 10.0, 8.0)}
+    for h, (m_agro, l_agro, l_sul) in fis.items():
+        add("Current Policies", h, z=(-0.20 if h == 2050 else None),
+            desc=desc["Current Policies"])
+        for r in ("Centro-Oeste", "Nordeste"):
+            add("Current Policies", h, setor="Agro", regiao=r, mult=m_agro,
+                lgd=l_agro, desc="Seca e calor extremo sobre a produção "
+                "agrícola")
+        add("Current Policies", h, regiao="Sul", lgd=l_sul,
+            desc="Cheias: dano às garantias reais na região")
+        add("Current Policies", h, setor="Agro", regiao="Sul",
+            mult=1 + (m_agro - 1) / 2, lgd=l_sul,
+            desc="Cheias e secas alternadas sobre o agro do Sul")
+    return pd.DataFrame(L)[COLS_CUSTOM]
+
 _PREFIXO = {"Threshold Gaussiano 1F": "Threshold Gaussiano 1F",
             "Threshold t-Student 1F": "Threshold t-Student 1F",
             "ASRF (analítico)": "ASRF",
@@ -435,10 +670,53 @@ _PREFIXO = {"Threshold Gaussiano 1F": "Threshold Gaussiano 1F",
             "CreditRisk+ ponto de sela": "CreditRisk+ ponto de sela"}
 
 
-def reproducao(results):
+def runs(results):
+    """Execuções de estresse guardadas (etapa 2), da mais antiga à mais
+    recente; aceita o formato antigo, com uma execução em 'estresse'."""
+    r = list(results.get("estresse_runs") or [])
+    if not r and results.get("estresse"):
+        r = [results["estresse"]]
+    return r
+
+
+def ultimas(results, tipo):
+    """Última execução de cada modelo (regulatório) ou de cada par
+    nome × modelo (customizado), na ordem de execução."""
+    vistos, out = set(), []
+    for r in reversed(runs(results)):
+        if r.get("tipo", "regulatorio") != tipo:
+            continue
+        k = (r.get("nome", ""), r["modelo"])
+        if k in vistos:
+            continue
+        vistos.add(k)
+        out.append(r)
+    return out[::-1]
+
+
+def comparacao_modelos(results):
+    """CEA do programa regulatório por cenário × ano em cada modelo (última
+    execução de cada modelo): a sensibilidade ao risco de modelo."""
+    L = []
+    for r in ultimas(results, "regulatorio"):
+        tc = tabela_cenarios(r)
+        if tc is None:
+            continue
+        for x in tc.itertuples(index=False):
+            L.append({"modelo": r["modelo"], "cenario": x.cenario,
+                      "ano": int(x.ano), "CEA": x.CEA,
+                      "dCEA_pct": x.dCEA_pct})
+    if not L:
+        return None
+    return pd.DataFrame(L)
+
+
+def reproducao(results, est=None):
     """Compara o ano 1 do cenário base do estresse com o CEA da execução
     principal para o mesmo modelo (diagnóstico de consistência)."""
-    est = results.get("estresse")
+    if est is None:
+        r_ = runs(results)
+        est = r_[-1] if r_ else None
     if not est:
         return None
     from .fluxo_cea import tabela_cea

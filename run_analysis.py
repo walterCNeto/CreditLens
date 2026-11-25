@@ -125,6 +125,14 @@ def main():
                          "'Beta-binomial', 'CreditRisk+ (Poisson)', "
                          "'CreditRisk+ clássico (CSFP)' ou "
                          "'CreditRisk+ ponto de sela'")
+    ap.add_argument("--estresse-custom", default=None,
+                    help="estresse customizado: CSV no template "
+                         "estresse_customizado_modelo.csv ou 'exemplo-clima'")
+    ap.add_argument("--nome-custom", default="Estresse customizado",
+                    help="nome do exercício customizado")
+    ap.add_argument("--preservar", default="pais,regiao",
+                    help="colunas preservadas na agregação da base analítica "
+                         "(separadas por vírgula; vazio para nenhuma)")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -139,7 +147,9 @@ def main():
               "da carteira de modelagem")
     if args.analitica:
         from engine.aggregation import aggregate_portfolio
-        agg, rel = aggregate_portfolio(df_perf, max_grandes=args.max_grandes)
+        agg, rel = aggregate_portfolio(
+            df_perf, max_grandes=args.max_grandes,
+            chaves_extra=[c for c in args.preservar.split(",") if c.strip()])
         _b = io.StringIO(); agg.to_csv(_b, index=False); _b.seek(0)
         port = load_portfolio(_b)
         print(f"[agregação] {rel['linhas_analitica']:,} contratos -> "
@@ -186,24 +196,42 @@ def main():
               f"| capital IRB {r_['capital_irb']:,.0f} | perda 12m "
               f"{r_['perda_incremental_12m']:,.0f}")
 
+    results["estresse_runs"] = []
+    _ctx = dict(seed=42, ad=aval_def, prazo_baixa=args.prazo_baixa,
+                k_base=args.k_lgd, progress=lambda m: print(f"  -> {m}"))
     if args.estresse:
         from engine.stress import (executar, cenarios_exemplo, ler_cenarios,
                                    tabela_cenarios)
         cen = (cenarios_exemplo() if args.estresse == "exemplo"
                else ler_cenarios(args.estresse))
-        results["estresse"] = executar(
-            port, results, cen, modelo=args.modelo_estresse,
-            M=min(args.M, 20_000), seed=42, ad=aval_def,
-            prazo_baixa=args.prazo_baixa, k_base=args.k_lgd,
-            progress=lambda m: print(f"  -> {m}"))
-        results["estresse"]["origem"] = ("cenários ilustrativos do CreditLens"
-                                         if args.estresse == "exemplo"
-                                         else f"arquivo {args.estresse}")
-        tc_ = tabela_cenarios(results["estresse"])
+        r_ = executar(port, results, cen, modelo=args.modelo_estresse,
+                      M=min(args.M, 20_000), **_ctx)
+        r_["origem"] = ("cenários ilustrativos do CreditLens"
+                        if args.estresse == "exemplo"
+                        else f"arquivo {args.estresse}")
+        results["estresse_runs"].append(r_)
+        tc_ = tabela_cenarios(r_)
         if tc_ is not None:
             print("\n=== Testes de estresse: CEA por cenário (R$ mi) ===")
             print((tc_.pivot(index="ano", columns="cenario", values="CEA")
                    / 1e6).round(3).to_string())
+    if args.estresse_custom:
+        from engine.stress import (executar_customizado,
+                                   cenarios_climaticos_exemplo)
+        cen = (cenarios_climaticos_exemplo()
+               if args.estresse_custom == "exemplo-clima"
+               else open(args.estresse_custom, "rb").read())
+        r_ = executar_customizado(
+            port, results, cen, nome=args.nome_custom,
+            modelo=args.modelo_estresse, M=min(args.M, 20_000), **_ctx)
+        r_["origem"] = ("exemplo climático ilustrativo do CreditLens"
+                        if args.estresse_custom == "exemplo-clima"
+                        else f"arquivo {args.estresse_custom}")
+        results["estresse_runs"].append(r_)
+        t_ = r_["resultados"]
+        print(f"\n=== {args.nome_custom}: CEA por cenário (R$ mi) ===")
+        print((t_.pivot(index="horizonte", columns="cenario", values="CEA")
+               / 1e6).round(3).to_string())
 
     print("\n=== Medidas de risco por modelo ===")
     with np.printoptions(precision=1):

@@ -1364,10 +1364,13 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                 ax.spines[["top", "right"]].set_visible(False)
 
         # ================= testes de estresse =================
-        est = results.get("estresse")
+        from .stress import runs as _runs_est, ultimas as _ult_est
+        _reg = [r for r in _runs_est(results)
+                if r.get("tipo", "regulatorio") == "regulatorio"]
+        est = _reg[-1] if _reg else None
         if est:
             from .stress import (tabela_cenarios, tabela_sensibilidades,
-                                 reproducao)
+                                 reproducao, comparacao_modelos)
             sec_e = "Testes de estresse"
             D.nova(sec_e)
             D.h1("Testes de estresse")
@@ -1392,7 +1395,7 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   "(VaR_t − EL_t) + K_D,t, CEA_t = PE_t + PI_t. Cenários: "
                   f"{est.get('origem', '')}.",
                   secao=sec_e)
-            rp = reproducao(results)
+            rp = reproducao(results, est)
             if rp:
                 D.par(f"Reprodução da base: CEA do ano 1 sem choque R\\$ "
                       f"{mi(rp['cea_estresse'])} mi contra R\\$ "
@@ -1450,6 +1453,64 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
                   "(sem modelo satélite estimado), balanço constante, choques "
                   "uniformes de LGD, correlações estáveis sob estresse e um "
                   "único modelo de portfólio.", secao=sec_e)
+
+            cm = comparacao_modelos(results)
+            if cm is not None and cm["modelo"].nunique() > 1:
+                mods = list(dict.fromkeys(cm["modelo"]))
+                pv = cm.pivot_table(index=["cenario", "ano"], columns="modelo",
+                                    values="CEA", sort=False)[mods]
+                D.need(0.022 * (len(pv) + 1) + 0.09, sec_e)
+                D.h2("Risco de modelo: CEA por modelo (R$ mi)", secao=sec_e)
+                w_ = 0.72 / len(mods)
+                D.tabela(["Cenário", "Ano"] + mods,
+                         [[c, str(int(a))] + [mi(v) for v in row]
+                          for (c, a), row in zip(pv.index, pv.to_numpy())],
+                         [0.2, 0.08] + [w_] * len(mods),
+                         0.022 * (len(pv) + 1), sec_e)
+
+        # ================= estresse customizado =================
+        _cus = _ult_est(results, "customizado")
+        if _cus:
+            sec_c = "Estresse customizado"
+            D.nova(sec_c)
+            D.h1("Estresse customizado")
+            D.par("Exercícios internos (Pilar 2), com choques livres por "
+                  "setor, país, região, categoria IRB ou rating, em choque "
+                  "instantâneo ou projeção. Uso típico: riscos climáticos de "
+                  "transição e físico (Res. CMN 4.557, arts. 38-C e 38-D, VII, "
+                  "incluídos pela Res. CMN 4.943/2021), com narrativas do "
+                  "NGFS. A linha mais específica do arquivo prevalece.",
+                  secao=sec_c)
+            for e_ in _cus:
+                t_ = e_["resultados"]
+                d0 = next(iter((e_.get("documentacao") or {}).values()), {})
+                D.h2(f"{e_.get('nome', '')} ({e_['modelo']})", secao=sec_c)
+                for c_, lab in (("objetivo", "Objetivo"),
+                                ("fonte", "Fonte"),
+                                ("metodo_depara", "Método do de-para"),
+                                ("premissas", "Premissas")):
+                    if d0.get(c_):
+                        D.par(f"{lab}: {d0[c_]}", secao=sec_c)
+                if e_.get("seletores_ausentes"):
+                    D.par("Seletores sem correspondência na carteira: "
+                          + "; ".join(e_["seletores_ausentes"]) + ".",
+                          secao=sec_c)
+                D.par(f"Sem choque: CEA R$ {mi(e_['base']['CEA'])} mi.",
+                      secao=sec_c)
+                D.need(0.022 * (len(t_) + 1) + 0.02, sec_c)
+                D.tabela(["Cenário", "Horiz.", "PD média", "PE", "PI", "CEA",
+                          "CEA/EAD", "Δ vs base"],
+                         [[r.cenario, str(r.horizonte),
+                           br(r.pd_media, 3, pct=True), mi(r.PE), mi(r.PI),
+                           mi(r.CEA), br(r.CEA / e_["ead_total"], 3, pct=True),
+                           br(r.dCEA_pct, 3, pct=True)]
+                          for r in t_.itertuples(index=False)],
+                         [0.22, 0.08, 0.11, 0.11, 0.12, 0.12, 0.11, 0.13],
+                         0.022 * (len(t_) + 1), sec_c)
+            D.par("Multiplicadores e choques são premissas assumidas; a "
+                  "tradução das variáveis dos cenários em parâmetros de "
+                  "risco deve ser documentada e validada à parte.",
+                  secao=sec_c)
 
         # ================= limitações + referências =================
         D.nova("Limitações")

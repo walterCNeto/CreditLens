@@ -45,13 +45,16 @@ from .portfolio import Portfolio, load_portfolio, REQUIRED_COLS
 
 def aggregate_portfolio(df, corte_grandes: float | None = None,
                         max_grandes: int = 200,
-                        col_gh: str = "gh", escala_reais: float = 1.0):
+                        col_gh: str = "gh", escala_reais: float = 1.0,
+                        chaves_extra=None):
     """Agrega a base analítica em grandes exposições + buckets GH x setor.
 
     Parâmetros: `corte_grandes` (contratos com exposicao >= corte passam
     individualmente; se None, usa apenas o top `max_grandes`), `max_grandes`
-    (teto de nomes individuais) e `col_gh` (coluna de grupo homogêneo; se
-    ausente, usa `rating`).
+    (teto de nomes individuais), `col_gh` (coluna de grupo homogêneo; se
+    ausente, usa `rating`) e `chaves_extra` (colunas adicionais preservadas
+    nos grupos, p.ex. país e região, para choques de estresse por essas
+    dimensões; mais chaves geram mais grupos).
 
     Devolve (df_agregado, relatorio)."""
     df = df.copy()
@@ -100,7 +103,13 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
                               .str.lower())
         resto = df[~grandes_mask]
         grandes = df[grandes_mask].copy()
-    chave = [gh_col, "setor"] + (["segmento_irb"] if tem_seg else [])
+    extras = [c for c in (chaves_extra or []) if c in df.columns]
+    for c in extras:
+        df[c] = df[c].fillna("NA").astype(str).str.strip()
+    resto = df[~grandes_mask]
+    grandes = df[grandes_mask].copy()
+    chave = ([gh_col, "setor"] + (["segmento_irb"] if tem_seg else [])
+             + extras)
     if len(resto):
         g = resto.groupby(chave, observed=True)
         agg = pd.DataFrame({
@@ -137,6 +146,8 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
                              + agg["setor"].astype(str)
                              + (("_" + agg["segmento_irb"].astype(str))
                                 if tem_seg else ""))
+    for c in extras:
+        agg["id_contraparte"] = agg["id_contraparte"] + "_" + agg[c].astype(str)
     agg["nome"] = ("Pool " + agg[gh_col].astype(str) + " / "
                    + agg["setor"].astype(str))
 
@@ -158,7 +169,8 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
     if "rating_origem" in grandes.columns:
         cols.append("rating_origem")
         agg["rating_origem"] = agg["rating"]
-    for extra in ["segmento_irb", "receita_bruta_mi", "rwa_cpad", "ead_cpad"]:
+    for extra in (["segmento_irb", "receita_bruta_mi", "rwa_cpad", "ead_cpad"]
+                  + extras):
         if extra in grandes.columns and extra in agg.columns:
             cols.append(extra)
     out = pd.concat([grandes[cols], agg[cols]], ignore_index=True)
@@ -169,6 +181,7 @@ def aggregate_portfolio(df, corte_grandes: float | None = None,
         "linhas_agregada": int(len(out)),
         "n_grandes": int(len(grandes)),
         "n_buckets": int(len(agg)),
+        "chaves_extra": extras,
         "n_efetivo_mediano": float(agg["n_efetivo"].median())
         if len(agg) else 0.0,
         "razao_n_efetivo_mediana": float((agg["n_efetivo"]
