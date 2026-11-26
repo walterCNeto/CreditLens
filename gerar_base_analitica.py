@@ -113,16 +113,6 @@ def gerar(n_varejo=299_700, n_corp=300, path="data/base_analitica_demo.csv",
         df["provisao"] = np.where(
             em_def, (df["exposicao"] * elbe_ref
                      * rng_def.uniform(0.85, 1.0, len(df))).round(2), np.nan)
-    # país e região (seletores de estresse customizado, p.ex. climático),
-    # com gerador próprio para não alterar os demais campos: varejo no
-    # Brasil; parte do corporate no exterior
-    rng_geo = np.random.default_rng(seed + 4)
-    df["pais"] = np.where(vj, "Brasil", rng_geo.choice(
-        ["Brasil", "Argentina", "Chile", "México"], size=len(df),
-        p=[0.80, 0.08, 0.06, 0.06]))
-    df["regiao"] = np.where(df["pais"] == "Brasil", rng_geo.choice(
-        ["Sudeste", "Sul", "Nordeste", "Centro-Oeste", "Norte"], size=len(df),
-        p=[0.45, 0.20, 0.15, 0.12, 0.08]), "Exterior")
     if path:
         df.to_csv(path, index=False)
         print(f"Base analítica: {path} ({len(df):,} linhas, "

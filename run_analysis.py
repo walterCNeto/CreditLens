@@ -125,12 +125,7 @@ def main():
                          "'Beta-binomial', 'CreditRisk+ (Poisson)', "
                          "'CreditRisk+ clássico (CSFP)' ou "
                          "'CreditRisk+ ponto de sela'")
-    ap.add_argument("--estresse-custom", default=None,
-                    help="estresse customizado: CSV no template "
-                         "estresse_customizado_modelo.csv ou 'exemplo-clima'")
-    ap.add_argument("--nome-custom", default="Estresse customizado",
-                    help="nome do exercício customizado")
-    ap.add_argument("--preservar", default="pais,regiao",
+    ap.add_argument("--preservar", default="",
                     help="colunas preservadas na agregação da base analítica "
                          "(separadas por vírgula; vazio para nenhuma)")
     args = ap.parse_args()
@@ -215,24 +210,6 @@ def main():
             print("\n=== Testes de estresse: CEA por cenário (R$ mi) ===")
             print((tc_.pivot(index="ano", columns="cenario", values="CEA")
                    / 1e6).round(3).to_string())
-    if args.estresse_custom:
-        from engine.stress import (executar_customizado,
-                                   cenarios_climaticos_exemplo)
-        cen = (cenarios_climaticos_exemplo()
-               if args.estresse_custom == "exemplo-clima"
-               else open(args.estresse_custom, "rb").read())
-        r_ = executar_customizado(
-            port, results, cen, nome=args.nome_custom,
-            modelo=args.modelo_estresse, M=min(args.M, 20_000), **_ctx)
-        r_["origem"] = ("exemplo climático ilustrativo do CreditLens"
-                        if args.estresse_custom == "exemplo-clima"
-                        else f"arquivo {args.estresse_custom}")
-        results["estresse_runs"].append(r_)
-        t_ = r_["resultados"]
-        print(f"\n=== {args.nome_custom}: CEA por cenário (R$ mi) ===")
-        print((t_.pivot(index="horizonte", columns="cenario", values="CEA")
-               / 1e6).round(3).to_string())
-
     print("\n=== Medidas de risco por modelo ===")
     with np.printoptions(precision=1):
         print(results["medidas"].to_string(index=False,

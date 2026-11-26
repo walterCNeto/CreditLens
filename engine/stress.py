@@ -120,7 +120,7 @@ def pd_cenario(p, rho, z):
     return norm.cdf(norm.ppf(p) - np.asarray(z, float) * np.sqrt(rho / (1 - rho)))
 
 
-SELETORES = ["setor", "pais", "regiao", "segmento_irb", "rating"]
+SELETORES = ["setor"]
 _CHOQUES = [("z", "z", None), ("mult_pd", "mult", None),
             ("choque_lgd_pp", "lgd", 0.01), ("choque_ead_pct", "ead", 0.01),
             ("mult_k_default", "k", None)]
@@ -450,7 +450,6 @@ def executar(port, results, cenarios, modelo="Threshold Gaussiano 1F",
     return res
 
 
-
 # ----------------------------------------------------------- verificação
 def seletores_ausentes(cen, df):
     """Valores de seletores do cenário que não existem na carteira (o choque
@@ -470,197 +469,6 @@ def seletores_ausentes(cen, df):
     return out
 
 
-# ----------------------------------------------------------- customizado
-COLS_CUSTOM = ["cenario", "modo", "ano", "setor", "pais", "regiao",
-               "segmento_irb", "rating", "z", "mult_pd", "choque_lgd_pp",
-               "choque_ead_pct", "mult_k_default", "objetivo", "fonte",
-               "metodo_depara", "premissas", "descricao"]
-_DOC = ["objetivo", "fonte", "metodo_depara", "premissas", "descricao"]
-
-
-def ler_customizado(fonte):
-    """Lê o template de estresse customizado. 'modo' = 'instantaneo' (cada
-    horizonte é um choque sobre a carteira atual; 'ano' pode ser o ano do
-    horizonte, p.ex. 2030) ou 'projecao' (anos 1 a 5 em sequência, com
-    balanço constante, como no programa regulatório)."""
-    if isinstance(fonte, (bytes, bytearray)):
-        fonte = io.BytesIO(fonte)
-    df = pd.read_csv(fonte, sep=None, engine="python") \
-        if not isinstance(fonte, pd.DataFrame) else fonte.copy()
-    df.columns = [c.strip().lower() for c in df.columns]
-    falta = {"cenario", "ano"} - set(df.columns)
-    if falta:
-        raise ValueError(f"Template customizado sem as colunas: {sorted(falta)}")
-    for c in COLS_CUSTOM:
-        if c not in df.columns:
-            df[c] = np.nan
-    df["modo"] = df["modo"].fillna("instantaneo").astype(str).str.lower() \
-        .str.replace("â", "a").str.replace("ç", "c").str.replace("ã", "a")
-    if not df["modo"].isin(["instantaneo", "projecao"]).all():
-        raise ValueError("A coluna 'modo' aceita 'instantaneo' ou 'projecao'.")
-    df["ano"] = df["ano"].astype(int)
-    proj = df["modo"] == "projecao"
-    if ((df.loc[proj, "ano"] < 1) | (df.loc[proj, "ano"] > 5)).any():
-        raise ValueError("No modo 'projecao', o ano vai de 1 a 5.")
-    for c in SELETORES:
-        df[c] = df[c].where(df[c].notna(), "todos").astype(str)
-    return df[COLS_CUSTOM]
-
-
-def _pe_por(port, p_s, lgd_s, ead_s, chave="setor"):
-    if chave not in port.df.columns:
-        return {}
-    g = pd.Series(p_s * lgd_s * ead_s).groupby(
-        port.df[chave].astype(str).to_numpy()).sum()
-    return g.to_dict()
-
-
-def executar_customizado(port, results, cenarios, nome="Estresse customizado",
-                         modelo="Threshold Gaussiano 1F", M=20_000, seed=42,
-                         ad=None, curva=None, prazo_baixa=24.0, k_base=0.10,
-                         progress=None):
-    """Estresse customizado (p.ex. climático): choques por seletores livres,
-    em modo instantâneo (cada horizonte sobre a carteira atual) ou de
-    projeção. Devolve tabelas de resultado e a documentação do exercício."""
-    motor = Motor(modelo, port, results, M=M, seed=seed)
-    rho = motor.rho
-
-    def tick(m):
-        if progress:
-            progress(m)
-
-    cen = ler_customizado(cenarios)
-    res = {"tipo": "customizado", "nome": nome, "modelo": modelo,
-           "M": int(M), "rho_ativos": rho, "rho_d": motor.rho_d,
-           "cenarios_def": cen, "origem": "cenários informados pelo usuário",
-           "seletores_ausentes": seletores_ausentes(cen, port.df)}
-    tick("Estresse customizado: base...")
-    vazio = pd.DataFrame([{c: np.nan for c in COLS_CUSTOM}])
-    vazio["ano"] = 1
-    for c in SELETORES:
-        vazio[c] = "todos"
-    b = projetar(motor, port, vazio, rho, ad, curva, prazo_baixa, k_base)
-    res["base"] = b.iloc[0].to_dict()
-    pe_base = _pe_por(port, port.p, port.lgd, port.ead)
-    linhas, setor = [], []
-    doc = {}
-    for nome_c in cen["cenario"].unique():
-        c = cen[cen["cenario"] == nome_c]
-        doc[nome_c] = {k: next((str(v) for v in c[k] if not _vazio(v)), "")
-                       for k in _DOC}
-        modo = c["modo"].iloc[0]
-        tick(f"Estresse customizado: {nome_c}...")
-        if modo == "projecao":
-            d = projetar(motor, port, c, rho, ad, curva, prazo_baixa, k_base)
-            d.insert(0, "horizonte", d["ano"])
-        else:
-            partes = []
-            for h in sorted(c["ano"].unique()):
-                ch = c[c["ano"] == h].copy()
-                ch["ano"] = 1
-                r1 = projetar(motor, port, ch, rho, ad, curva, prazo_baixa,
-                              k_base).iloc[0].to_dict()
-                r1["horizonte"] = int(h)
-                partes.append(r1)
-                p_s, lgd_s, ead_s, _, _ = aplicar(port, ch, rho)
-                for s_, v in _pe_por(port, p_s, lgd_s, ead_s).items():
-                    setor.append({"cenario": nome_c, "horizonte": int(h),
-                                  "setor": s_, "PE": v,
-                                  "PE_base": pe_base.get(s_, np.nan)})
-            d = pd.DataFrame(partes)
-        d.insert(0, "modo", modo)
-        d.insert(0, "cenario", nome_c)
-        linhas.append(d)
-    t = pd.concat(linhas, ignore_index=True)
-    t["dCEA"] = t["CEA"] - res["base"]["CEA"]
-    t["dCEA_pct"] = t["CEA"] / res["base"]["CEA"] - 1
-    res["resultados"] = t
-    res["por_setor"] = pd.DataFrame(setor)
-    res["documentacao"] = doc
-    res["ead_total"] = float(port.ead.sum()) + float(
-        (((ad or {}).get("resumo")) or {}).get("ead", 0.0) or 0.0)
-    return res
-
-
-def cenarios_climaticos_exemplo():
-    """Exemplo ilustrativo de estresse climático no formato NGFS: três
-    narrativas (Net Zero 2050, Delayed Transition, Current Policies) em
-    choque instantâneo nos horizontes 2030, 2040 e 2050. Transição: PD por
-    setor e país; físico: PD e LGD por região e setor. Multiplicadores
-    hipotéticos, para demonstração; não são cenários oficiais do NGFS."""
-    obj = ("Avaliar a sensibilidade do capital de crédito aos riscos "
-           "climáticos de transição e físico (Res. CMN 4.557, arts. 38-C e "
-           "38-D, VII).")
-    fonte = ("Narrativas inspiradas nos cenários do NGFS; multiplicadores "
-             "hipotéticos e ilustrativos, sem relação com valores oficiais.")
-    met = ("Transição: multiplicador de PD por setor e país, crescente com a "
-           "intensidade de carbono do setor. Físico: multiplicador de PD e "
-           "choque de LGD por região e setor. Em produção, derivar de modelos "
-           "satélite sobre as variáveis do NGFS (preço de carbono, valor "
-           "adicionado setorial, PIB).")
-    prem = ("Choque instantâneo sobre a carteira atual em cada horizonte; "
-            "balanço estático; correlações e curva de recuperação do default "
-            "inalteradas.")
-    L = []
-
-    def add(cen, h, setor="todos", pais="todos", regiao="todos", z=None,
-            mult=None, lgd=None, desc=""):
-        L.append({"cenario": cen, "modo": "instantaneo", "ano": h,
-                  "setor": setor, "pais": pais, "regiao": regiao,
-                  "segmento_irb": "todos", "rating": "todos", "z": z,
-                  "mult_pd": mult, "choque_lgd_pp": lgd,
-                  "choque_ead_pct": None, "mult_k_default": None,
-                  "objetivo": obj, "fonte": fonte, "metodo_depara": met,
-                  "premissas": prem, "descricao": desc})
-    trans = {  # setor: multiplicadores por horizonte (2030, 2040, 2050)
-        "Net Zero 2050": {"Petroquímica": (1.60, 1.40, 1.20),
-                          "Energia": (1.45, 1.25, 1.10),
-                          "Indústria": (1.20, 1.10, 1.05),
-                          "Logística": (1.15, 1.08, 1.03),
-                          "Construção": (1.10, 1.05, 1.00)},
-        "Delayed Transition": {"Petroquímica": (1.00, 2.20, 1.60),
-                               "Energia": (1.00, 1.90, 1.40),
-                               "Indústria": (1.00, 1.35, 1.15),
-                               "Logística": (1.00, 1.30, 1.10),
-                               "Construção": (1.00, 1.20, 1.05)}}
-    desc = {"Net Zero 2050": "Transição ordenada: preço de carbono alto e "
-            "imediato; choque concentrado em 2030 e decrescente.",
-            "Delayed Transition": "Transição desordenada: políticas só a "
-            "partir de 2030, com choque abrupto em 2040 e efeito "
-            "macroeconômico.",
-            "Current Policies": "Sem transição adicional: o risco físico "
-            "cresce ao longo do tempo (secas, cheias, calor extremo)."}
-    for cen, tab in trans.items():
-        for i, h in enumerate((2030, 2040, 2050)):
-            add(cen, h, z=(-0.30 if cen == "Delayed Transition" and h == 2040
-                           else None), desc=desc[cen])
-            for s, mult in tab.items():
-                if mult[i] != 1.0:
-                    add(cen, h, setor=s, mult=mult[i], desc=desc[cen])
-            if cen == "Delayed Transition" and h == 2040:
-                add(cen, h, setor="Energia", pais="Argentina", mult=2.40,
-                    desc="Exposição de energia na Argentina, mais dependente "
-                    "de fósseis")
-                add(cen, h, setor="Petroquímica", pais="México", mult=2.50,
-                    desc="Petroquímica no México, maior intensidade de carbono")
-        add(cen, 2050, setor="Agro", regiao="Centro-Oeste", mult=1.05,
-            desc="Risco físico residual")
-    fis = {2030: (1.10, 3.0, 2.0), 2040: (1.30, 6.0, 5.0),
-           2050: (1.60, 10.0, 8.0)}
-    for h, (m_agro, l_agro, l_sul) in fis.items():
-        add("Current Policies", h, z=(-0.20 if h == 2050 else None),
-            desc=desc["Current Policies"])
-        for r in ("Centro-Oeste", "Nordeste"):
-            add("Current Policies", h, setor="Agro", regiao=r, mult=m_agro,
-                lgd=l_agro, desc="Seca e calor extremo sobre a produção "
-                "agrícola")
-        add("Current Policies", h, regiao="Sul", lgd=l_sul,
-            desc="Cheias: dano às garantias reais na região")
-        add("Current Policies", h, setor="Agro", regiao="Sul",
-            mult=1 + (m_agro - 1) / 2, lgd=l_sul,
-            desc="Cheias e secas alternadas sobre o agro do Sul")
-    return pd.DataFrame(L)[COLS_CUSTOM]
-
 _PREFIXO = {"Threshold Gaussiano 1F": "Threshold Gaussiano 1F",
             "Threshold t-Student 1F": "Threshold t-Student 1F",
             "ASRF (analítico)": "ASRF",
@@ -676,12 +484,11 @@ def runs(results):
     r = list(results.get("estresse_runs") or [])
     if not r and results.get("estresse"):
         r = [results["estresse"]]
-    return r
+    return [x for x in r if x.get("tipo", "regulatorio") == "regulatorio"]
 
 
 def ultimas(results, tipo):
-    """Última execução de cada modelo (regulatório) ou de cada par
-    nome × modelo (customizado), na ordem de execução."""
+    """Última execução de cada modelo, na ordem de execução."""
     vistos, out = set(), []
     for r in reversed(runs(results)):
         if r.get("tipo", "regulatorio") != tipo:

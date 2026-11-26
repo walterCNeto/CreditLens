@@ -16,7 +16,6 @@ Python* (Springer, 2018)** — o referencial teórico do projeto (`model.pdf`).
 | Contribuições | Decomposição Monte Carlo de VaR/ES por contraparte (limiar gaussiano) | Cap. 7 |
 | Multifatorial | Limiar gaussiano/t com fatores setoriais (dois níveis: global + setor), calibração intra/inter-setor, contribuições de ES por setor | Cap. 4 (estrutura de correlação) |
 | Migração & ECL | Matriz de transição anual (upload), estrutura a termo de PD por potências, ECL 12m vs. lifetime com estágios IFRS 9/CMN 4.966, simulação multiperíodo com escada de limiares sobre a estrutura de fatores — inclusive em modo pooled (frações por rating × matriz condicional) | Caps. 4 (pMap) e sobre cadeias de Markov |
-| Estresse customizado | Exercícios próprios (Pilar 2) com choques por setor, país, região, categoria IRB ou rating, em choque instantâneo ou projeção, com documentação do exercício; exemplo climático ilustrativo (narrativas NGFS: transição e físico; Res. CMN 4.557, arts. 38-C e 38-D, VII) | NGFS |
 | Testes de estresse | Etapa 2, independente do capital (execuções guardadas e comparáveis entre modelos), com relatório próprio (PDF, LaTeX e Excel) separado do paper de validação. Programa da Res. CMN 4.557 (arts. 11 a 18): análise de sensibilidade, cenários plurianuais (base, adverso, severo) e estresse reverso, com o modelo de portfólio escolhido; PD do cenário pelo índice de crédito z (deslocamento de Vasicek), choques de LGD e da recuperação do default, balanço constante e CEA = PE + PI por ano; cenários de exemplo ou template próprio | Belkin et al. (1998); BCBS (2018) |
 | Agregação & pooled | Base analítica (milhões de contratos) → grandes exposições + buckets GH×setor com EL preservada exatamente; motor pooled (Binomial condicional / granularidade infinita de Vasicek), GA com c² → C²/n, relatório de qualidade (CV de PD intra-bucket) | Gordy–Lütkebohmert (pool-based) |
 
@@ -100,7 +99,6 @@ carteira-credito/
 ├── templates/matriz_migracao_modelo.csv # matriz de transição anual de exemplo
 ├── templates/curva_lgd_default_modelo.csv # curva de LGD em default (ELBE) por categoria
 ├── templates/cenarios_estresse_modelo.csv # cenários de estresse de exemplo (base, adverso, severo, sensibilidades)
-├── templates/estresse_customizado_modelo.csv # estresse customizado: exemplo climático (NGFS ilustrativo)
 ├── data/carteira_teste.csv # 250 contrapartes, 8 graus de rating, EAD total R$ 10 bilhões (valores em reais)
 └── output/                 # resultados da rodada de teste
 ```

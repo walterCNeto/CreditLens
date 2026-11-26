@@ -667,7 +667,7 @@ def run_pooled_analysis(
 
 def estresse_to_excel(results: dict, path):
     """Excel do relatório de estresse (etapa 2): programa regulatório da
-    última execução, comparação entre modelos e exercícios customizados."""
+    última execução e comparação entre modelos."""
     with pd.ExcelWriter(path, engine="openpyxl") as xw:
         from .stress import runs as _runs_e
         _L = []
@@ -680,7 +680,7 @@ def estresse_to_excel(results: dict, path):
                        "CEA_base": r["base"]["CEA"],
                        "origem": r.get("origem", "")})
         pd.DataFrame(_L).to_excel(xw, sheet_name="Execuções", index=False)
-        from .stress import (runs as _runs_e, ultimas as _ult_e,
+        from .stress import (runs as _runs_e,
                              tabela_cenarios, tabela_sensibilidades,
                              comparacao_modelos)
         _reg = [r for r in _runs_e(results)
@@ -709,14 +709,3 @@ def estresse_to_excel(results: dict, path):
             _cm = comparacao_modelos(results)
             if _cm is not None:
                 _cm.to_excel(xw, sheet_name="Estresse por modelo", index=False)
-        for _k, _e in enumerate(_ult_e(results, "customizado")):
-            _nm = f"Custom {_k + 1}"
-            _r = _e["resultados"].copy()
-            _r.insert(0, "exercicio", _e.get("nome", ""))
-            _r.insert(1, "modelo", _e["modelo"])
-            _r.to_excel(xw, sheet_name=f"{_nm} resultados", index=False)
-            if _e.get("por_setor") is not None and len(_e["por_setor"]):
-                _e["por_setor"].to_excel(xw, sheet_name=f"{_nm} PE por setor",
-                                         index=False)
-            _e["cenarios_def"].to_excel(xw, sheet_name=f"{_nm} definição",
-                                        index=False)

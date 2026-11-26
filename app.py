@@ -182,17 +182,9 @@ with _cc, st.container(border=True, key="cartao_carteira"):
             "Máximo de grandes exposições individuais", 0, 2000, 200, 50,
             help="As maiores exposições ficam fora da agregação, "
                  "preservando o risco de concentração de nomes.")
-        chaves_extra = st.multiselect(
-            "Preservar na agregação", ["pais", "regiao"],
-            default=["pais", "regiao"], key="chaves_extra",
-            help="Colunas mantidas separadas nos grupos, para que os choques "
-                 "do estresse customizado por país ou região tenham efeito "
-                 "(p.ex. risco climático físico). Cada coluna multiplica o "
-                 "número de grupos e o tempo de execução; colunas ausentes da "
-                 "base são ignoradas.")
     else:
         max_grandes = 200
-        chaves_extra = []
+    chaves_extra = []
     if analitica:
         _baixar_modelo("base_analitica_modelo.csv",
                        "Baixar modelo de base analítica", "dl_mod_analitica")
@@ -278,10 +270,10 @@ with st.expander("Layouts dos arquivos de entrada — dicionário de "
                "exceto colunas terminadas em `_mi` (R$ milhões). Taxas e "
                "frações em decimal (5% = 0.05). Os resultados são "
                "apresentados em R$ milhões.")
-    _lt1, _lt2, _lt3, _lt4, _lt5, _lt6 = st.tabs([
+    _lt1, _lt2, _lt3, _lt4, _lt5 = st.tabs([
         "Carteira (por contraparte)", "Base analítica (por contrato)",
         "Matriz de transição anual", "Curva de LGD em default",
-        "Cenários de estresse", "Estresse customizado"])
+        "Cenários de estresse"])
     with _lt1:
         st.markdown("Uma linha por **contraparte**. Para carteiras de até "
                     "alguns milhares de nomes; os modelos rodam nome a nome. "
@@ -369,25 +361,6 @@ with st.expander("Layouts dos arquivos de entrada — dicionário de "
         st.dataframe(pd.read_csv(_f), hide_index=True, width='stretch')
         st.markdown("**Dicionário de colunas**")
         st.dataframe(dicionario(CENARIOS), hide_index=True, width='stretch')
-    with _lt6:
-        from engine.layouts import CUSTOMIZADO
-        st.markdown(
-            "Exercícios próprios (Pilar 2), como o estresse climático. Cada "
-            "linha seleciona uma fatia da carteira por setor, país, região, "
-            "categoria IRB ou rating e aplica choques de PD, LGD, EAD e "
-            "recuperação do default. Para usar país e região numa base "
-            "analítica, mantenha essas colunas em **Preservar na "
-            "agregação**. O modelo vem preenchido com o exemplo climático "
-            "ilustrativo (narrativas do NGFS, multiplicadores hipotéticos).")
-        _f = os.path.join(_TDIR, "estresse_customizado_modelo.csv")
-        st.download_button("⬇ Baixar modelo customizado",
-                           open(_f, "rb").read(),
-                           file_name="estresse_customizado_modelo.csv",
-                           mime="text/csv", key="dl_lay_cus")
-        st.dataframe(pd.read_csv(_f), hide_index=True, width='stretch')
-        st.markdown("**Dicionário de colunas**")
-        st.dataframe(dicionario(CUSTOMIZADO), hide_index=True,
-                     width='stretch')
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
@@ -779,9 +752,7 @@ _ctx = dict(seed=int(st.session_state.get("seed_exec", 42)), ad=_ad,
             curva=st.session_state.get("curva_def"),
             prazo_baixa=float(_ad_r.get("prazo_baixa", 24.0)),
             k_base=float(_ad_r.get("k", 0.10)))
-_EX_CLIMA = "Exemplo climático"
-ec1, ec2 = st.columns(2, gap="medium")
-with ec1, st.container(border=True, key="cartao_est_reg"):
+with st.container(border=True, key="cartao_est_reg"):
     st.markdown("##### :material/gavel: Programa regulatório")
     st.caption("Res. CMN 4.557, arts. 11 a 18: análise de sensibilidade, "
                "cenários plurianuais (base, adverso e severo) e estresse "
@@ -815,39 +786,9 @@ with ec1, st.container(border=True, key="cartao_est_reg"):
                            width="stretch", key="go_est_reg",
                            disabled=reg_sel is None
                            or (reg_sel == _ORIG_ARQ and reg_up is None))
-with ec2, st.container(border=True, key="cartao_est_cus"):
-    st.markdown("##### :material/eco: Estresse customizado")
-    st.caption("Choques livres por setor, país, região, categoria IRB ou "
-               "rating, em choque instantâneo ou projeção. Exemplo: riscos "
-               "climáticos de transição e físico (Res. CMN 4.557, arts. "
-               "38-C e 38-D, VII).")
-    cus_sel = st.segmented_control(
-        "Cenários customizados", [_ORIG_ARQ, _EX_CLIMA], default=_EX_CLIMA,
-        key="orig_cus", selection_mode="single", width="stretch")
-    cus_up = (st.file_uploader("CSV de estresse customizado", type=["csv"],
-                               key="cus") if cus_sel == _ORIG_ARQ else None)
-    cus_nome = st.text_input(
-        "Nome do exercício", key="cus_nome",
-        value="Climático (NGFS ilustrativo)" if cus_sel == _EX_CLIMA
-        else "Estresse customizado")
-    c1_, c2_ = st.columns(2)
-    cus_mod = c1_.selectbox("Modelo", _MOD_EST, index=0, key="est_mod_cus")
-    cus_M = c2_.select_slider("Simulações por cenário",
-                              [5_000, 10_000, 20_000, 50_000], value=20_000,
-                              key="est_M_cus")
-    _baixar_modelo("estresse_customizado_modelo.csv",
-                   "Baixar modelo customizado", "dl_mod_cus")
-    with st.container(key="rodape_est_cus"):
-        go_cus = st.button("▶ Executar estresse customizado", type="primary",
-                           width="stretch", key="go_est_cus",
-                           disabled=cus_sel is None
-                           or (cus_sel == _ORIG_ARQ and cus_up is None))
-
-if go_reg or go_cus:
+if go_reg:
     import datetime as _dt
-    from engine.stress import (executar, cenarios_exemplo, ler_cenarios,
-                               executar_customizado,
-                               cenarios_climaticos_exemplo)
+    from engine.stress import executar, cenarios_exemplo, ler_cenarios
     _pg = st.progress(0.0, text="Preparando o estresse...")
     _n = {"i": 0}
 
@@ -856,25 +797,14 @@ if go_reg or go_cus:
         _pg.progress(min(_n["i"] / 14, 0.99), text=msg)
     try:
         with st.spinner("Rodando o estresse..."):
-            if go_reg:
-                cen_df = (ler_cenarios(reg_up.getvalue()) if reg_up is not None
-                          else cenarios_exemplo())
-                r_ = executar(port, results, cen_df, modelo=reg_mod, M=reg_M,
-                              alvo_reverso=reg_alvo if reg_rev else None,
-                              progress=_tk, **_ctx)
-                r_["origem"] = ("cenários ilustrativos do CreditLens"
-                                if reg_up is None else
-                                f"arquivo {getattr(reg_up, 'name', 'enviado')}")
-            else:
-                cen_df = (cus_up.getvalue() if cus_up is not None
-                          else cenarios_climaticos_exemplo())
-                r_ = executar_customizado(port, results, cen_df,
-                                          nome=cus_nome or "Estresse customizado",
-                                          modelo=cus_mod, M=cus_M,
-                                          progress=_tk, **_ctx)
-                r_["origem"] = ("exemplo climático ilustrativo do CreditLens"
-                                if cus_up is None else
-                                f"arquivo {getattr(cus_up, 'name', 'enviado')}")
+            cen_df = (ler_cenarios(reg_up.getvalue()) if reg_up is not None
+                      else cenarios_exemplo())
+            r_ = executar(port, results, cen_df, modelo=reg_mod, M=reg_M,
+                          alvo_reverso=reg_alvo if reg_rev else None,
+                          progress=_tk, **_ctx)
+            r_["origem"] = ("cenários ilustrativos do CreditLens"
+                            if reg_up is None else
+                            f"arquivo {getattr(reg_up, 'name', 'enviado')}")
         r_["executado_em"] = _dt.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         r_["capital_de"] = st.session_state.get("executado_em", "")
         _runs.append(r_)
@@ -997,70 +927,10 @@ def _mostrar_estresse(results):
                    "modelo. A dispersão entre colunas mede o risco de modelo "
                    "do estresse.")
         st.divider()
-    rot = [f"{r.get('executado_em', '')} · "
-           + ("Regulatório" if r.get("tipo", "regulatorio") == "regulatorio"
-              else f"Customizado: {r.get('nome', '')}")
-           + f" · {r['modelo']}" for r in R]
+    rot = [f"{r.get('executado_em', '')} · {r['modelo']}" for r in R]
     i = st.selectbox("Execução", range(len(R)), index=len(R) - 1,
                      format_func=lambda k: rot[k], key="est_run_sel")
-    est = R[i]
-    if est.get("tipo", "regulatorio") == "regulatorio":
-        _mostrar_est_reg(results, est)
-    else:
-        _mostrar_est_cus(results, est)
-
-
-def _mostrar_est_cus(results, est):
-    """Estresse customizado: resultados por cenário e horizonte."""
-    _m3 = "{:,.3f}"
-    st.markdown(
-        f"**{est.get('nome', '')}**  ·  **Modelo:** {est['modelo']}  ·  "
-        f"**Cenários:** {est.get('origem', '')}")
-    if est.get("seletores_ausentes"):
-        st.warning("Seletores sem correspondência na carteira (choque sem "
-                   "efeito): " + "; ".join(est["seletores_ausentes"]) + ".")
-    doc = est.get("documentacao") or {}
-    with st.expander("Documentação do exercício"):
-        for nome, d in doc.items():
-            st.markdown(f"**{nome}**")
-            for k, lab in (("descricao", "Narrativa"), ("objetivo", "Objetivo"),
-                           ("fonte", "Fonte"), ("metodo_depara",
-                                                "Método do de-para"),
-                           ("premissas", "Premissas")):
-                if d.get(k):
-                    st.markdown(f"- *{lab}:* {d[k]}")
-    b = est["base"]
-    st.caption(f"Base sem choque: CEA R$ {b['CEA'] / 1e6:,.3f} mi "
-               f"(PE {b['PE'] / 1e6:,.3f}; PI {b['PI'] / 1e6:,.3f}).")
-    t = est["resultados"]
-    v = pd.DataFrame({
-        "Cenário": t["cenario"], "Horizonte": t["horizonte"].astype(str),
-        "Modo": t["modo"], "PD média": t["pd_media"],
-        "LGD média": t["lgd_media"], "PE (R$ mi)": t["PE"] / 1e6,
-        "PI (R$ mi)": t["PI"] / 1e6, "CEA (R$ mi)": t["CEA"] / 1e6,
-        "CEA % EAD": t["CEA"] / est["ead_total"], "Δ CEA vs base": t["dCEA_pct"]})
-    st.dataframe(v.style.format({
-        "PD média": "{:.3%}", "LGD média": "{:.3%}", "PE (R$ mi)": _m3,
-        "PI (R$ mi)": _m3, "CEA (R$ mi)": _m3, "CEA % EAD": "{:.3%}",
-        "Δ CEA vs base": "{:+.3%}"}), hide_index=True, width="stretch")
-    g = t.pivot(index="horizonte", columns="cenario", values="CEA") / 1e6
-    g.index = g.index.astype(str)
-    st.line_chart(g, x_label="Horizonte", y_label="CEA (R$ mi)")
-    ps = est.get("por_setor")
-    if ps is not None and len(ps):
-        pior = t.loc[t["CEA"].idxmax()]
-        w = ps[(ps["cenario"] == pior["cenario"])
-               & (ps["horizonte"] == pior["horizonte"])]
-        st.markdown(f"##### PE por setor no cenário mais severo "
-                    f"({pior['cenario']}, {pior['horizonte']})")
-        w = pd.DataFrame({"Setor": w["setor"], "PE base (R$ mi)": w["PE_base"]
-                          / 1e6, "PE estressada (R$ mi)": w["PE"] / 1e6,
-                          "Variação": w["PE"] / w["PE_base"] - 1}) \
-            .sort_values("Variação", ascending=False)
-        st.dataframe(w.style.format({"PE base (R$ mi)": _m3,
-                                     "PE estressada (R$ mi)": _m3,
-                                     "Variação": "{:+.3%}"}),
-                     hide_index=True, width="stretch")
+    _mostrar_est_reg(results, R[i])
 
 
 def _mostrar_est_reg(results, est):
@@ -1749,8 +1619,7 @@ with tabs[8]:
                     "estresse")
         if not _Rdl:
             st.caption("Documento próprio, separado do paper de validação: "
-                       "programa regulatório, comparação entre modelos e "
-                       "exercícios customizados. Rode o estresse em **4. "
+                       "programa regulatório e comparação entre modelos. Rode o estresse em **4. "
                        "Testes de estresse** para habilitá-lo.")
         else:
             st.caption(f"{len(_Rdl)} execução(ões) sobre o capital de "
@@ -1758,8 +1627,7 @@ with tabs[8]:
                        "Documento próprio, com governança separada da "
                        "validação do capital: objeto e vínculo com o capital, "
                        "sumário, programa regulatório, comparação entre "
-                       "modelos, exercícios customizados e definição "
-                       "completa dos cenários.")
+                       "modelos e definição completa dos cenários.")
             if "_est_xls" not in st.session_state:
                 from engine.analytics import estresse_to_excel
                 _bx = io.BytesIO()

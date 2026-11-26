@@ -1367,13 +1367,11 @@ def gerar_paper(destino, port, results, mig=None, nome_base="",
         from .stress import runs as _runs_est
         _R = _runs_est(results)
         if _R:
-            _nr = sum(r.get("tipo", "regulatorio") == "regulatorio"
-                      for r in _R)
             D.nova("Testes de estresse")
             D.h1("Testes de estresse")
-            D.par(f"Sobre o capital desta execução foram rodados {len(_R)} "
-                  f"testes de estresse ({_nr} do programa regulatório e "
-                  f"{len(_R) - _nr} customizados). Por terem governança "
+            D.par(f"Sobre o capital desta execução foram rodadas {len(_R)} "
+                  "execuções do programa de testes de estresse. Por terem "
+                  "governança "
                   "própria (Res. CMN 4.557, arts. 17, 18 e 40), eles são "
                   "reportados em documento próprio, o Relatório de Testes de "
                   "Estresse de Crédito, gerado pelo aplicativo na mesma "

@@ -31,12 +31,6 @@ CARTEIRA = [
     ("setor", "não", "texto",
      "Setor econômico; habilita o modelo multifatorial."),
     ("nome", "não", "texto", "Nome da contraparte (apenas exibição)."),
-    ("pais", "não", "texto",
-     "País do risco; seletor de choques no estresse customizado (p.ex. "
-     "transição climática por país)."),
-    ("regiao", "não", "texto",
-     "Região (p.ex. UF ou macrorregião); seletor de choques no estresse "
-     "customizado (p.ex. risco climático físico)."),
     ("segmento_irb", "não", SEGMENTOS_TXT + " — padrão corporate",
      "Categoria IRB (Res. BCB 303) e base do fator padronizado "
      "(Res. BCB 229)."),
@@ -145,36 +139,6 @@ CENARIOS = [
      "Narrativa macroeconômica do cenário; documentação, sem uso no "
      "cálculo."),
     ("descricao", "não", "texto", "Descrição do cenário."),
-]
-
-
-CUSTOMIZADO = [
-    ("cenario", "sim", "texto", "Nome do cenário; as linhas com o mesmo "
-     "nome formam um cenário."),
-    ("modo", "não", "'instantaneo' ou 'projecao'", "Instantâneo: cada "
-     "horizonte é um choque sobre a carteira atual (convém a horizontes "
-     "longos, p.ex. 2030 e 2050). Projeção: anos 1 a 5 em sequência, com "
-     "balanço constante. Vazio = 'instantaneo'."),
-    ("ano", "sim", "inteiro", "Horizonte (p.ex. 2030) no modo instantâneo; "
-     "ano de 1 a 5 no modo de projeção."),
-    ("setor, pais, regiao, segmento_irb, rating", "não",
-     "valor da coluna ou 'todos'", "Seletores: a linha atinge as exposições "
-     "com esses valores; vazio ou 'todos' = qualquer valor. Quando duas "
-     "linhas atingem a mesma exposição, prevalece a mais específica, que "
-     "herda os campos vazios."),
-    ("z", "não", "número; negativo = adverso", "Índice de crédito: "
-     "PD(z) = Φ(Φ⁻¹(PD) − z·√(ρ/(1 − ρ)))."),
-    ("mult_pd", "não", "multiplicador > 0", "Multiplica a PD (canal "
-     "típico do risco de transição)."),
-    ("choque_lgd_pp", "não", "pontos percentuais", "Somado à LGD (canal "
-     "típico do risco físico: dano às garantias)."),
-    ("choque_ead_pct", "não", "percentual", "Variação da EAD (p.ex. saque "
-     "de limites sob estresse)."),
-    ("mult_k_default", "não", "multiplicador > 0", "Multiplica a margem k "
-     "da LGD em default."),
-    ("objetivo, fonte, metodo_depara, premissas, descricao", "não", "texto",
-     "Documentação do exercício; vai para o paper. Basta preencher na "
-     "primeira linha de cada cenário."),
 ]
 
 
